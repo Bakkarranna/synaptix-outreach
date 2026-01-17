@@ -1,4 +1,5 @@
 # linkedin/actions/message.py
+import json
 import logging
 from typing import Dict, Any, Optional
 
@@ -73,7 +74,7 @@ def _send_msg_pop_up(session: "AccountSession", profile: Dict[str, Any], message
         except Exception:
             logger.debug("fill() failed → using clipboard paste")
             input_area.click()
-            page.evaluate(f"""() => navigator.clipboard.writeText(`{message.replace("`", "\\`")}`)""")
+            page.evaluate(f"() => navigator.clipboard.writeText({json.dumps(message)})")
             session.wait()
             input_area.press("ControlOrMeta+V")
             session.wait()

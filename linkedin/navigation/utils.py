@@ -80,7 +80,7 @@ def get_top_card(session):
 
 
 def save_page(session: "AccountSession", profile: dict, ):
-    filepath = FIXTURE_PAGES_DIR / f"{profile.get("public_identifier")}.html"
+    filepath = FIXTURE_PAGES_DIR / f"{profile.get('public_identifier')}.html"
     html_content = session.page.content()
     with open(filepath, "w", encoding="utf-8") as f:
         f.write(html_content)
