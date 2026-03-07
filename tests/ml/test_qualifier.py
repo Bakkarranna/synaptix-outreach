@@ -32,7 +32,7 @@ class TestBayesianQualifierUpdate:
 
     def test_update_invalidates_fit(self):
         qualifier, _, _ = _make_trained_qualifier()
-        qualifier._ensure_fitted()
+        qualifier._fit_if_needed()
         assert qualifier._fitted is True
         qualifier.update(np.random.randn(384).astype(np.float32), 1)
         assert qualifier._fitted is False
@@ -53,7 +53,7 @@ class TestBayesianQualifierUpdate:
             label = rng.randint(0, 2)
             qualifier.update(emb, label)
         assert qualifier.n_obs == 100
-        assert qualifier._ensure_fitted() is True
+        assert qualifier._fit_if_needed() is True
 
 
 class TestBayesianQualifierPredict:
@@ -89,14 +89,14 @@ class TestBaldScores:
     def test_bald_shape(self):
         qualifier, _, _ = _make_trained_qualifier()
         embeddings = np.random.randn(5, 384).astype(np.float32)
-        scores = qualifier.bald_scores(embeddings)
+        scores = qualifier.compute_bald(embeddings)
         assert scores is not None
         assert scores.shape == (5,)
 
     def test_bald_nonnegative(self):
         qualifier, _, _ = _make_trained_qualifier()
         embeddings = np.random.randn(5, 384).astype(np.float32)
-        scores = qualifier.bald_scores(embeddings)
+        scores = qualifier.compute_bald(embeddings)
         assert scores is not None
         assert np.all(scores >= -1e-10)
 
@@ -104,14 +104,14 @@ class TestBaldScores:
         """Predictive entropy cannot exceed ln(2) ~ 0.693."""
         qualifier, _, _ = _make_trained_qualifier()
         embeddings = np.random.randn(5, 384).astype(np.float32)
-        scores = qualifier.bald_scores(embeddings)
+        scores = qualifier.compute_bald(embeddings)
         assert scores is not None
         assert np.all(scores <= np.log(2) + 0.01)
 
     def test_bald_returns_none_when_unfitted(self):
         qualifier = BayesianQualifier(seed=42)
         embeddings = np.random.randn(5, 384).astype(np.float32)
-        assert qualifier.bald_scores(embeddings) is None
+        assert qualifier.compute_bald(embeddings) is None
 
 
 class TestRankProfiles:
@@ -170,7 +170,7 @@ class TestExplainProfile:
     def test_explain_no_embedding(self, embeddings_db):
         qualifier = BayesianQualifier(seed=42)
         profile = {"public_identifier": "nonexistent"}
-        explanation = qualifier.explain_profile(profile)
+        explanation = qualifier.explain(profile)
         assert "no embedding" in explanation.lower()
 
     def test_explain_with_embedding(self, embeddings_db):
@@ -180,7 +180,7 @@ class TestExplainProfile:
         store_embedding(1, "alice", pos_emb)
 
         profile = {"public_identifier": "alice"}
-        explanation = qualifier.explain_profile(profile)
+        explanation = qualifier.explain(profile)
         assert "prob=" in explanation
         assert "entropy=" in explanation
 
@@ -192,5 +192,5 @@ class TestExplainProfile:
         store_embedding(1, "alice", emb)
 
         profile = {"public_identifier": "alice"}
-        explanation = qualifier.explain_profile(profile)
+        explanation = qualifier.explain(profile)
         assert "not fitted" in explanation.lower()

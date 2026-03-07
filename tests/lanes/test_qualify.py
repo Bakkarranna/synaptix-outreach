@@ -185,7 +185,7 @@ class TestQualifyLaneAutoDecisions:
             # prob=0.50, entropy=0.693 (max), well above threshold
             patch.object(qualifier, "predict", return_value=(0.50, 0.693, 0.5)),
             patch.object(QualifyLane, "_get_profile_text", return_value="engineer at acme"),
-            patch("linkedin.ml.qualifier.qualify_profile_llm", return_value=(1, "Good fit")) as mock_llm,
+            patch("linkedin.ml.qualifier.qualify_with_llm", return_value=(1, "Good fit")) as mock_llm,
             patch.object(qualifier, "update") as mock_update,
             patch("linkedin.ml.embeddings.store_label") as mock_store,
             patch("linkedin.db.crm_profiles.promote_lead_to_contact") as mock_promote,
@@ -216,7 +216,7 @@ class TestQualifyLaneAutoDecisions:
             patch.object(QualifyLane, "_embed_next_profile", return_value=False),
             patch("linkedin.ml.embeddings.get_all_unlabeled_embeddings", return_value=[candidate]),
             patch.object(QualifyLane, "_get_profile_text", return_value="engineer at acme"),
-            patch("linkedin.ml.qualifier.qualify_profile_llm", return_value=(0, "Bad fit")) as mock_llm,
+            patch("linkedin.ml.qualifier.qualify_with_llm", return_value=(0, "Bad fit")) as mock_llm,
             patch.object(qualifier, "update") as mock_update,
             patch("linkedin.ml.embeddings.store_label") as mock_store,
             patch("linkedin.db.crm_profiles.disqualify_lead") as mock_disqualify,

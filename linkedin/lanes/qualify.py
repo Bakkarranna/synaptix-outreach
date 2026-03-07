@@ -8,7 +8,7 @@ import numpy as np
 from termcolor import colored
 
 from linkedin.conf import CAMPAIGN_CONFIG
-from linkedin.ml.qualifier import BayesianQualifier, format_stats
+from linkedin.ml.qualifier import BayesianQualifier, format_prediction
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +89,7 @@ class QualifyLane:
         Returns the ``public_id`` of the qualified profile, or ``None``.
         """
         from linkedin.ml.embeddings import get_all_unlabeled_embeddings
-        from linkedin.ml.qualifier import qualify_profile_llm
+        from linkedin.ml.qualifier import qualify_with_llm
 
         candidates = get_all_unlabeled_embeddings()
         if not candidates:
@@ -109,11 +109,11 @@ class QualifyLane:
 
             if n_neg > n_pos:
                 # Seek a likely positive — exploit by highest predicted prob
-                scores = self.qualifier.predicted_probs(embeddings)
+                scores = self.qualifier.predict_probs(embeddings)
                 strategy = "exploit (p)"
             else:
                 # Seek a likely negative — explore via BALD
-                scores = self.qualifier.bald_scores(embeddings)
+                scores = self.qualifier.compute_bald(embeddings)
                 strategy = "explore (BALD)"
 
             if scores is None:
@@ -145,7 +145,7 @@ class QualifyLane:
                 self._record_decision(lead_id, public_id, embedding, label, reason)
                 return public_id
 
-            stats = format_stats(pred_prob, entropy, std, self.qualifier.n_obs)
+            stats = format_prediction(pred_prob, entropy, std, self.qualifier.n_obs)
             sel = f", {selection_score[0]}={selection_score[1]:.4f}" if selection_score else ""
             logger.debug(
                 "%s uncertain (%s%s) — querying LLM",
@@ -165,7 +165,7 @@ class QualifyLane:
             return public_id
 
         campaign = self.session.campaign
-        label, reason = qualify_profile_llm(
+        label, reason = qualify_with_llm(
             profile_text,
             product_docs=campaign.product_docs,
             campaign_objective=campaign.campaign_objective,

@@ -8,13 +8,14 @@ from pathlib import Path
 import jinja2
 import numpy as np
 from pydantic import BaseModel, Field
+from scipy.stats import norm
 
 from linkedin.conf import CAMPAIGN_CONFIG, PROMPTS_DIR
 
 logger = logging.getLogger(__name__)
 
 
-def format_stats(prob: float, entropy: float, std: float, n_obs: int) -> str:
+def format_prediction(prob: float, entropy: float, std: float, n_obs: int) -> str:
     """Compact one-liner stats string."""
     return f"prob={prob:.3f}, entropy={entropy:.4f}, std={std:.4f}, obs={n_obs}"
 
@@ -25,7 +26,7 @@ class QualificationDecision(BaseModel):
     reason: str = Field(description="Brief explanation for the decision")
 
 
-def qualify_profile_llm(profile_text: str, product_docs: str, campaign_objective: str) -> tuple[int, str]:
+def qualify_with_llm(profile_text: str, product_docs: str, campaign_objective: str) -> tuple[int, str]:
     """Call LLM to qualify a profile. Returns (label, reason).
 
     label: 1 = accept, 0 = reject.
@@ -75,8 +76,9 @@ class BayesianQualifier:
     Uses an sklearn Pipeline (PCA -> StandardScaler -> GPR) as a single
     serializable brick.  GPR provides an exact closed-form posterior
     (no Laplace approximation), avoiding the degenerate-0.5 problem
-    that plagues GPC on weakly separable embedding data.  Predictions
-    are clipped to [0, 1] for probability interpretation.
+    that plagues GPC on weakly separable embedding data.  Probabilities
+    are computed as P(f > 0.5) from the GP posterior, which naturally
+    incorporates uncertainty and stays in [0, 1] without clipping.
 
     BALD scores are computed via MC sampling from the GP posterior
     f ~ N(f_mean, f_std) for candidate selection; predictive entropy
@@ -114,7 +116,7 @@ class BayesianQualifier:
     @property
     def pipeline(self):
         """The fitted sklearn Pipeline — serializable via joblib."""
-        self._ensure_fitted()
+        self._fit_if_needed()
         return self._pipeline
 
     # ------------------------------------------------------------------
@@ -131,7 +133,7 @@ class BayesianQualifier:
     # Lazy refit with PCA CV
     # ------------------------------------------------------------------
 
-    def _ensure_fitted(self) -> bool:
+    def _fit_if_needed(self) -> bool:
         """Fit PCA + StandardScaler + GPR pipeline if dirty and feasible.  Returns True when model is usable."""
         if self._fitted:
             return True
@@ -183,10 +185,10 @@ class BayesianQualifier:
                      n, pca_step.n_components_,
                      100 * pca_step.explained_variance_ratio_.sum(),
                      best_lml)
-        self._save()
+        self._persist_pipeline()
         return True
 
-    def _save(self):
+    def _persist_pipeline(self):
         """Persist the fitted pipeline to disk (if save_path is set)."""
         if self._save_path is None or self._pipeline is None:
             return
@@ -198,40 +200,21 @@ class BayesianQualifier:
         logger.debug("Pipeline saved to %s", self._save_path)
 
     # ------------------------------------------------------------------
-    # Internal: predict with std via pipeline
-    # ------------------------------------------------------------------
-
-    def _predict_with_std(self, X: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        """Transform through PCA+scaler, then GPR predict with return_std.
-
-        Pipeline.predict doesn't forward return_std, so we split
-        transform (steps[:-1]) from predict (last step).
-        """
-        from sklearn.pipeline import Pipeline
-
-        X = np.asarray(X, dtype=np.float64)
-        if X.ndim == 1:
-            X = X.reshape(1, -1)
-        X_transformed = Pipeline(self._pipeline.steps[:-1]).transform(X)
-        return self._pipeline.named_steps['gpr'].predict(X_transformed, return_std=True)
-
-    # ------------------------------------------------------------------
     # Prediction
     # ------------------------------------------------------------------
 
     def predict(self, embedding: np.ndarray) -> tuple[float, float, float] | None:
         """Return (predictive_prob, predictive_entropy, posterior_std) for a single embedding.
 
-        Probability is GPR mean clipped to [0, 1].
-        posterior_std is the GP's uncertainty about the function value — high
-        when few training points are nearby (e.g. early training).
+        Probability is P(f > 0.5) from the GP posterior, which naturally
+        incorporates uncertainty and stays in [0, 1] without clipping.
         Returns None when the model cannot be fitted yet.
         """
-        if not self._ensure_fitted():
+        if not self._fit_if_needed():
             return None
 
-        mean, std = self._predict_with_std(embedding)
-        p = float(np.clip(mean[0], 0.0, 1.0))
+        mean, std = self._gpr_predict(self._pipeline,embedding)
+        p = float(norm.sf(0.5, loc=mean[0], scale=std[0]))
         entropy = float(_binary_entropy(p))
         return p, entropy, float(std[0])
 
@@ -239,26 +222,28 @@ class BayesianQualifier:
     # BALD acquisition via GP posterior
     # ------------------------------------------------------------------
 
-    def bald_scores(self, embeddings: np.ndarray) -> np.ndarray | None:
+    def compute_bald(self, embeddings: np.ndarray) -> np.ndarray | None:
         """BALD scores for (N, embedding_dim) candidates.
 
         BALD = H(E[p]) - E[H(p)], computed by MC-sampling from the
-        exact GP posterior f ~ N(mean, std) and clipping to [0, 1].
-        Higher BALD = model disagrees with itself most = most informative.
+        exact GP posterior f ~ N(mean, std) with a probit link
+        p = Φ(f - 0.5).  Higher BALD = model disagrees with itself
+        most = most informative to query.
 
         Returns None when the model cannot be fitted yet.
         """
-        if not self._ensure_fitted():
+        if not self._fit_if_needed():
             return None
 
-        f_mean, f_std = self._predict_with_std(embeddings)
+        f_mean, f_std = self._gpr_predict(self._pipeline,embeddings)
 
         # MC sample: (M, N) draws from GP posterior
         f_samples = (
             f_mean[np.newaxis, :]
             + f_std[np.newaxis, :] * self._rng.randn(self._n_mc_samples, len(f_mean))
         )
-        p_samples = np.clip(f_samples, 0.0, 1.0)
+        # Probit link: each sample gives a smooth probability via Φ(f - 0.5)
+        p_samples = norm.cdf(f_samples - 0.5)
 
         p_pred = p_samples.mean(axis=0)
         H_pred = _binary_entropy(p_pred)
@@ -269,84 +254,88 @@ class BayesianQualifier:
     # Predicted probabilities (exploitation)
     # ------------------------------------------------------------------
 
-    def predicted_probs(self, embeddings: np.ndarray) -> np.ndarray | None:
-        """Predicted probability p(qualified) for each candidate.
+    def predict_probs(self, embeddings: np.ndarray) -> np.ndarray | None:
+        """Predicted probability P(f > 0.5) for each candidate.
 
         Returns None when the model cannot be fitted yet.
         """
-        if not self._ensure_fitted():
+        if not self._fit_if_needed():
             return None
-        X = np.asarray(embeddings, dtype=np.float64)
-        if X.ndim == 1:
-            X = X.reshape(1, -1)
-        mean = self._pipeline.predict(X)
-        return np.clip(mean, 0.0, 1.0)
+        mean, std = self._gpr_predict(self._pipeline, embeddings)
+        return norm.sf(0.5, loc=mean, scale=std)
 
     # ------------------------------------------------------------------
     # Ranking for connect lane
     # ------------------------------------------------------------------
 
     def rank_profiles(self, profiles: list, pipeline=None) -> list:
-        """Rank QUALIFIED profiles by predicted acceptance probability (descending).
+        """Rank QUALIFIED profiles by P(f > 0.5) probability (descending).
 
-        If *pipeline* is provided, use it instead of the internal model.
+        If *pipeline* is provided (partner campaign model), use it instead
+        of the internal model.  Both paths extract mean+std from the GPR
+        step to compute proper posterior probabilities.
         Raises if no model is available or any profile lacks an embedding.
         """
         if not profiles:
             return []
 
-        if pipeline is not None:
-            return self._rank_with_pipeline(pipeline, profiles)
-
-        if not self._ensure_fitted():
-            raise RuntimeError(
-                f"GPR not fitted ({self.n_obs} observations) — cannot rank profiles"
-            )
+        pipe = self._get_pipeline(pipeline)
 
         scored = []
         for p in profiles:
-            emb = self._get_embedding(p)
+            emb = self._load_embedding(p)
             if emb is None:
+                if pipeline is not None:
+                    continue  # partner: skip missing embeddings
                 pid = p.get("public_identifier", "?")
                 raise RuntimeError(f"No embedding found for profile {pid}")
-            x = np.asarray(emb, dtype=np.float64).reshape(1, -1)
-            prob = float(np.clip(self._pipeline.predict(x)[0], 0.0, 1.0))
-            scored.append((prob, p))
-        scored.sort(key=lambda t: t[0], reverse=True)
-        return [p for _, p in scored]
-
-    def _rank_with_pipeline(self, pipeline, profiles: list) -> list:
-        """Rank profiles using an external pipeline. Profiles without embeddings are skipped."""
-        scored = []
-        for p in profiles:
-            emb = self._get_embedding(p)
-            if emb is None:
-                continue
             scored.append((p, emb))
 
         if not scored:
             return []
 
         X = np.array([emb for _, emb in scored], dtype=np.float64)
-        probs = np.clip(pipeline.predict(X), 0.0, 1.0)
+        mean, std = self._gpr_predict(pipe, X)
+        probs = norm.sf(0.5, loc=mean, scale=std)
 
         ranked = sorted(zip(probs, [p for p, _ in scored]), key=lambda t: t[0], reverse=True)
         return [p for _, p in ranked]
+
+    def _get_pipeline(self, external_pipeline=None):
+        """Return the pipeline to use for predictions — external or internal."""
+        if external_pipeline is not None:
+            return external_pipeline
+        if not self._fit_if_needed():
+            raise RuntimeError(
+                f"GPR not fitted ({self.n_obs} observations) — cannot rank profiles"
+            )
+        return self._pipeline
+
+    @staticmethod
+    def _gpr_predict(pipe, X: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """Transform through all steps except GPR, then predict with return_std."""
+        from sklearn.pipeline import Pipeline
+
+        X = np.asarray(X, dtype=np.float64)
+        if X.ndim == 1:
+            X = X.reshape(1, -1)
+        X_transformed = Pipeline(pipe.steps[:-1]).transform(X)
+        return pipe.named_steps['gpr'].predict(X_transformed, return_std=True)
 
     # ------------------------------------------------------------------
     # Explain
     # ------------------------------------------------------------------
 
-    def explain_profile(self, profile: dict) -> str:
+    def explain(self, profile: dict) -> str:
         """Human-readable compact scoring explanation."""
-        emb = self._get_embedding(profile)
+        emb = self._load_embedding(profile)
         if emb is None:
             return "No embedding found for profile"
         result = self.predict(emb)
         if result is None:
             return f"Model not fitted yet ({self.n_obs} observations, need both classes)"
         prob, entropy, std = result
-        return format_stats(prob, entropy, std, self.n_obs)
+        return format_prediction(prob, entropy, std, self.n_obs)
 
     # ------------------------------------------------------------------
     # Warm start
@@ -358,13 +347,13 @@ class BayesianQualifier:
         self._y = [int(y[i]) for i in range(len(y))]
         self._fitted = False
         if len(self._X) >= 2:
-            self._ensure_fitted()
+            self._fit_if_needed()
 
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
 
-    def _get_embedding(self, profile: dict) -> np.ndarray | None:
+    def _load_embedding(self, profile: dict) -> np.ndarray | None:
         """Look up profile embedding from DuckDB."""
         from linkedin.ml.embeddings import _connect
 

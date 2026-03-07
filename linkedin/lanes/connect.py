@@ -62,7 +62,7 @@ class ConnectLane:
 
         from linkedin.ml.embeddings import get_qualification_reason
         reason = get_qualification_reason(public_id)
-        stats = self.qualifier.explain_profile(candidate)
+        stats = self.qualifier.explain(candidate)
         tag = "[Partner] " if self._is_partner else ""
         logger.log(self._log_level, "%s%s (%s) — %s", tag, public_id, stats, reason or "")
 
