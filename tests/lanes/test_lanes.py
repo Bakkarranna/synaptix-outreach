@@ -6,11 +6,11 @@ from unittest.mock import patch, MagicMock
 from django.utils import timezone
 
 from linkedin.db.crm_profiles import (
-    get_profile,
     set_profile_state,
     create_enriched_lead,
     promote_lead_to_contact,
     count_qualified_profiles,
+    STATE_TO_STAGE,
 )
 from linkedin.lanes.connect import ConnectLane
 from linkedin.lanes.check_pending import CheckPendingLane
@@ -27,6 +27,16 @@ SAMPLE_PROFILE = {
     "headline": "Engineer",
     "positions": [{"company_name": "Acme"}],
 }
+
+
+def _assert_deal_state(session, public_id, expected_state: ProfileState):
+    """Assert the Deal for *public_id* is at *expected_state*."""
+    from crm.models import Deal
+    deal = Deal.objects.get(
+        lead__website=f"https://www.linkedin.com/in/{public_id}/",
+        owner=session.django_user,
+    )
+    assert deal.stage.name == STATE_TO_STAGE[expected_state]
 
 
 def _make_qualified(session, public_id="alice"):
@@ -112,8 +122,7 @@ class TestConnectLaneExecute:
         lane = self._setup(fake_session)
         lane.execute()
 
-        result = get_profile(fake_session, "alice")
-        assert result["state"] == ProfileState.PENDING.value
+        _assert_deal_state(fake_session, "alice", ProfileState.PENDING)
         assert ActionLog.objects.filter(action_type=ActionLog.ActionType.CONNECT).count() == 1
 
     @patch("linkedin.actions.connection_status.get_connection_status")
@@ -126,8 +135,7 @@ class TestConnectLaneExecute:
         lane = self._setup(fake_session)
         lane.execute()
 
-        result = get_profile(fake_session, "alice")
-        assert result["state"] == ProfileState.CONNECTED.value
+        _assert_deal_state(fake_session, "alice", ProfileState.CONNECTED)
 
     @patch("linkedin.actions.connection_status.get_connection_status")
     def test_execute_detects_already_pending(
@@ -137,8 +145,7 @@ class TestConnectLaneExecute:
         lane = self._setup(fake_session)
         lane.execute()
 
-        result = get_profile(fake_session, "alice")
-        assert result["state"] == ProfileState.PENDING.value
+        _assert_deal_state(fake_session, "alice", ProfileState.PENDING)
 
     @patch("linkedin.actions.connection_status.get_connection_status")
     def test_execute_handles_rate_limit_exception(
@@ -161,8 +168,7 @@ class TestConnectLaneExecute:
         lane = self._setup(fake_session)
         lane.execute()
 
-        result = get_profile(fake_session, "alice")
-        assert result["state"] == ProfileState.FAILED.value
+        _assert_deal_state(fake_session, "alice", ProfileState.FAILED)
 
 
 # ── CheckPendingLane tests ──────────────────────────────────────
@@ -229,8 +235,7 @@ class TestCheckPendingLaneExecute:
         lane = self._setup(fake_session)
         lane.execute()
 
-        result = get_profile(fake_session, "alice")
-        assert result["state"] == ProfileState.CONNECTED.value
+        _assert_deal_state(fake_session, "alice", ProfileState.CONNECTED)
 
     @patch("linkedin.actions.connection_status.get_connection_status")
     def test_execute_stays_pending(
@@ -240,8 +245,7 @@ class TestCheckPendingLaneExecute:
         lane = self._setup(fake_session)
         lane.execute()
 
-        result = get_profile(fake_session, "alice")
-        assert result["state"] == ProfileState.PENDING.value
+        _assert_deal_state(fake_session, "alice", ProfileState.PENDING)
 
     @patch("linkedin.actions.connection_status.get_connection_status")
     def test_execute_doubles_backoff_when_still_pending(
@@ -331,8 +335,7 @@ class TestFollowUpLaneExecute:
         lane = self._setup(fake_session)
         lane.execute()
 
-        result = get_profile(fake_session, "alice")
-        assert result["state"] == ProfileState.COMPLETED.value
+        _assert_deal_state(fake_session, "alice", ProfileState.COMPLETED)
         assert ActionLog.objects.filter(action_type=ActionLog.ActionType.FOLLOW_UP).count() == 1
 
     @patch("linkedin.actions.message.send_follow_up_message")
@@ -361,8 +364,7 @@ class TestFollowUpLaneExecute:
         lane = self._setup(fake_session)
         lane.execute()
 
-        result = get_profile(fake_session, "alice")
-        assert result["state"] == ProfileState.CONNECTED.value
+        _assert_deal_state(fake_session, "alice", ProfileState.CONNECTED)
 
     @patch("linkedin.actions.message.send_follow_up_message")
     def test_execute_skipped_message_no_chat_saved(

@@ -19,7 +19,7 @@ import json
 import logging
 import uuid
 from datetime import date, timedelta
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 from urllib.parse import quote, urlparse, unquote
 
 from django.core.files.base import ContentFile
@@ -40,9 +40,6 @@ STATE_TO_STAGE = {
     ProfileState.COMPLETED: "Completed",
     ProfileState.FAILED: "Failed",
 }
-
-# Reverse lookup: stage name -> ProfileState value
-_STAGE_TO_STATE = {v: k.value for k, v in STATE_TO_STAGE.items()}
 
 
 def _make_ticket() -> str:
@@ -71,11 +68,6 @@ def _parse_next_step(deal) -> dict:
         return json.loads(deal.next_step)
     except (json.JSONDecodeError, TypeError):
         return {}
-
-
-def _set_next_step(deal, data: dict):
-    """Serialize dict to JSON string and assign to deal.next_step."""
-    deal.next_step = json.dumps(data)
 
 
 def _lead_profile(lead) -> Optional[dict]:
@@ -134,8 +126,8 @@ def create_enriched_lead(session, url: str, profile: Dict[str, Any], data: Optio
 
 
 def disqualify_lead(session, public_id: str, reason: str = ""):
-    """Set Lead.disqualified = True and delete any existing Deal."""
-    from crm.models import Lead, Deal
+    """Set Lead.disqualified = True."""
+    from crm.models import Lead
 
     clean_url = public_id_to_url(public_id)
     lead = Lead.objects.filter(website=clean_url).first()
@@ -144,11 +136,7 @@ def disqualify_lead(session, public_id: str, reason: str = ""):
         return
 
     lead.disqualified = True
-    if reason:
-        lead.description = lead.description or ""
     lead.save()
-
-    Deal.objects.filter(lead=lead, owner=session.django_user).delete()
 
     color_label = colored("DISQUALIFIED", "red", attrs=["bold"])
     suffix = f" ({reason})" if reason else ""
@@ -246,14 +234,6 @@ def count_leads_for_qualification(session) -> int:
     ).count()
 
 
-def pipeline_needs_refill(session, min_leads: int) -> bool:
-    """Return True when the qualification pipeline is running low and needs more leads.
-
-    Override this function to change the refill strategy.
-    """
-    return count_leads_for_qualification(session) < min_leads
-
-
 # ── Deal-level operations (post-qualification) ──
 
 
@@ -300,8 +280,8 @@ def set_profile_state(
     deal.change_stage_data(date.today())
     deal.next_step_date = date.today()
 
-    # Clear backoff metadata on any transition to or from PENDING
-    if old_is_pending or new_is_pending:
+    # Clear backoff metadata on transitions into or out of PENDING (not same-state)
+    if old_is_pending != new_is_pending:
         deal.next_step = ""
 
     if reason:
@@ -342,36 +322,6 @@ def set_profile_state(
         logger.debug("%s %s (unchanged)%s", public_identifier, label, suffix)
 
 
-def get_profile(session: "AccountSession", public_identifier: str) -> Optional[dict]:
-    """
-    Query Lead + Deal and return a dict with 'state' and 'profile' keys,
-    or None if the Lead doesn't exist.
-    """
-    from crm.models import Lead, Deal
-
-    clean_url = public_id_to_url(public_identifier)
-    lead = Lead.objects.filter(website=clean_url).first()
-    if not lead:
-        return None
-
-    deal = Deal.objects.filter(lead=lead).first()
-
-    # Derive state from Deal stage if present, otherwise from Lead attributes
-    if deal and deal.stage:
-        state = _STAGE_TO_STATE.get(deal.stage.name, ProfileState.NEW.value)
-    elif getattr(lead, 'disqualified', False):
-        state = "disqualified"
-    elif lead.description:
-        state = "enriched"
-    else:
-        state = "url_only"
-
-    return {
-        "state": state,
-        "profile": _lead_profile(lead),
-    }
-
-
 def get_qualified_profiles(session) -> list:
     """All Deals at 'New' stage for this user (qualified, ready for connect)."""
     from crm.models import Deal
@@ -394,10 +344,13 @@ def count_qualified_profiles(session) -> int:
     from crm.models import Deal
 
     stage = _get_stage(ProfileState.NEW, session)
-    return Deal.objects.filter(
+    qs = Deal.objects.filter(
         stage=stage,
         owner=session.django_user,
-    ).count()
+    )
+    if not getattr(session.campaign, "is_partner", False):
+        qs = qs.filter(lead__disqualified=False)
+    return qs.count()
 
 
 def get_pending_profiles(session, recheck_after_hours: float) -> list:
@@ -473,30 +426,6 @@ def get_connected_profiles(session) -> list:
     logger.debug("get_connected_profiles: %d CONNECTED deals", len(deals))
 
     return [_deal_to_profile_dict(d) for d in deals if d.lead and d.lead.website]
-
-
-def get_updated_at_map(session: "AccountSession", public_identifiers: List[str]) -> dict:
-    """
-    Return a dict mapping public_identifier -> update_date for existing Leads.
-    """
-    from crm.models import Lead
-
-    if not public_identifiers:
-        return {}
-
-    urls = [public_id_to_url(pid) for pid in public_identifiers]
-
-    results = Lead.objects.filter(
-        website__in=urls,
-    ).values_list("website", "update_date")
-
-    result_map = {
-        url_to_public_id(url): updated
-        for url, updated in results
-    }
-
-    logger.debug("Retrieved updated_at for %d profiles from DB", len(result_map))
-    return result_map
 
 
 # ── Partner campaign helpers ──
@@ -736,7 +665,3 @@ def save_chat_message(session: "AccountSession", public_identifier: str, content
     logger.debug("Saved chat message for %s", public_identifier)
 
 
-def debug_profile_preview(enriched):
-    pretty = json.dumps(enriched, indent=2, ensure_ascii=False, default=str)
-    preview_lines = pretty.splitlines()[:3]
-    logger.debug("=== ENRICHED PROFILE PREVIEW ===\n%s\n...", "\n".join(preview_lines))

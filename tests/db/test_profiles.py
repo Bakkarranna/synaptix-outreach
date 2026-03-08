@@ -9,8 +9,6 @@ from linkedin.db.crm_profiles import (
     url_to_public_id,
     public_id_to_url,
     set_profile_state,
-    get_profile,
-    get_updated_at_map,
     create_enriched_lead,
     disqualify_lead,
     promote_lead_to_contact,
@@ -96,15 +94,15 @@ class TestLeadExists:
 @pytest.mark.django_db
 class TestCreateEnrichedLead:
     def test_creates_lead_with_profile(self, fake_session):
+        from crm.models import Lead
         pk = create_enriched_lead(
             fake_session,
             "https://www.linkedin.com/in/alice/",
             SAMPLE_PROFILE,
         )
         assert pk is not None
-        row = get_profile(fake_session, "alice")
-        assert row is not None
-        assert row["profile"]["first_name"] == "Alice"
+        lead = Lead.objects.get(website="https://www.linkedin.com/in/alice/")
+        assert lead.first_name == "Alice"
 
     def test_creates_company(self, fake_session):
         from crm.models import Lead
@@ -174,15 +172,16 @@ class TestDisqualifyLead:
         lead = Lead.objects.get(website="https://www.linkedin.com/in/alice/")
         assert lead.disqualified is True
 
-    def test_disqualified_state_in_get_profile(self, fake_session):
+    def test_disqualified_flag_set(self, fake_session):
+        from crm.models import Lead
         create_enriched_lead(
             fake_session,
             "https://www.linkedin.com/in/alice/",
             SAMPLE_PROFILE,
         )
         disqualify_lead(fake_session, "alice")
-        row = get_profile(fake_session, "alice")
-        assert row["state"] == "disqualified"
+        lead = Lead.objects.get(website="https://www.linkedin.com/in/alice/")
+        assert lead.disqualified is True
 
 
 @pytest.mark.django_db
@@ -272,8 +271,9 @@ class TestGetLeadsForQualification:
 
 
 @pytest.mark.django_db
-class TestSetAndGetProfile:
+class TestSetProfileState:
     def test_set_state_on_deal(self, fake_session):
+        from crm.models import Deal
         create_enriched_lead(
             fake_session,
             "https://www.linkedin.com/in/alice/",
@@ -281,9 +281,8 @@ class TestSetAndGetProfile:
         )
         promote_lead_to_contact(fake_session, "alice")
         set_profile_state(fake_session, "alice", ProfileState.PENDING.value)
-        row = get_profile(fake_session, "alice")
-        assert row is not None
-        assert row["state"] == ProfileState.PENDING.value
+        deal = Deal.objects.get(lead__website="https://www.linkedin.com/in/alice/")
+        assert deal.stage.name == "Pending"
 
     def test_set_state_requires_deal(self, fake_session):
         create_enriched_lead(
@@ -293,26 +292,6 @@ class TestSetAndGetProfile:
         )
         with pytest.raises(ValueError, match="No Deal"):
             set_profile_state(fake_session, "alice", ProfileState.NEW.value)
-
-    def test_get_nonexistent_returns_none(self, fake_session):
-        assert get_profile(fake_session, "nobody") is None
-
-
-@pytest.mark.django_db
-class TestGetUpdatedAtMap:
-    def test_returns_timestamps_for_existing(self, fake_session):
-        create_enriched_lead(
-            fake_session,
-            "https://www.linkedin.com/in/alice/",
-            SAMPLE_PROFILE,
-        )
-        result = get_updated_at_map(fake_session, ["alice", "nobody"])
-        assert len(result) == 1
-        assert "alice" in result
-
-    def test_empty_input_returns_empty_dict(self, fake_session):
-        result = get_updated_at_map(fake_session, [])
-        assert result == {}
 
 
 # ── get_qualified_profiles (Deals at "New" stage) ──

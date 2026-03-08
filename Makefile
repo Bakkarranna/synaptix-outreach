@@ -18,7 +18,7 @@ run: ## run the daemon
 	python manage.py
 
 test: ## run the test suite
-	pytest
+	.venv/bin/pytest
 
 admin: ## start the Django Admin web server
 	@echo ""

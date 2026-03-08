@@ -8,7 +8,7 @@ from termcolor import colored
 
 from linkedin.conf import CAMPAIGN_CONFIG, _LEGACY_MODEL_PATH, model_path_for_campaign
 from linkedin.diagnostics import failure_diagnostics
-from linkedin.db.crm_profiles import count_leads_for_qualification, pipeline_needs_refill, seed_partner_deals
+from linkedin.db.crm_profiles import count_leads_for_qualification, seed_partner_deals
 from linkedin.lanes.check_pending import CheckPendingLane
 from linkedin.lanes.connect import ConnectLane
 from linkedin.lanes.follow_up import FollowUpLane
@@ -204,7 +204,7 @@ def run_daemon(session):
             ql = qualify_lanes[non_partner.pk]
             sl = search_lanes[non_partner.pk]
 
-            if pipeline_needs_refill(session, min_qualifiable_leads):
+            if count_leads_for_qualification(session) < min_qualifiable_leads:
                 if sl.can_execute():
                     with failure_diagnostics(session):
                         sl.execute()
