@@ -52,10 +52,15 @@ class QualifyLane:
     def _embed_next_profile(self) -> str | None:
         """Embed one lead that lacks an embedding.
 
-        Returns the ``public_id`` of the embedded profile, or ``None``.
+        For url-only leads (no description), attempts lazy enrichment via
+        Voyager API first.  Returns the ``public_id`` of the embedded
+        profile, or ``None``.
         """
-        from linkedin.db.crm_profiles import get_leads_for_qualification
-        from linkedin.ml.embeddings import embed_profile
+        from linkedin.db.crm_profiles import (
+            get_leads_for_qualification,
+            ensure_lead_enriched,
+            ensure_profile_embedded,
+        )
         from linkedin.models import ProfileEmbedding
 
         leads = get_leads_for_qualification(self.session)
@@ -70,9 +75,13 @@ class QualifyLane:
                 continue
 
             public_id = lead_data["public_identifier"]
-            profile_data = lead_data.get("profile") or {}
 
-            if embed_profile(lead_id, public_id, profile_data):
+            # Lazy enrich url-only leads before embedding
+            if not lead_data.get("profile"):
+                if not ensure_lead_enriched(self.session, lead_id, public_id):
+                    continue
+
+            if ensure_profile_embedded(lead_id, public_id):
                 logger.info("%s %s", public_id, colored("EMBEDDED", "yellow"))
                 return public_id
 
@@ -161,7 +170,7 @@ class QualifyLane:
             )
 
         # LLM qualification (cold start or uncertain)
-        profile_text = self._get_profile_text(lead_id)
+        profile_text = self._get_profile_text(lead_id, public_id)
         if not profile_text:
             logger.warning("No profile text for lead %d — disqualifying", lead_id)
             self._record_decision(lead_id, public_id, embedding, 0, "no profile text available")
@@ -201,25 +210,19 @@ class QualifyLane:
             color_label = colored("QUALIFIED", "green", attrs=["bold"])
             logger.info("%s %s: %s", public_id, color_label, reason)
 
-    def _get_profile_text(self, lead_id: int) -> str | None:
-        """Load profile JSON from CRM Lead and build text."""
-        import json
+    def _get_profile_text(self, lead_id: int, public_id: str) -> str | None:
+        """Load profile JSON from CRM Lead and build text.
 
-        from crm.models import Lead
-
+        If the lead has no description, attempts lazy enrichment first.
+        """
+        from linkedin.db.crm_profiles import ensure_lead_enriched, lead_profile_by_id
         from linkedin.ml.profile_text import build_profile_text
 
-        try:
-            lead = Lead.objects.get(pk=lead_id)
-        except Lead.DoesNotExist:
-            return None
+        # Try lazy enrichment if description is missing
+        ensure_lead_enriched(self.session, lead_id, public_id)
 
-        if not lead.description:
-            return None
-
-        try:
-            profile_data = json.loads(lead.description)
-        except (json.JSONDecodeError, TypeError):
+        profile_data = lead_profile_by_id(lead_id)
+        if not profile_data:
             return None
 
         return build_profile_text({"profile": profile_data})

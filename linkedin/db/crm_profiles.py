@@ -213,17 +213,13 @@ def promote_lead_to_contact(session, public_id: str):
 
 
 def get_leads_for_qualification(session) -> list:
-    """Leads with description, not disqualified, no contact FK."""
+    """Leads not disqualified and without a contact (includes url-only leads)."""
     from crm.models import Lead
 
     leads = Lead.objects.filter(
         owner=session.django_user,
         disqualified=False,
         contact__isnull=True,
-    ).exclude(
-        description__isnull=True,
-    ).exclude(
-        description="",
     )
 
     result = []
@@ -240,17 +236,13 @@ def get_leads_for_qualification(session) -> list:
 
 
 def count_leads_for_qualification(session) -> int:
-    """Count of leads eligible for qualification."""
+    """Count of leads eligible for qualification (includes url-only leads)."""
     from crm.models import Lead
 
     return Lead.objects.filter(
         owner=session.django_user,
         disqualified=False,
         contact__isnull=True,
-    ).exclude(
-        description__isnull=True,
-    ).exclude(
-        description="",
     ).count()
 
 
@@ -564,7 +556,81 @@ def seed_partner_deals(session) -> int:
     return created
 
 
+# ── Lazy enrichment / embedding helpers ──
+
+
+def ensure_lead_enriched(session, lead_id: int, public_id: str) -> bool:
+    """Lazily enrich a url-only Lead via Voyager API.
+
+    No-op (returns True) when the lead already has a description.
+    Returns False when enrichment is not possible (API error, private profile,
+    or missing lead).
+    """
+    from crm.models import Lead
+
+    lead = Lead.objects.filter(pk=lead_id).first()
+    if not lead:
+        return False
+    if lead.description:
+        return True
+
+    profile, data = _fetch_profile(session, public_id)
+    if not profile:
+        return False
+
+    _update_lead_fields(lead, profile)
+    _ensure_company(lead, profile)
+    if data:
+        _attach_raw_data(lead, public_id, data)
+
+    logger.info("Lazy-enriched %s (lead_id=%d)", public_id, lead_id)
+    return True
+
+
+def ensure_profile_embedded(lead_id: int, public_id: str) -> bool:
+    """Lazily embed a Lead that has no ProfileEmbedding row.
+
+    No-op (returns True) when the embedding already exists.
+    Returns False when the lead has no description to embed.
+    """
+    from linkedin.models import ProfileEmbedding
+
+    if ProfileEmbedding.objects.filter(lead_id=lead_id).exists():
+        return True
+
+    profile_data = lead_profile_by_id(lead_id)
+    if not profile_data:
+        return False
+
+    from linkedin.ml.embeddings import embed_profile
+
+    return embed_profile(lead_id, public_id, profile_data)
+
+
 # ── Internal helpers ──
+
+
+def _fetch_profile(session, public_id: str) -> tuple[dict, Any] | tuple[None, None]:
+    """Call Voyager API for a single profile. Returns (profile, raw_data) or (None, None)."""
+    from linkedin.api.client import PlaywrightLinkedinAPI
+
+    session.ensure_browser()
+    api = PlaywrightLinkedinAPI(session=session)
+    try:
+        return api.get_profile(public_identifier=public_id)
+    except Exception:
+        logger.warning("Voyager API failed for %s", public_id)
+        return None, None
+
+
+def lead_profile_by_id(lead_id: int) -> Optional[dict]:
+    """Load and parse the profile JSON stored on a Lead, looked up by PK."""
+    from crm.models import Lead
+
+    lead = Lead.objects.filter(pk=lead_id).first()
+    if not lead:
+        return None
+    return _lead_profile(lead)
 
 
 def _update_lead_fields(lead, profile: Dict[str, Any]):
