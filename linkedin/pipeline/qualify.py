@@ -8,7 +8,6 @@ import numpy as np
 from django.utils import timezone
 from termcolor import colored
 
-from linkedin.conf import CAMPAIGN_CONFIG
 from linkedin.ml.qualifier import BayesianQualifier
 
 logger = logging.getLogger(__name__)
@@ -59,11 +58,6 @@ def qualify_one(session, qualifier: BayesianQualifier) -> str | None:
 
     logger.info(colored("\u25b6 qualify", "blue", attrs=["bold"]))
 
-    cfg = CAMPAIGN_CONFIG
-    entropy_threshold = cfg["qualification_entropy_threshold"]
-    max_auto_std = cfg["qualification_max_auto_std"]
-    min_accept_prob = cfg["qualification_min_auto_accept_prob"]
-
     # Balance-driven candidate selection
     selection_score = None
     if len(candidates) == 1:
@@ -96,21 +90,11 @@ def qualify_one(session, qualifier: BayesianQualifier) -> str | None:
 
     if result is not None:
         pred_prob, entropy, std = result
-        if entropy < entropy_threshold and std < max_auto_std:
-            label = 1 if pred_prob >= min_accept_prob else 0
-            decision = "Auto-accepted" if label == 1 else "Auto-rejected"
-            reason = (
-                f"{decision} by GP model ({qualifier.n_obs} labels). "
-                f"prob={pred_prob:.1%}, std={std:.4f}, entropy={entropy:.4f}."
-            )
-            _record_decision(session, qualifier, lead_id, public_id, embedding, label, reason)
-            return public_id
-
         stats = format_prediction(pred_prob, entropy, std, qualifier.n_obs)
         sel = f", {selection_score[0]}={selection_score[1]:.4f}" if selection_score else ""
-        logger.debug("%s uncertain (%s%s) \u2014 querying LLM", public_id, stats, sel)
+        logger.debug("%s (%s%s) — querying LLM", public_id, stats, sel)
     else:
-        logger.debug("%s GPC not fitted (%d obs) \u2014 querying LLM", public_id, qualifier.n_obs)
+        logger.debug("%s GP not fitted (%d obs) — querying LLM", public_id, qualifier.n_obs)
 
     profile_text = _get_profile_text(session, lead_id, public_id)
     if not profile_text:

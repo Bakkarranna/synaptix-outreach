@@ -84,39 +84,62 @@ class TestConnectLaneExecute:
         scorer.rank_profiles = lambda profiles, **kw: profiles
         return ConnectLane(fake_session, scorer)
 
+    def _candidate(self):
+        return {"public_identifier": "alice", "url": "https://www.linkedin.com/in/alice/", "profile": SAMPLE_PROFILE}
+
+    @patch("linkedin.lanes.connect.get_candidate")
     @patch("linkedin.actions.connect.send_connection_request")
     @patch("linkedin.actions.connection_status.get_connection_status")
-    def test_sends_connection_and_records(self, mock_status, mock_send, fake_session):
+    def test_sends_connection_and_records(self, mock_status, mock_send, mock_get, fake_session):
+        _make_qualified(fake_session)
+        mock_get.return_value = self._candidate()
         mock_status.return_value = ProfileState.NEW
         mock_send.return_value = ProfileState.PENDING
-        self._lane(fake_session).execute()
+        lane = ConnectLane(fake_session, BayesianQualifier(seed=42))
+        lane.execute()
         _assert_deal_state(fake_session, "alice", ProfileState.PENDING)
         assert ActionLog.objects.filter(action_type=ActionLog.ActionType.CONNECT).count() == 1
 
+    @patch("linkedin.lanes.connect.get_candidate")
     @patch("linkedin.actions.connection_status.get_connection_status")
-    def test_marks_preexisting_connected(self, mock_status, fake_session):
+    def test_marks_preexisting_connected(self, mock_status, mock_get, fake_session):
+        _make_qualified(fake_session)
+        mock_get.return_value = self._candidate()
         mock_status.return_value = ProfileState.CONNECTED
-        self._lane(fake_session).execute()
+        lane = ConnectLane(fake_session, BayesianQualifier(seed=42))
+        lane.execute()
         _assert_deal_state(fake_session, "alice", ProfileState.CONNECTED)
 
+    @patch("linkedin.lanes.connect.get_candidate")
     @patch("linkedin.actions.connection_status.get_connection_status")
-    def test_detects_already_pending(self, mock_status, fake_session):
+    def test_detects_already_pending(self, mock_status, mock_get, fake_session):
+        _make_qualified(fake_session)
+        mock_get.return_value = self._candidate()
         mock_status.return_value = ProfileState.PENDING
-        self._lane(fake_session).execute()
+        lane = ConnectLane(fake_session, BayesianQualifier(seed=42))
+        lane.execute()
         _assert_deal_state(fake_session, "alice", ProfileState.PENDING)
 
+    @patch("linkedin.lanes.connect.get_candidate")
     @patch("linkedin.actions.connection_status.get_connection_status")
-    def test_handles_rate_limit(self, mock_status, fake_session):
+    def test_handles_rate_limit(self, mock_status, mock_get, fake_session):
+        _make_qualified(fake_session)
+        mock_get.return_value = self._candidate()
         mock_status.side_effect = ReachedConnectionLimit("weekly limit")
-        self._lane(fake_session).execute()
+        lane = ConnectLane(fake_session, BayesianQualifier(seed=42))
+        lane.execute()
         assert ActionLog.ActionType.CONNECT in fake_session.linkedin_profile._exhausted
 
+    @patch("linkedin.lanes.connect.get_candidate")
     @patch("linkedin.actions.connect.send_connection_request")
     @patch("linkedin.actions.connection_status.get_connection_status")
-    def test_handles_skip_profile(self, mock_status, mock_send, fake_session):
+    def test_handles_skip_profile(self, mock_status, mock_send, mock_get, fake_session):
+        _make_qualified(fake_session)
+        mock_get.return_value = self._candidate()
         mock_status.return_value = ProfileState.NEW
         mock_send.side_effect = SkipProfile("bad profile")
-        self._lane(fake_session).execute()
+        lane = ConnectLane(fake_session, BayesianQualifier(seed=42))
+        lane.execute()
         _assert_deal_state(fake_session, "alice", ProfileState.FAILED)
 
 

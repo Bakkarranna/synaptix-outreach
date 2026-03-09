@@ -9,7 +9,7 @@ import logging
 
 from termcolor import colored
 
-from linkedin.conf import CAMPAIGN_CONFIG, PARTNER_LOG_LEVEL
+from linkedin.conf import PARTNER_LOG_LEVEL
 from linkedin.db.crm_profiles import set_profile_state
 from linkedin.ml.qualifier import BayesianQualifier
 from linkedin.models import ActionLog
@@ -25,7 +25,6 @@ class ConnectLane:
         self.session = session
         self.qualifier = qualifier
         self.pipeline = pipeline
-        self._cfg = CAMPAIGN_CONFIG
 
     @property
     def _is_partner(self):
@@ -41,7 +40,6 @@ class ConnectLane:
     def execute(self) -> str | None:
         candidate = get_candidate(
             self.session, self.qualifier,
-            min_prob=self._cfg["min_connect_prob"],
             pipeline=self.pipeline,
             is_partner=self._is_partner,
         )

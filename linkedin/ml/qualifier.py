@@ -66,6 +66,11 @@ def _binary_entropy(p):
     return -p * np.log(p) - (1.0 - p) * np.log(1.0 - p)
 
 
+def _prob_above_half(mean, std):
+    """P(f > 0.5) from GP posterior."""
+    return norm.sf(0.5, loc=mean, scale=std)
+
+
 # ---------------------------------------------------------------------------
 # BayesianQualifier  (GP Regression backend)
 # ---------------------------------------------------------------------------
@@ -214,7 +219,7 @@ class BayesianQualifier:
             return None
 
         mean, std = self._gpr_predict(self._pipeline,embedding)
-        p = float(norm.sf(0.5, loc=mean[0], scale=std[0]))
+        p = float(_prob_above_half(mean[0], std[0]))
         entropy = float(_binary_entropy(p))
         return p, entropy, float(std[0])
 
@@ -262,7 +267,7 @@ class BayesianQualifier:
         if not self._fit_if_needed():
             return None
         mean, std = self._gpr_predict(self._pipeline, embeddings)
-        return norm.sf(0.5, loc=mean, scale=std)
+        return _prob_above_half(mean, std)
 
     # ------------------------------------------------------------------
     # Ranking for connect lane
@@ -298,7 +303,7 @@ class BayesianQualifier:
 
         X = np.array([emb for _, emb in scored], dtype=np.float64)
         mean, std = self._gpr_predict(pipe, X)
-        probs = norm.sf(0.5, loc=mean, scale=std)
+        probs = _prob_above_half(mean, std)
 
         ranked = sorted(zip(probs, [p for p, _ in scored]), key=lambda t: t[0], reverse=True)
         return [p for _, p in ranked]

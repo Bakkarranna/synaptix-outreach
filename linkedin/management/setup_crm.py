@@ -17,11 +17,12 @@ DEPARTMENT_NAME = "LinkedIn Outreach"
 # Stages map to ProfileState enum values (post-qualification pipeline).
 # (index, name, default, success_stage)
 STAGES = [
-    (1, "New", True, False),
-    (2, "Pending", False, False),
-    (3, "Connected", False, False),
-    (4, "Completed", False, True),
-    (5, "Failed", False, False),
+    (1, "Qualified", True, False),
+    (2, "Ready to Connect", False, False),
+    (3, "Pending", False, False),
+    (4, "Connected", False, False),
+    (5, "Completed", False, True),
+    (6, "Failed", False, False),
 ]
 
 CLOSING_REASONS = [

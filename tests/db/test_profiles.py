@@ -196,7 +196,7 @@ class TestPromoteLeadToContact:
         contact, deal = promote_lead_to_contact(fake_session, "alice")
         assert contact is not None
         assert deal is not None
-        assert deal.stage.name == "New"
+        assert deal.stage.name == "Qualified"
         assert Contact.objects.count() == 1
         assert Deal.objects.count() == 1
 

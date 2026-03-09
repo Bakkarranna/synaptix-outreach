@@ -13,7 +13,7 @@ Pre-Deal states are implicit (derived from Lead attributes):
   Disqualified: Lead.disqualified = True
   Qualified:    Lead.contact is not null
 
-Deal stages (post-qualification): New, Pending, Connected, Completed, Failed
+Deal stages (post-qualification): Qualified, Ready to Connect, Pending, Connected, Completed, Failed
 """
 import json
 import logging
@@ -34,7 +34,8 @@ logger = logging.getLogger(__name__)
 
 # Maps ProfileState enum values to Stage names in the CRM.
 STATE_TO_STAGE = {
-    ProfileState.NEW: "New",
+    ProfileState.NEW: "Qualified",
+    ProfileState.READY_TO_CONNECT: "Ready to Connect",
     ProfileState.PENDING: "Pending",
     ProfileState.CONNECTED: "Connected",
     ProfileState.COMPLETED: "Completed",
@@ -149,7 +150,7 @@ def disqualify_lead(session, public_id: str, reason: str = ""):
 
 @transaction.atomic
 def promote_lead_to_contact(session, public_id: str):
-    """Create Contact from Lead + Deal at 'New' stage.
+    """Create Contact from Lead + Deal at 'Qualified' stage.
 
     Returns (contact, deal). Raises ValueError if Lead has no Company.
     """
@@ -186,7 +187,7 @@ def promote_lead_to_contact(session, public_id: str):
 
     dept = session.campaign.department
 
-    # Create Deal at "New" stage
+    # Create Deal at "Qualified" stage
     deal = Deal.objects.create(
         name=f"LinkedIn: {public_id}",
         lead=lead,
@@ -263,7 +264,7 @@ def set_profile_state(
 ):
     """
     Move the Deal linked to this Lead to the corresponding Stage.
-    Only handles Deal states (NEW, PENDING, CONNECTED, COMPLETED, FAILED).
+    Only handles Deal states (NEW, READY_TO_CONNECT, PENDING, CONNECTED, COMPLETED, FAILED).
     Raises ValueError if no Deal exists.
     """
     from crm.models import Deal, ClosingReason
@@ -314,6 +315,7 @@ def set_profile_state(
 
     _STATE_LOG_STYLE = {
         ProfileState.NEW: ("NEW", "green", []),
+        ProfileState.READY_TO_CONNECT: ("READY_TO_CONNECT", "yellow", ["bold"]),
         ProfileState.PENDING: ("PENDING", "cyan", []),
         ProfileState.CONNECTED: ("CONNECTED", "green", ["bold"]),
         ProfileState.COMPLETED: ("COMPLETED", "green", ["bold"]),
@@ -328,7 +330,7 @@ def set_profile_state(
 
 
 def get_qualified_profiles(session) -> list:
-    """All Deals at 'New' stage for this user (qualified, ready for connect)."""
+    """All Deals at 'Qualified' stage for this user."""
     from crm.models import Deal
 
     stage = _get_stage(ProfileState.NEW, session)
@@ -341,11 +343,11 @@ def get_qualified_profiles(session) -> list:
     if not getattr(session.campaign, "is_partner", False):
         qs = qs.filter(lead__disqualified=False)
 
-    return [_deal_to_profile_dict(d) for d in qs if d.lead and d.lead.website]
+    return [_deal_to_profile_dict(d) for d in qs]
 
 
 def count_qualified_profiles(session) -> int:
-    """Count Deals at 'New' stage."""
+    """Count Deals at 'Qualified' stage."""
     from crm.models import Deal
 
     stage = _get_stage(ProfileState.NEW, session)
@@ -356,6 +358,20 @@ def count_qualified_profiles(session) -> int:
     if not getattr(session.campaign, "is_partner", False):
         qs = qs.filter(lead__disqualified=False)
     return qs.count()
+
+
+def get_ready_to_connect_profiles(session) -> list:
+    """All Deals at 'Ready to Connect' stage for this user."""
+    from crm.models import Deal
+
+    stage = _get_stage(ProfileState.READY_TO_CONNECT, session)
+    qs = Deal.objects.filter(
+        stage=stage,
+        owner=session.django_user,
+        lead__disqualified=False,
+    ).select_related("lead")
+
+    return [_deal_to_profile_dict(d) for d in qs]
 
 
 def get_pending_profiles(session, recheck_after_hours: float) -> list:
@@ -414,7 +430,7 @@ def get_pending_profiles(session, recheck_after_hours: float) -> list:
             len(ready), len(all_deals),
         )
 
-    return [_deal_to_profile_dict(d) for d in ready if d.lead and d.lead.website]
+    return [_deal_to_profile_dict(d) for d in ready]
 
 
 def get_connected_profiles(session) -> list:
@@ -430,7 +446,7 @@ def get_connected_profiles(session) -> list:
     )
     logger.debug("get_connected_profiles: %d CONNECTED deals", len(deals))
 
-    return [_deal_to_profile_dict(d) for d in deals if d.lead and d.lead.website]
+    return [_deal_to_profile_dict(d) for d in deals]
 
 
 # ── Partner campaign helpers ──
@@ -456,7 +472,7 @@ def seed_partner_deals(session) -> int:
         return 0
 
     from crm.models import Stage
-    stage = Stage.objects.filter(name="New", department=dept).first()
+    stage = Stage.objects.filter(name="Qualified", department=dept).first()
     if stage is None:
         return 0
 

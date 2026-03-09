@@ -50,11 +50,8 @@ CAMPAIGN_CONFIG = {
     "check_pending_recheck_after_hours": 24,
     "enrich_min_interval": 1,
     "min_action_interval": 120,
-    "qualification_entropy_threshold": 0.3,
-    "qualification_max_auto_std": 0.05,
-    "qualification_min_auto_accept_prob": 0.9,
     "qualification_n_mc_samples": 100,
-    "min_connect_prob": 0.9,
+    "min_ready_to_connect_prob": 0.9,
     "embedding_model": "BAAI/bge-small-en-v1.5",
     "min_qualifiable_leads": 50,
 }
