@@ -9,7 +9,6 @@ from linkedin.db.crm_profiles import (
     set_profile_state,
     create_enriched_lead,
     promote_lead_to_contact,
-    STATE_TO_STAGE,
 )
 from linkedin.lanes.connect import ConnectLane
 from linkedin.lanes.check_pending import CheckPendingLane
@@ -34,7 +33,7 @@ def _assert_deal_state(session, public_id, expected_state: ProfileState):
         lead__website=f"https://www.linkedin.com/in/{public_id}/",
         owner=session.django_user,
     )
-    assert deal.stage.name == STATE_TO_STAGE[expected_state]
+    assert deal.stage.name == expected_state.value
 
 
 def _make_qualified(session, public_id="alice"):
@@ -93,7 +92,7 @@ class TestConnectLaneExecute:
     def test_sends_connection_and_records(self, mock_status, mock_send, mock_get, fake_session):
         _make_qualified(fake_session)
         mock_get.return_value = self._candidate()
-        mock_status.return_value = ProfileState.NEW
+        mock_status.return_value = ProfileState.QUALIFIED
         mock_send.return_value = ProfileState.PENDING
         lane = ConnectLane(fake_session, BayesianQualifier(seed=42))
         lane.execute()
@@ -136,7 +135,7 @@ class TestConnectLaneExecute:
     def test_handles_skip_profile(self, mock_status, mock_send, mock_get, fake_session):
         _make_qualified(fake_session)
         mock_get.return_value = self._candidate()
-        mock_status.return_value = ProfileState.NEW
+        mock_status.return_value = ProfileState.QUALIFIED
         mock_send.side_effect = SkipProfile("bad profile")
         lane = ConnectLane(fake_session, BayesianQualifier(seed=42))
         lane.execute()

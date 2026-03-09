@@ -32,17 +32,6 @@ from linkedin.navigation.enums import ProfileState
 
 logger = logging.getLogger(__name__)
 
-# Maps ProfileState enum values to Stage names in the CRM.
-STATE_TO_STAGE = {
-    ProfileState.NEW: "Qualified",
-    ProfileState.READY_TO_CONNECT: "Ready to Connect",
-    ProfileState.PENDING: "Pending",
-    ProfileState.CONNECTED: "Connected",
-    ProfileState.COMPLETED: "Completed",
-    ProfileState.FAILED: "Failed",
-}
-
-
 def _make_ticket() -> str:
     """Generate a unique 16-char ticket for a Deal."""
     return uuid.uuid4().hex[:16]
@@ -51,8 +40,7 @@ def _make_ticket() -> str:
 def _get_stage(state: ProfileState, session):
     from crm.models import Stage
     dept = session.campaign.department
-    stage_name = STATE_TO_STAGE[state]
-    return Stage.objects.get(name=stage_name, department=dept)
+    return Stage.objects.get(name=state.value, department=dept)
 
 
 def _get_lead_source(session):
@@ -193,7 +181,7 @@ def promote_lead_to_contact(session, public_id: str):
         lead=lead,
         contact=contact,
         company=company,
-        stage=_get_stage(ProfileState.NEW, session),
+        stage=_get_stage(ProfileState.QUALIFIED, session),
         owner=session.django_user,
         department=dept,
         next_step="",
@@ -264,7 +252,7 @@ def set_profile_state(
 ):
     """
     Move the Deal linked to this Lead to the corresponding Stage.
-    Only handles Deal states (NEW, READY_TO_CONNECT, PENDING, CONNECTED, COMPLETED, FAILED).
+    Only handles Deal states (QUALIFIED, READY_TO_CONNECT, PENDING, CONNECTED, COMPLETED, FAILED).
     Raises ValueError if no Deal exists.
     """
     from crm.models import Deal, ClosingReason
@@ -279,7 +267,7 @@ def set_profile_state(
     new_stage = _get_stage(ps, session)
     state_changed = (old_stage_name != new_stage.name)
 
-    old_is_pending = (old_stage_name == STATE_TO_STAGE[ProfileState.PENDING])
+    old_is_pending = (old_stage_name == ProfileState.PENDING.value)
     new_is_pending = (ps == ProfileState.PENDING)
 
     deal.stage = new_stage
@@ -314,7 +302,7 @@ def set_profile_state(
     deal.save()
 
     _STATE_LOG_STYLE = {
-        ProfileState.NEW: ("NEW", "green", []),
+        ProfileState.QUALIFIED: ("QUALIFIED", "green", []),
         ProfileState.READY_TO_CONNECT: ("READY_TO_CONNECT", "yellow", ["bold"]),
         ProfileState.PENDING: ("PENDING", "cyan", []),
         ProfileState.CONNECTED: ("CONNECTED", "green", ["bold"]),
@@ -333,7 +321,7 @@ def get_qualified_profiles(session) -> list:
     """All Deals at 'Qualified' stage for this user."""
     from crm.models import Deal
 
-    stage = _get_stage(ProfileState.NEW, session)
+    stage = _get_stage(ProfileState.QUALIFIED, session)
     qs = Deal.objects.filter(
         stage=stage,
         owner=session.django_user,
@@ -350,7 +338,7 @@ def count_qualified_profiles(session) -> int:
     """Count Deals at 'Qualified' stage."""
     from crm.models import Deal
 
-    stage = _get_stage(ProfileState.NEW, session)
+    stage = _get_stage(ProfileState.QUALIFIED, session)
     qs = Deal.objects.filter(
         stage=stage,
         owner=session.django_user,
@@ -472,7 +460,7 @@ def seed_partner_deals(session) -> int:
         return 0
 
     from crm.models import Stage
-    stage = Stage.objects.filter(name="Qualified", department=dept).first()
+    stage = Stage.objects.filter(name=ProfileState.QUALIFIED.value, department=dept).first()
     if stage is None:
         return 0
 

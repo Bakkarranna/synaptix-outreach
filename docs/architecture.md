@@ -33,7 +33,7 @@ DISCOVERED → ENRICHED → QUALIFIED → PENDING → CONNECTED → COMPLETED
                        DISQUALIFIED
 ```
 
-States map to DjangoCRM Deal Stages via `db/crm_profiles.py:STATE_TO_STAGE`. The `IGNORED` state is terminal, used for pre-existing connections (controlled by the `follow_up.existing_connections` config flag). The `DISQUALIFIED` state is terminal, for profiles rejected by the qualification pipeline.
+States map directly to DjangoCRM Deal Stages — `ProfileState` is a `models.TextChoices` whose values ARE the stage names (e.g. `ProfileState.QUALIFIED.value == "Qualified"`).
 
 ## Daemon (`linkedin/daemon.py`)
 

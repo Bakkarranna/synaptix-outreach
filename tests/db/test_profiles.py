@@ -291,10 +291,10 @@ class TestSetProfileState:
             SAMPLE_PROFILE,
         )
         with pytest.raises(ValueError, match="No Deal"):
-            set_profile_state(fake_session, "alice", ProfileState.NEW.value)
+            set_profile_state(fake_session, "alice", ProfileState.QUALIFIED.value)
 
 
-# ── get_qualified_profiles (Deals at "New" stage) ──
+# ── get_qualified_profiles (Deals at "Qualified" stage) ──
 
 @pytest.mark.django_db
 class TestGetQualifiedProfiles:

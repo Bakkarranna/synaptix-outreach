@@ -10,6 +10,8 @@ Idempotent — safe to run multiple times.
 import logging
 import sys
 
+from linkedin.navigation.enums import ProfileState
+
 logger = logging.getLogger(__name__)
 
 DEPARTMENT_NAME = "LinkedIn Outreach"
@@ -17,12 +19,12 @@ DEPARTMENT_NAME = "LinkedIn Outreach"
 # Stages map to ProfileState enum values (post-qualification pipeline).
 # (index, name, default, success_stage)
 STAGES = [
-    (1, "Qualified", True, False),
-    (2, "Ready to Connect", False, False),
-    (3, "Pending", False, False),
-    (4, "Connected", False, False),
-    (5, "Completed", False, True),
-    (6, "Failed", False, False),
+    (1, ProfileState.QUALIFIED.value, True, False),
+    (2, ProfileState.READY_TO_CONNECT.value, False, False),
+    (3, ProfileState.PENDING.value, False, False),
+    (4, ProfileState.CONNECTED.value, False, False),
+    (5, ProfileState.COMPLETED.value, False, True),
+    (6, ProfileState.FAILED.value, False, False),
 ]
 
 CLOSING_REASONS = [

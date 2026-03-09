@@ -1,10 +1,10 @@
-from enum import Enum
+from django.db import models
 
 
-class ProfileState(str, Enum):
-    NEW = "new"
-    READY_TO_CONNECT = "ready_to_connect"
-    PENDING = "pending"
-    CONNECTED = "connected"
-    COMPLETED = "completed"
-    FAILED = "failed"
+class ProfileState(models.TextChoices):
+    QUALIFIED = "Qualified"
+    READY_TO_CONNECT = "Ready to Connect"
+    PENDING = "Pending"
+    CONNECTED = "Connected"
+    COMPLETED = "Completed"
+    FAILED = "Failed"

@@ -51,11 +51,10 @@ class TestPromoteToReady:
         assert count == 1
 
         from crm.models import Deal
-        from linkedin.db.crm_profiles import STATE_TO_STAGE
         alice_deal = Deal.objects.get(lead__website="https://www.linkedin.com/in/alice/")
         bob_deal = Deal.objects.get(lead__website="https://www.linkedin.com/in/bob/")
-        assert alice_deal.stage.name == STATE_TO_STAGE[ProfileState.READY_TO_CONNECT]
-        assert bob_deal.stage.name == STATE_TO_STAGE[ProfileState.NEW]
+        assert alice_deal.stage.name == ProfileState.READY_TO_CONNECT.value
+        assert bob_deal.stage.name == ProfileState.QUALIFIED.value
 
     def test_returns_zero_on_cold_start(self, fake_session):
         _make_qualified(fake_session)
