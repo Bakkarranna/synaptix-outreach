@@ -206,6 +206,7 @@ class ProfileEmbedding(models.Model):
 class Task(models.Model):
     class TaskType(models.TextChoices):
         CONNECT = "connect"
+        CONNECT_PARTNER = "connect_partner"
         CHECK_PENDING = "check_pending"
         FOLLOW_UP = "follow_up"
 

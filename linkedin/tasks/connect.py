@@ -7,8 +7,8 @@ import random
 
 from termcolor import colored
 
-from linkedin.conf import CAMPAIGN_CONFIG, PARTNER_LOG_LEVEL
-from linkedin.db.crm_profiles import seed_partner_deals, set_profile_state
+from linkedin.conf import CAMPAIGN_CONFIG
+from linkedin.db.crm_profiles import set_profile_state
 from linkedin.models import ActionLog
 from linkedin.navigation.enums import ProfileState
 from linkedin.navigation.exceptions import ReachedConnectionLimit, SkipProfile
@@ -36,27 +36,7 @@ def handle_connect(task, session, qualifiers, partner_qualifier, kit_model):
     cfg = CAMPAIGN_CONFIG
     campaign = session.campaign
     campaign_id = campaign.pk
-    is_partner = getattr(campaign, "is_partner", False)
-    log_level = PARTNER_LOG_LEVEL if is_partner else logging.INFO
-
-    # --- Probabilistic gating ---
-    partner_fraction = max(
-        (c.action_fraction for c in session.campaigns if c.is_partner),
-        default=0.0,
-    )
-    if is_partner:
-        if random.random() >= campaign.action_fraction:
-            enqueue_connect(campaign_id, delay_seconds=cfg["connect_delay_seconds"])
-            return
-        seed_partner_deals(session)
-        qualifier = partner_qualifier
-        pipeline = kit_model
-    else:
-        if partner_fraction > 0 and random.random() < partner_fraction:
-            enqueue_connect(campaign_id, delay_seconds=cfg["connect_delay_seconds"])
-            return
-        qualifier = qualifiers.get(campaign_id)
-        pipeline = None
+    qualifier = qualifiers.get(campaign_id)
 
     # --- Rate limit check ---
     if not session.linkedin_profile.can_execute(ActionLog.ActionType.CONNECT):
@@ -64,7 +44,7 @@ def handle_connect(task, session, qualifiers, partner_qualifier, kit_model):
         return
 
     # --- Get candidate ---
-    candidate = get_candidate(session, qualifier, pipeline=pipeline)
+    candidate = get_candidate(session, qualifier)
     if candidate is None:
         enqueue_connect(campaign_id, delay_seconds=cfg["connect_no_candidate_delay_seconds"])
         return
@@ -80,9 +60,8 @@ def handle_connect(task, session, qualifiers, partner_qualifier, kit_model):
         .first()
     )
     stats = qualifier.explain(candidate, session) if qualifier else ""
-    tag = "[Partner] " if is_partner else ""
-    logger.log(log_level, "%s%s", tag, colored("\u25b6 connect", "cyan", attrs=["bold"]))
-    logger.log(log_level, "%s%s (%s) — %s", tag, public_id, stats, reason or "")
+    logger.info("%s", colored("\u25b6 connect", "cyan", attrs=["bold"]))
+    logger.info("%s (%s) — %s", public_id, stats, reason or "")
 
     try:
         status = get_connection_status(session, profile)
