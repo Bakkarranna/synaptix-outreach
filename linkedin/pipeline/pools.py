@@ -8,7 +8,7 @@ Three generators chain via next(upstream, None):
                   ready_source  <- pulls from qualify_source
                             |
                  qualify_source  <- pulls from search_source
-                  (positive pool check: search once if exploit mode has no P > 0.5)
+                  (keeps searching until P > 0.5 candidates exist in exploit mode)
                             |
                   search_source  <- yields keywords (never truly exhausts)
 
@@ -33,7 +33,12 @@ logger = logging.getLogger(__name__)
 
 
 def _positive_pool_empty(qualifier: BayesianQualifier, candidates) -> bool:
-    """True only in exploit mode when no candidate has P > 0.5.
+    """True only in exploit mode when no candidate exceeds min_positive_pool_prob.
+
+    Uses P(f > 0.5) > threshold (default 0.25), which expands to
+    mean > 0.5 - 0.674 * std — naturally uncertainty-aware via the GP
+    posterior.  With few observations std is large so the effective bar
+    on the mean is low; as data grows std shrinks and the bar approaches 0.5.
 
     Returns False on cold start, explore mode, or empty candidates.
     """
@@ -51,13 +56,14 @@ def _positive_pool_empty(qualifier: BayesianQualifier, candidates) -> bool:
         # cold start
         return False
 
-    if bool(np.any(probs > 0.5)):
+    threshold = CAMPAIGN_CONFIG["min_positive_pool_prob"]
+    if bool(np.any(probs > threshold)):
         return False
 
     logger.info(
-        "Pool (%d unlabeled) has no P > 0.5 candidates in exploit mode "
-        "(neg=%d, pos=%d, max_P=%.3f) — searching once",
-        len(candidates), n_neg, n_pos, float(probs.max()),
+        "Pool (%d unlabeled) has no P > %.2f candidates in exploit mode "
+        "(neg=%d, pos=%d, max_P=%.3f)",
+        len(candidates), threshold, n_neg, n_pos, float(probs.max()),
     )
     return True
 
@@ -74,30 +80,31 @@ def search_source(session) -> Generator[str, None, None]:
 def qualify_source(session, qualifier: BayesianQualifier) -> Generator[str, None, None]:
     """Yield public_ids from qualify_one(), pulling from search when needed.
 
-    Before entering the qualify loop, checks if the pool lacks high-P
-    candidates in exploit mode and does ONE search to enrich. Then qualifies
-    repeatedly from the pool — every yield produces a label that shifts the
-    GP model. Only searches again when the pool is fully empty.
+    In exploit mode, the effective pool is candidates with P > 0.5. When
+    this pool is empty, keeps searching until high-P candidates appear or
+    search is exhausted. Every yield produces a label that shifts the GP
+    model. Only falls through to qualifying low-P candidates when search
+    can no longer bring in new profiles.
     """
     search = search_source(session)
-
-    # One-time pool quality check: in exploit mode with no P > 0.5
-    # candidates, search once to bring in potentially better profiles
-    # before starting to qualify.
-    candidates = get_unlabeled_candidates(session)
-    if _positive_pool_empty(qualifier, candidates):
-        next(search, None)
 
     while True:
         candidates = get_unlabeled_candidates(session)
 
-        # If no candidates at all, search once to bring some in
+        # If no candidates at all, search to bring some in
         if not candidates:
             if next(search, None) is None:
                 return
             candidates = get_unlabeled_candidates(session)
             if not candidates:
                 return
+
+        # In exploit mode with no P > 0.5 candidates, keep searching
+        # until the positive pool is non-empty or search is exhausted.
+        while _positive_pool_empty(qualifier, candidates):
+            if next(search, None) is None:
+                break
+            candidates = get_unlabeled_candidates(session)
 
         result = qualify_one(session, qualifier)
         if result is None:
