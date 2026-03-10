@@ -246,6 +246,38 @@ class BayesianQualifier:
         mean, std = self._gpr_predict(self._pipeline, embeddings)
         return _prob_above_half(mean, std)
 
+    def acquisition_scores(self, embeddings: np.ndarray) -> tuple[str, np.ndarray] | None:
+        """Score candidates using the balance-driven acquisition strategy.
+
+        - Exploit mode (n_neg > n_pos): returns predicted probabilities P(f > 0.5)
+        - Explore mode: returns BALD information gain scores
+
+        Returns ``(strategy_name, scores)`` or ``None`` on cold start.
+        """
+        n_neg, n_pos = self.class_counts
+        if n_neg > n_pos:
+            scores = self.predict_probs(embeddings)
+            strategy = "exploit (p)"
+        else:
+            scores = self.compute_bald(embeddings)
+            strategy = "explore (BALD)"
+        if scores is None:
+            return None
+        return strategy, scores
+
+    def pool_has_targets(self, embeddings: np.ndarray) -> bool | None:
+        """Check if the unlabeled pool has any promising candidates (P > 0.5).
+
+        Returns None on cold start (model not fitted), True/False otherwise.
+        Only checks for positive-looking profiles — searching for low-P
+        profiles (explore mode) would be wasteful since you can just qualify
+        from the existing pool.
+        """
+        probs = self.predict_probs(embeddings)
+        if probs is None:
+            return None
+        return bool(np.any(probs > 0.5))
+
     # ------------------------------------------------------------------
     # Ranking for connect lane
     # ------------------------------------------------------------------

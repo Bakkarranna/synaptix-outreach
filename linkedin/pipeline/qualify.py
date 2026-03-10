@@ -13,7 +13,7 @@ from linkedin.ml.qualifier import BayesianQualifier
 logger = logging.getLogger(__name__)
 
 
-def _get_unlabeled_candidates(session):
+def get_unlabeled_candidates(session):
     """Return unlabeled ProfileEmbedding rows, embedding one new lead if the list is empty."""
     from linkedin.db.crm_profiles import get_leads_for_qualification, ensure_profile_embedded
     from linkedin.models import ProfileEmbedding
@@ -52,7 +52,7 @@ def qualify_one(session, qualifier: BayesianQualifier) -> str | None:
     """Qualify one unlabelled profile via BALD/auto-decision/LLM. Returns public_id or None."""
     from linkedin.ml.qualifier import qualify_with_llm, format_prediction
 
-    candidates = _get_unlabeled_candidates(session)
+    candidates = get_unlabeled_candidates(session)
     if not candidates:
         return None
 
@@ -64,21 +64,16 @@ def qualify_one(session, qualifier: BayesianQualifier) -> str | None:
         candidate = candidates[0]
     else:
         embeddings = np.array([c.embedding_array for c in candidates], dtype=np.float32)
-        n_neg, n_pos = qualifier.class_counts
+        result = qualifier.acquisition_scores(embeddings)
 
-        if n_neg > n_pos:
-            scores = qualifier.predict_probs(embeddings)
-            strategy = "exploit (p)"
-        else:
-            scores = qualifier.compute_bald(embeddings)
-            strategy = "explore (BALD)"
-
-        if scores is None:
+        if result is None:
             candidate = candidates[0]
         else:
+            strategy, scores = result
             best_idx = int(np.argmax(scores))
             candidate = candidates[best_idx]
             selection_score = (strategy, float(scores[best_idx]))
+            n_neg, n_pos = qualifier.class_counts
             logger.info("Strategy: %s (neg=%d, pos=%d)",
                         colored(strategy, "cyan", attrs=["bold"]), n_neg, n_pos)
 
