@@ -33,12 +33,11 @@ logger = logging.getLogger(__name__)
 
 
 def _positive_pool_empty(qualifier: BayesianQualifier, candidates) -> bool:
-    """True only in exploit mode when no candidate exceeds min_positive_pool_prob.
+    """True only in exploit mode when no candidate meets the adaptive threshold.
 
-    Uses P(f > 0.5) > threshold (default 0.25), which expands to
-    mean > 0.5 - 0.674 * std — naturally uncertainty-aware via the GP
-    posterior.  With few observations std is large so the effective bar
-    on the mean is low; as data grows std shrinks and the bar approaches 0.5.
+    Effective threshold = max(0, base - 1/sqrt(n_obs)).
+    Stays at zero until ~1/base² observations, then gradually rises
+    toward base — favoring qualification over search early on.
 
     Returns False on cold start, explore mode, or empty candidates.
     """
@@ -66,15 +65,17 @@ def _positive_pool_empty(qualifier: BayesianQualifier, candidates) -> bool:
         )
         return False
 
-    threshold = CAMPAIGN_CONFIG["min_positive_pool_prob"]
-    if bool(np.any(probs > threshold)):
+    base = CAMPAIGN_CONFIG["min_positive_pool_prob"]
+    n = qualifier.n_obs
+    threshold = max(0.0, base - 1 / np.sqrt(n)) if n > 0 else 0.0
+    if bool(np.any(probs >= threshold)):
         return False
 
     logger.info(
-        "Pool (%d unlabeled) has no P > %.2f candidates in exploit mode "
-        "(neg=%d, pos=%d). "
+        "Pool (%d unlabeled) has no P >= %.3f in exploit mode "
+        "(neg=%d, pos=%d, n_obs=%d, base=%.2f). "
         "P distribution: min=%.3f, p25=%.3f, median=%.3f, p75=%.3f, max=%.3f",
-        len(candidates), threshold, n_neg, n_pos,
+        len(candidates), threshold, n_neg, n_pos, n, base,
         float(np.min(probs)), float(np.percentile(probs, 25)),
         float(np.median(probs)), float(np.percentile(probs, 75)),
         float(np.max(probs)),

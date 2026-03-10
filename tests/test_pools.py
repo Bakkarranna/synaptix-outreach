@@ -55,8 +55,8 @@ class TestPositivePoolEmpty:
         ):
             assert _positive_pool_empty(scorer, candidates) is False
 
-    def test_exploit_no_high_prob(self):
-        """Exploit mode with all P below threshold (but differentiated) → True."""
+    def test_exploit_low_n_obs_adaptive_threshold(self):
+        """Exploit mode with few obs → threshold=0 (adaptive) → False (qualify first)."""
         scorer = BayesianQualifier(seed=42)
         candidates = [
             _make_candidate(1, np.zeros(384, dtype=np.float32)),
@@ -65,8 +65,27 @@ class TestPositivePoolEmpty:
 
         with (
             patch.object(type(scorer), "class_counts", new_callable=PropertyMock, return_value=(5, 2)),
+            patch.object(type(scorer), "n_obs", new_callable=PropertyMock, return_value=7),
             patch.object(scorer, "predict_probs", return_value=np.array([0.1, 0.2])),
         ):
+            # n_obs=7, 1/√7≈0.378 > base=0.25, threshold=0 → any P≥0 → not empty
+            assert _positive_pool_empty(scorer, candidates) is False
+
+    def test_exploit_high_n_obs_triggers_search(self):
+        """Exploit mode with many obs → threshold rises → True (search)."""
+        scorer = BayesianQualifier(seed=42)
+        candidates = [
+            _make_candidate(1, np.zeros(384, dtype=np.float32)),
+            _make_candidate(2, np.ones(384, dtype=np.float32)),
+        ]
+
+        with (
+            patch.object(type(scorer), "class_counts", new_callable=PropertyMock, return_value=(50, 20)),
+            patch.object(type(scorer), "n_obs", new_callable=PropertyMock, return_value=100),
+            patch.object(scorer, "predict_probs", return_value=np.array([0.05, 0.08])),
+        ):
+            # n_obs=100, 1/√100=0.1, threshold=max(0, 0.25-0.1)=0.15
+            # max_p=0.08 < 0.15 → pool empty → True
             assert _positive_pool_empty(scorer, candidates) is True
 
     def test_exploit_degenerate_predictions(self):
