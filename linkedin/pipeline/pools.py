@@ -23,7 +23,6 @@ from typing import Generator
 import numpy as np
 
 from linkedin.conf import CAMPAIGN_CONFIG
-from linkedin.db.crm_profiles import get_qualified_profiles
 from linkedin.ml.qualifier import BayesianQualifier
 from linkedin.pipeline.qualify import get_unlabeled_candidates, qualify_one
 from linkedin.pipeline.ready_pool import get_ready_candidate, promote_to_ready
@@ -127,9 +126,10 @@ def qualify_source(session, qualifier: BayesianQualifier) -> Generator[str, None
         yield result
 
 
-def ready_source(session, qualifier: BayesianQualifier, pipeline=None) -> Generator[dict, None, None]:
+def ready_source(session, qualifier: BayesianQualifier, pipeline=None, threshold: float | None = None) -> Generator[dict, None, None]:
     """Yield ready-to-connect candidates, pulling from qualify when needed."""
-    threshold = CAMPAIGN_CONFIG["min_ready_to_connect_prob"]
+    if threshold is None:
+        threshold = CAMPAIGN_CONFIG["min_ready_to_connect_prob"]
     qualify = qualify_source(session, qualifier)
 
     while True:
@@ -152,17 +152,13 @@ def ready_source(session, qualifier: BayesianQualifier, pipeline=None) -> Genera
         return
 
 
-def get_candidate(session, qualifier: BayesianQualifier, pipeline=None, is_partner: bool = False) -> dict | None:
+def get_candidate(session, qualifier: BayesianQualifier, pipeline=None) -> dict | None:
     """Top profile ready for connection, backfilling if needed.
 
-    Partner campaigns bypass READY_TO_CONNECT and pick directly from the QUALIFIED pool.
-    Regular campaigns require profiles to pass the GP confidence gate first.
+    Partner campaigns use threshold=0 so all QUALIFIED profiles get
+    promoted to READY_TO_CONNECT. Regular campaigns require the GP
+    confidence gate.
     """
-    if is_partner:
-        profiles = get_qualified_profiles(session)
-        if not profiles:
-            return None
-        ranked = qualifier.rank_profiles(profiles, session=session, pipeline=pipeline)
-        return ranked[0] if ranked else None
-
-    return next(ready_source(session, qualifier, pipeline), None)
+    is_partner = getattr(session.campaign, "is_partner", False)
+    threshold = 0.0 if is_partner else None
+    return next(ready_source(session, qualifier, pipeline=pipeline, threshold=threshold), None)

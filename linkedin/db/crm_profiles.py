@@ -360,8 +360,11 @@ def get_ready_to_connect_profiles(session) -> list:
     qs = Deal.objects.filter(
         stage=stage,
         owner=session.django_user,
-        lead__disqualified=False,
     ).select_related("lead")
+
+    # Partner campaigns re-use disqualified leads, so skip the filter.
+    if not getattr(session.campaign, "is_partner", False):
+        qs = qs.filter(lead__disqualified=False)
 
     return [_deal_to_profile_dict(d) for d in qs]
 

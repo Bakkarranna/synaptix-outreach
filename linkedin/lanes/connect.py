@@ -41,7 +41,6 @@ class ConnectLane:
         candidate = get_candidate(
             self.session, self.qualifier,
             pipeline=self.pipeline,
-            is_partner=self._is_partner,
         )
         if candidate is None:
             return None

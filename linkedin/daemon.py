@@ -146,26 +146,21 @@ def run_daemon(session):
         ensure_campaign_pipeline(campaign.department)
 
         if campaign.is_partner:
-            connect_lane = ConnectLane(session, partner_qualifier, pipeline=kit_model)
-            check_pending_lane = CheckPendingLane(session, cfg["check_pending_recheck_after_hours"])
-            follow_up_lane = FollowUpLane(session)
-
-            all_schedules.extend([
-                LaneSchedule("connect", connect_lane, min_action_interval, campaign=campaign),
-                LaneSchedule("check_pending", check_pending_lane, check_pending_interval, campaign=campaign),
-                LaneSchedule("follow_up", follow_up_lane, min_action_interval, campaign=campaign),
-            ])
+            qualifier = partner_qualifier
+            pipeline = kit_model
         else:
             qualifier = qualifiers[campaign.pk]
-            connect_lane = ConnectLane(session, qualifier)
-            check_pending_lane = CheckPendingLane(session, cfg["check_pending_recheck_after_hours"])
-            follow_up_lane = FollowUpLane(session)
+            pipeline = None
 
-            all_schedules.extend([
-                LaneSchedule("connect", connect_lane, min_action_interval, campaign=campaign),
-                LaneSchedule("check_pending", check_pending_lane, check_pending_interval, campaign=campaign),
-                LaneSchedule("follow_up", follow_up_lane, min_action_interval, campaign=campaign),
-            ])
+        connect_lane = ConnectLane(session, qualifier, pipeline=pipeline)
+        check_pending_lane = CheckPendingLane(session, cfg["check_pending_recheck_after_hours"])
+        follow_up_lane = FollowUpLane(session)
+
+        all_schedules.extend([
+            LaneSchedule("connect", connect_lane, min_action_interval, campaign=campaign),
+            LaneSchedule("check_pending", check_pending_lane, check_pending_interval, campaign=campaign),
+            LaneSchedule("follow_up", follow_up_lane, min_action_interval, campaign=campaign),
+        ])
 
     if not all_schedules:
         logger.error("No campaigns found — cannot start daemon")
