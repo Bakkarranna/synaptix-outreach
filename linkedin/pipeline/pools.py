@@ -62,8 +62,12 @@ def _positive_pool_empty(qualifier: BayesianQualifier, candidates) -> bool:
 
     logger.info(
         "Pool (%d unlabeled) has no P > %.2f candidates in exploit mode "
-        "(neg=%d, pos=%d, max_P=%.3f)",
-        len(candidates), threshold, n_neg, n_pos, float(probs.max()),
+        "(neg=%d, pos=%d). "
+        "P distribution: min=%.3f, p25=%.3f, median=%.3f, p75=%.3f, max=%.3f",
+        len(candidates), threshold, n_neg, n_pos,
+        float(np.min(probs)), float(np.percentile(probs, 25)),
+        float(np.median(probs)), float(np.percentile(probs, 75)),
+        float(np.max(probs)),
     )
     return True
 

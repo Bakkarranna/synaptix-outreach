@@ -62,7 +62,7 @@ class TestPositivePoolEmpty:
 
         with (
             patch.object(type(scorer), "class_counts", new_callable=PropertyMock, return_value=(5, 2)),
-            patch.object(scorer, "predict_probs", return_value=np.array([0.3])),
+            patch.object(scorer, "predict_probs", return_value=np.array([0.1])),
         ):
             assert _positive_pool_empty(scorer, candidates) is True
 

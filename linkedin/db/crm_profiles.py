@@ -93,7 +93,11 @@ def create_enriched_lead(session, url: str, profile: Dict[str, Any], data: Optio
     from crm.models import Lead
     from linkedin.ml.embeddings import embed_profile
 
-    public_id = url_to_public_id(url)
+    # Use canonical public_identifier from Voyager response when available.
+    # The same person can appear under both an opaque URN URL and a vanity slug;
+    # storing by canonical ID deduplicates naturally.
+    canonical_pid = profile.get("public_identifier")
+    public_id = canonical_pid or url_to_public_id(url)
     clean_url = public_id_to_url(public_id)
 
     if Lead.objects.filter(website=clean_url).exists():
