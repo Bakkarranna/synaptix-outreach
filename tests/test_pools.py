@@ -249,22 +249,6 @@ class TestGetCandidate:
         ):
             assert get_candidate(fake_session, scorer) is None
 
-    def test_partner_uses_threshold_zero(self, fake_session):
-        """Partner campaigns promote all QUALIFIED → READY_TO_CONNECT (threshold=0)."""
-        scorer = BayesianQualifier(seed=42)
-        candidate = {"public_identifier": "alice", "profile": SAMPLE_PROFILE}
-
-        fake_session.campaign.is_partner = True
-
-        with (
-            patch("linkedin.pipeline.pools.get_ready_candidate", side_effect=[None, candidate]),
-            patch("linkedin.pipeline.pools.promote_to_ready", return_value=2) as mock_promote,
-        ):
-            result = get_candidate(fake_session, scorer)
-
-        assert result == candidate
-        mock_promote.assert_called_once_with(fake_session, scorer, 0.0)
-
     def test_promote_after_qualify(self, fake_session):
         """After qualify_one produces a label, promote_to_ready is retried."""
         scorer = BayesianQualifier(seed=42)

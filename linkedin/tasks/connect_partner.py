@@ -7,11 +7,11 @@ import logging
 from termcolor import colored
 
 from linkedin.conf import CAMPAIGN_CONFIG
-from linkedin.db.crm_profiles import seed_partner_deals, set_profile_state
+from linkedin.db.crm_profiles import create_partner_deal, set_profile_state
 from linkedin.models import ActionLog
 from linkedin.navigation.enums import ProfileState
 from linkedin.navigation.exceptions import ReachedConnectionLimit, SkipProfile
-from linkedin.pipeline.pools import get_candidate
+from linkedin.pipeline.partner_pool import get_partner_candidate
 
 logger = logging.getLogger(__name__)
 
@@ -66,21 +66,22 @@ def handle_connect_partner(task, session, qualifiers, partner_qualifier, kit_mod
     campaign_id = campaign.pk
     delay = _partner_delay(campaign)
 
-    seed_partner_deals(session)
-
     # --- Rate limit check ---
     if not session.linkedin_profile.can_execute(ActionLog.ActionType.CONNECT):
         enqueue_connect_partner(campaign_id, delay_seconds=_seconds_until_tomorrow())
         return
 
     # --- Get candidate ---
-    candidate = get_candidate(session, partner_qualifier, pipeline=kit_model)
+    candidate = get_partner_candidate(session, partner_qualifier, pipeline=kit_model)
     if candidate is None:
         enqueue_connect_partner(campaign_id, delay_seconds=cfg["connect_no_candidate_delay_seconds"])
         return
 
     public_id = candidate["public_identifier"]
     profile = candidate.get("profile") or candidate
+
+    # Create Deal just-in-time for this candidate (needed by set_profile_state)
+    create_partner_deal(session, public_id)
 
     reason = (
         ProfileEmbedding.objects.filter(

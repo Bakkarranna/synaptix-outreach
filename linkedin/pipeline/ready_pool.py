@@ -21,21 +21,12 @@ logger = logging.getLogger(__name__)
 def promote_to_ready(session, qualifier: BayesianQualifier, threshold: float) -> int:
     """Promote QUALIFIED profiles above GP confidence threshold to READY_TO_CONNECT.
 
-    When threshold <= 0, all QUALIFIED profiles are promoted unconditionally
-    (used by partner campaigns to bypass the GP confidence gate).
-
     Returns the number of profiles promoted. Returns 0 when the GP model
     is not fitted (cold start) or when no QUALIFIED profiles exist.
     """
     profiles = get_qualified_profiles(session)
     if not profiles:
         return 0
-
-    # threshold <= 0 means no GP gate — promote everything
-    if threshold <= 0:
-        for p in profiles:
-            set_profile_state(session, p["public_identifier"], ProfileState.READY_TO_CONNECT.value)
-        return len(profiles)
 
     embeddings = []
     valid = []

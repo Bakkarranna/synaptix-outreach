@@ -155,10 +155,7 @@ def ready_source(session, qualifier: BayesianQualifier, pipeline=None, threshold
 def get_candidate(session, qualifier: BayesianQualifier, pipeline=None) -> dict | None:
     """Top profile ready for connection, backfilling if needed.
 
-    Partner campaigns use threshold=0 so all QUALIFIED profiles get
-    promoted to READY_TO_CONNECT. Regular campaigns require the GP
-    confidence gate.
+    Only used by regular campaigns. Partner campaigns use
+    get_partner_candidate() from pipeline.partner_pool instead.
     """
-    is_partner = getattr(session.campaign, "is_partner", False)
-    threshold = 0.0 if is_partner else None
-    return next(ready_source(session, qualifier, pipeline=pipeline, threshold=threshold), None)
+    return next(ready_source(session, qualifier, pipeline=pipeline), None)

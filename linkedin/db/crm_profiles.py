@@ -27,7 +27,6 @@ from django.db import transaction
 from django.utils import timezone
 from termcolor import colored
 
-from linkedin.conf import PARTNER_LOG_LEVEL
 from linkedin.navigation.enums import ProfileState
 
 logger = logging.getLogger(__name__)
@@ -329,11 +328,8 @@ def get_qualified_profiles(session) -> list:
     qs = Deal.objects.filter(
         stage=stage,
         owner=session.django_user,
+        lead__disqualified=False,
     ).select_related("lead")
-
-    # Partner campaigns re-use disqualified leads, so skip the filter.
-    if not getattr(session.campaign, "is_partner", False):
-        qs = qs.filter(lead__disqualified=False)
 
     return [_deal_to_profile_dict(d) for d in qs]
 
@@ -346,9 +342,8 @@ def count_qualified_profiles(session) -> int:
     qs = Deal.objects.filter(
         stage=stage,
         owner=session.django_user,
+        lead__disqualified=False,
     )
-    if not getattr(session.campaign, "is_partner", False):
-        qs = qs.filter(lead__disqualified=False)
     return qs.count()
 
 
@@ -360,11 +355,8 @@ def get_ready_to_connect_profiles(session) -> list:
     qs = Deal.objects.filter(
         stage=stage,
         owner=session.django_user,
+        lead__disqualified=False,
     ).select_related("lead")
-
-    # Partner campaigns re-use disqualified leads, so skip the filter.
-    if not getattr(session.campaign, "is_partner", False):
-        qs = qs.filter(lead__disqualified=False)
 
     return [_deal_to_profile_dict(d) for d in qs]
 
@@ -462,58 +454,43 @@ def get_connected_profiles(session) -> list:
 # ── Partner campaign helpers ──
 
 
-def seed_partner_deals(session) -> int:
-    """Create deals in current campaign's department from disqualified leads with embeddings.
+def create_partner_deal(session, public_id: str):
+    """Create a single Deal in the partner campaign's department for a disqualified lead.
 
-    Returns the number of new deals created.
+    Called just-in-time when a partner candidate is selected for connection,
+    instead of bulk-creating Deals for all disqualified leads upfront.
+
+    Returns the created Deal, or the existing Deal if one already exists.
     """
-    from crm.models import Lead, Deal
-    from linkedin.models import ProfileEmbedding
+    from crm.models import Deal
 
+    clean_url = public_id_to_url(public_id)
     dept = session.campaign.department
 
-    disqualified_pks = set(
-        Lead.objects.filter(disqualified=True).values_list("pk", flat=True)
+    existing = Deal.objects.filter(lead__website=clean_url, department=dept).first()
+    if existing:
+        return existing
+
+    from crm.models import Lead
+
+    lead = Lead.objects.filter(website=clean_url).first()
+    if not lead:
+        raise ValueError(f"No Lead for {public_id}")
+
+    deal = Deal.objects.create(
+        name=f"Partner: {public_id}",
+        lead=lead,
+        contact=lead.contact,
+        company=lead.company,
+        stage=_get_stage(ProfileState.QUALIFIED, session),
+        owner=session.django_user,
+        department=dept,
+        next_step="",
+        next_step_date=date.today(),
+        ticket=_make_ticket(),
     )
-    embedded_ids = set(ProfileEmbedding.objects.values_list("lead_id", flat=True))
-    eligible_pks = sorted(disqualified_pks & embedded_ids)
-
-    if not eligible_pks:
-        return 0
-
-    from crm.models import Stage
-    stage = Stage.objects.filter(name=ProfileState.QUALIFIED.value, department=dept).first()
-    if stage is None:
-        return 0
-
-    created = 0
-    for lead_pk in eligible_pks:
-        lead = Lead.objects.filter(pk=lead_pk).first()
-        if not lead:
-            continue
-
-        # Skip if deal already exists in this department
-        if Deal.objects.filter(lead=lead, department=dept).exists():
-            continue
-
-        Deal.objects.create(
-            name=f"Partner: {url_to_public_id(lead.website) or lead.pk}",
-            lead=lead,
-            contact=lead.contact,
-            company=lead.company,
-            stage=stage,
-            owner=session.django_user,
-            department=dept,
-            next_step="",
-            next_step_date=date.today(),
-            ticket=_make_ticket(),
-        )
-        created += 1
-
-    if created:
-        logger.log(PARTNER_LOG_LEVEL, "[Partner] Seeded %d partner deals in %s", created, dept.name)
-
-    return created
+    logger.info("%s %s", public_id, colored("PARTNER DEAL", "cyan", attrs=["bold"]))
+    return deal
 
 
 # ── Lazy enrichment / embedding helpers (robustness only) ──

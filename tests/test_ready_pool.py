@@ -69,20 +69,6 @@ class TestPromoteToReady:
         ):
             assert promote_to_ready(fake_session, scorer, threshold=0.9) == 0
 
-    def test_promotes_all_at_threshold_zero(self, fake_session):
-        """threshold <= 0 promotes all QUALIFIED without GP gate."""
-        _make_qualified(fake_session, "alice")
-        _make_qualified(fake_session, "bob")
-
-        scorer = BayesianQualifier(seed=42)
-        count = promote_to_ready(fake_session, scorer, threshold=0.0)
-        assert count == 2
-
-        from crm.models import Deal
-        for pid in ("alice", "bob"):
-            deal = Deal.objects.get(lead__website=f"https://www.linkedin.com/in/{pid}/")
-            assert deal.stage.name == ProfileState.READY_TO_CONNECT.value
-
     def test_returns_zero_on_empty_pool(self, fake_session):
         scorer = BayesianQualifier(seed=42)
         assert promote_to_ready(fake_session, scorer, threshold=0.9) == 0
