@@ -82,6 +82,8 @@ def _build_qualifiers(campaigns, cfg, kit_model=None):
     n_regular = 0
     for campaign in campaigns:
         if campaign.is_partner:
+            if kit_model is None:
+                continue
             inner = BayesianQualifier(
                 seed=42,
                 n_mc_samples=cfg["qualification_n_mc_samples"],

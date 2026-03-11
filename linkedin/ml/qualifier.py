@@ -231,8 +231,11 @@ class BayesianQualifier:
         """
         if not self._fit_if_needed():
             return None
+        return self._predict_from(self._pipeline, embedding)
 
-        mean, std = self._gpr_predict(self._pipeline, embedding)
+    def _predict_from(self, pipeline, embedding: np.ndarray) -> tuple[float, float, float]:
+        """Predict (prob, entropy, std) using a fitted pipeline."""
+        mean, std = self._gpr_predict(pipeline, embedding)
         p = float(_prob_above_half(mean, std)[0])
         entropy = float(_binary_entropy(p))
         return p, entropy, float(std[0])
@@ -379,17 +382,24 @@ class BayesianQualifier:
     # Explain
     # ------------------------------------------------------------------
 
-    def explain(self, profile: dict, session) -> str:
-        """Human-readable compact scoring explanation."""
+    def explain(self, profile: dict, session, pipeline=None) -> str:
+        """Human-readable compact scoring explanation.
+
+        If *pipeline* is provided, use it for prediction instead of the
+        internal model (same convention as ``rank_profiles``).
+        """
         from linkedin.db.enrichment import load_embedding
 
         emb = load_embedding(profile.get("lead_id"), profile.get("public_identifier"), session)
         if emb is None:
             return "No embedding found for profile"
-        result = self.predict(emb)
-        if result is None:
-            return f"Model not fitted yet ({self.n_obs} observations, need both classes)"
-        prob, entropy, std = result
+        if pipeline is not None:
+            prob, entropy, std = self._predict_from(pipeline, emb)
+        else:
+            result = self.predict(emb)
+            if result is None:
+                return f"Model not fitted yet ({self.n_obs} observations, need both classes)"
+            prob, entropy, std = result
         return format_prediction(prob, entropy, std, self.n_obs)
 
     # ------------------------------------------------------------------
@@ -421,5 +431,5 @@ class KitQualifier:
         return self._inner.rank_profiles(profiles, session, pipeline=self._kit_model)
 
     def explain(self, profile: dict, session) -> str:
-        return self._inner.explain(profile, session)
+        return self._inner.explain(profile, session, pipeline=self._kit_model)
 
