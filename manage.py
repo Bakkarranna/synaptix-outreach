@@ -61,8 +61,8 @@ def _run_daemon():
 
     session = get_or_create_session(handle=handle)
 
-    # Set default campaign (first non-partner, or first available) for startup tasks
-    first_campaign = session.campaigns.filter(is_partner=False).first() or session.campaigns.first()
+    # Set default campaign (first non-freemium, or first available) for startup tasks
+    first_campaign = session.campaigns.filter(is_freemium=False).first() or session.campaigns.first()
     if first_campaign is None:
         logger.error("No campaigns found for this user.")
         sys.exit(1)
@@ -98,6 +98,9 @@ if __name__ == "__main__":
         _ensure_db()
         _run_daemon()
     else:
+        # Auto-migrate before starting the admin server
+        if sys.argv[1] == "runserver":
+            _ensure_db()
         # Django management command (runserver, migrate, createsuperuser, etc.)
         from django.core.management import execute_from_command_line
         execute_from_command_line(sys.argv)
