@@ -126,14 +126,14 @@ def qualify_source(session, qualifier: BayesianQualifier) -> Generator[str, None
         yield result
 
 
-def ready_source(session, qualifier: BayesianQualifier, pipeline=None, threshold: float | None = None) -> Generator[dict, None, None]:
+def ready_source(session, qualifier: BayesianQualifier, threshold: float | None = None) -> Generator[dict, None, None]:
     """Yield ready-to-connect candidates, pulling from qualify when needed."""
     if threshold is None:
         threshold = CAMPAIGN_CONFIG["min_ready_to_connect_prob"]
     qualify = qualify_source(session, qualifier)
 
     while True:
-        candidate = find_ready_candidate(session, qualifier, pipeline=pipeline)
+        candidate = find_ready_candidate(session, qualifier)
         if candidate is not None:
             yield candidate
             continue
@@ -152,10 +152,10 @@ def ready_source(session, qualifier: BayesianQualifier, pipeline=None, threshold
         return
 
 
-def find_candidate(session, qualifier: BayesianQualifier, pipeline=None) -> dict | None:
+def find_candidate(session, qualifier: BayesianQualifier) -> dict | None:
     """Top profile ready for connection, backfilling if needed.
 
     Only used by regular campaigns. Partner campaigns use
-    get_partner_candidate() from pipeline.partner_pool instead.
+    find_partner_candidate() from pipeline.partner_pool instead.
     """
-    return next(ready_source(session, qualifier, pipeline=pipeline), None)
+    return next(ready_source(session, qualifier), None)

@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 def format_prediction(prob: float, entropy: float, std: float, n_obs: int) -> str:
-    """Compact one-liner stats string."""
+    """Compact one-liner stats string for qualification logging."""
     return f"prob={prob:.3f}, entropy={entropy:.4f}, std={std:.4f}, obs={n_obs}"
 
 
@@ -69,6 +69,69 @@ def _binary_entropy(p):
 def _prob_above_half(mean, std):
     """P(f > 0.5) from GP posterior."""
     return norm.sf(0.5, loc=mean, scale=std)
+
+
+# ---------------------------------------------------------------------------
+# Shared helpers
+# ---------------------------------------------------------------------------
+
+def _gpr_predict(pipe, X: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Transform through all steps except GPR, then predict with return_std.
+
+    Used by BayesianQualifier for BALD, predict_probs, and predict —
+    operations that need the posterior std.  Ranking uses the simpler
+    ``pipeline.predict(X)`` (mean only) instead.
+    """
+    from sklearn.pipeline import Pipeline
+
+    X = np.asarray(X, dtype=np.float64)
+    if X.ndim == 1:
+        X = X.reshape(1, -1)
+    X_transformed = Pipeline(pipe.steps[:-1]).transform(X)
+    return pipe.named_steps['gpr'].predict(X_transformed, return_std=True)
+
+
+def _load_profile_embeddings(profiles: list, session, *, skip_missing: bool = False):
+    """Load embeddings for a list of profile dicts.
+
+    Returns list of (profile, embedding) pairs.
+    """
+    from linkedin.db.enrichment import load_embedding
+
+    result = []
+    for p in profiles:
+        emb = load_embedding(p.get("lead_id"), p.get("public_identifier"), session)
+        if emb is None:
+            if skip_missing:
+                continue
+            pid = p.get("public_identifier", "?")
+            raise RuntimeError(f"No embedding found for profile {pid}")
+        result.append((p, emb))
+    return result
+
+
+def _rank_by_score(profiles: list, pipeline, session, *, skip_missing: bool = False) -> list:
+    """Rank profiles by raw pipeline.predict() score (descending).
+
+    Works with any sklearn-compatible pipeline — no GPR-specific logic.
+    """
+    scored = _load_profile_embeddings(profiles, session, skip_missing=skip_missing)
+    if not scored:
+        return []
+
+    X = np.array([emb for _, emb in scored], dtype=np.float64)
+    scores = pipeline.predict(X)
+
+    ranked = sorted(zip(scores, [p for p, _ in scored]), key=lambda t: t[0], reverse=True)
+    return [p for _, p in ranked]
+
+
+def _explain_score(pipeline, embedding: np.ndarray) -> float:
+    """Return the raw prediction score for a single embedding."""
+    X = np.asarray(embedding, dtype=np.float64)
+    if X.ndim == 1:
+        X = X.reshape(1, -1)
+    return float(pipeline.predict(X)[0])
 
 
 # ---------------------------------------------------------------------------
@@ -219,7 +282,7 @@ class BayesianQualifier:
         logger.debug("Pipeline saved to %s", self._save_path)
 
     # ------------------------------------------------------------------
-    # Prediction
+    # Prediction  (needs posterior std — uses _gpr_predict)
     # ------------------------------------------------------------------
 
     def predict(self, embedding: np.ndarray) -> tuple[float, float, float] | None:
@@ -231,11 +294,7 @@ class BayesianQualifier:
         """
         if not self._fit_if_needed():
             return None
-        return self._predict_from(self._pipeline, embedding)
-
-    def _predict_from(self, pipeline, embedding: np.ndarray) -> tuple[float, float, float]:
-        """Predict (prob, entropy, std) using a fitted pipeline."""
-        mean, std = self._gpr_predict(pipeline, embedding)
+        mean, std = _gpr_predict(self._pipeline, embedding)
         p = float(_prob_above_half(mean, std)[0])
         entropy = float(_binary_entropy(p))
         return p, entropy, float(std[0])
@@ -257,7 +316,7 @@ class BayesianQualifier:
         if not self._fit_if_needed():
             return None
 
-        f_mean, f_std = self._gpr_predict(self._pipeline,embeddings)
+        f_mean, f_std = _gpr_predict(self._pipeline, embeddings)
 
         # MC sample: (M, N) draws from GP posterior
         f_samples = (
@@ -283,7 +342,7 @@ class BayesianQualifier:
         """
         if not self._fit_if_needed():
             return None
-        mean, std = self._gpr_predict(self._pipeline, embeddings)
+        mean, std = _gpr_predict(self._pipeline, embeddings)
         return _prob_above_half(mean, std)
 
     def acquisition_scores(self, embeddings: np.ndarray) -> tuple[str, np.ndarray] | None:
@@ -319,88 +378,33 @@ class BayesianQualifier:
         return bool(np.any(probs > 0.5))
 
     # ------------------------------------------------------------------
-    # Ranking for connect lane
+    # Ranking & explain  (raw GP mean — no _prob_above_half)
     # ------------------------------------------------------------------
 
-    def rank_profiles(self, profiles: list, session, pipeline=None) -> list:
-        """Rank QUALIFIED profiles by P(f > 0.5) probability (descending).
+    def rank_profiles(self, profiles: list, session) -> list:
+        """Rank QUALIFIED profiles by raw GP mean (descending).
 
-        If *pipeline* is provided (partner campaign model), use it instead
-        of the internal model.  Both paths extract mean+std from the GPR
-        step to compute proper posterior probabilities.
-        Raises if a non-partner profile lacks an embedding after lazy loading.
+        Raises if a profile lacks an embedding after lazy loading.
         """
-        from linkedin.db.enrichment import load_embedding
-
         if not profiles:
             return []
-
-        pipe = self._get_pipeline(pipeline)
-
-        scored = []
-        for p in profiles:
-            emb = load_embedding(p.get("lead_id"), p.get("public_identifier"), session)
-            if emb is None:
-                if pipeline is not None:
-                    continue  # partner: skip missing embeddings
-                pid = p.get("public_identifier", "?")
-                raise RuntimeError(f"No embedding found for profile {pid}")
-            scored.append((p, emb))
-
-        if not scored:
-            return []
-
-        X = np.array([emb for _, emb in scored], dtype=np.float64)
-        mean, std = self._gpr_predict(pipe, X)
-        probs = _prob_above_half(mean, std)
-
-        ranked = sorted(zip(probs, [p for p, _ in scored]), key=lambda t: t[0], reverse=True)
-        return [p for _, p in ranked]
-
-    def _get_pipeline(self, external_pipeline=None):
-        """Return the pipeline to use for predictions — external or internal."""
-        if external_pipeline is not None:
-            return external_pipeline
         if not self._fit_if_needed():
             raise RuntimeError(
                 f"GPR not fitted ({self.n_obs} observations) — cannot rank profiles"
             )
-        return self._pipeline
+        return _rank_by_score(profiles, self._pipeline, session)
 
-    @staticmethod
-    def _gpr_predict(pipe, X: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        """Transform through all steps except GPR, then predict with return_std."""
-        from sklearn.pipeline import Pipeline
-
-        X = np.asarray(X, dtype=np.float64)
-        if X.ndim == 1:
-            X = X.reshape(1, -1)
-        X_transformed = Pipeline(pipe.steps[:-1]).transform(X)
-        return pipe.named_steps['gpr'].predict(X_transformed, return_std=True)
-
-    # ------------------------------------------------------------------
-    # Explain
-    # ------------------------------------------------------------------
-
-    def explain(self, profile: dict, session, pipeline=None) -> str:
-        """Human-readable compact scoring explanation.
-
-        If *pipeline* is provided, use it for prediction instead of the
-        internal model (same convention as ``rank_profiles``).
-        """
+    def explain(self, profile: dict, session) -> str:
+        """Human-readable compact scoring explanation."""
         from linkedin.db.enrichment import load_embedding
 
         emb = load_embedding(profile.get("lead_id"), profile.get("public_identifier"), session)
         if emb is None:
             return "No embedding found for profile"
-        if pipeline is not None:
-            prob, entropy, std = self._predict_from(pipeline, emb)
-        else:
-            result = self.predict(emb)
-            if result is None:
-                return f"Model not fitted yet ({self.n_obs} observations, need both classes)"
-            prob, entropy, std = result
-        return format_prediction(prob, entropy, std, self.n_obs)
+        if not self._fit_if_needed():
+            return f"Model not fitted yet ({self.n_obs} observations, need both classes)"
+        score = _explain_score(self._pipeline, emb)
+        return f"score={score:.3f}, obs={self.n_obs}"
 
     # ------------------------------------------------------------------
     # Warm start
@@ -415,21 +419,32 @@ class BayesianQualifier:
             self._fit_if_needed()
 
 
-class KitQualifier:
-    """Qualifier adapter for partner campaigns backed by a pre-trained kit model.
+# ---------------------------------------------------------------------------
+# KitQualifier  (pre-trained kit model for partner campaigns)
+# ---------------------------------------------------------------------------
 
-    Wraps a warm-started BayesianQualifier and always uses the kit's
-    sklearn pipeline for ranking, removing the need to thread a separate
-    ``kit_model`` argument through the handler chain.
+class KitQualifier:
+    """Qualifier for partner campaigns backed by a pre-trained kit model.
+
+    Treats the kit model as a black-box scorer — calls pipeline.predict()
+    and ranks by raw score.  No GPR-specific assumptions.
     """
 
-    def __init__(self, kit_model, inner: BayesianQualifier):
-        self._kit_model = kit_model
-        self._inner = inner
+    def __init__(self, kit_model):
+        self._model = kit_model
 
-    def rank_profiles(self, profiles: list, session, pipeline=None) -> list:
-        return self._inner.rank_profiles(profiles, session, pipeline=self._kit_model)
+    def rank_profiles(self, profiles: list, session) -> list:
+        """Rank profiles by raw model score (descending), skipping missing embeddings."""
+        if not profiles:
+            return []
+        return _rank_by_score(profiles, self._model, session, skip_missing=True)
 
     def explain(self, profile: dict, session) -> str:
-        return self._inner.explain(profile, session, pipeline=self._kit_model)
+        """Human-readable compact scoring explanation."""
+        from linkedin.db.enrichment import load_embedding
 
+        emb = load_embedding(profile.get("lead_id"), profile.get("public_identifier"), session)
+        if emb is None:
+            return "No embedding found for profile"
+        score = _explain_score(self._model, emb)
+        return f"score={score:.3f}"

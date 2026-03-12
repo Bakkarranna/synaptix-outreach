@@ -53,11 +53,11 @@ def promote_to_ready(session, qualifier: BayesianQualifier, threshold: float) ->
     return promoted
 
 
-def find_ready_candidate(session, qualifier: BayesianQualifier, pipeline=None) -> dict | None:
+def find_ready_candidate(session, qualifier: BayesianQualifier) -> dict | None:
     """Return the top-ranked READY_TO_CONNECT profile, or None."""
     profiles = get_ready_to_connect_profiles(session)
     if not profiles:
         return None
 
-    ranked = qualifier.rank_profiles(profiles, session=session, pipeline=pipeline)
+    ranked = qualifier.rank_profiles(profiles, session=session)
     return ranked[0] if ranked else None

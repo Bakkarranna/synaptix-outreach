@@ -71,8 +71,8 @@ def _build_qualifiers(campaigns, cfg, kit_model=None):
     """Create a qualifier for every campaign, keyed by campaign PK.
 
     Regular campaigns get a ``BayesianQualifier`` (persisted per-campaign).
-    Partner campaigns get a ``KitQualifier`` wrapping the pre-trained kit
-    model, so the caller never needs to know about the kit.
+    Partner campaigns get a ``KitQualifier`` backed by the pre-trained kit
+    model directly — no inner BayesianQualifier needed.
     """
     from linkedin.models import ProfileEmbedding
 
@@ -84,14 +84,7 @@ def _build_qualifiers(campaigns, cfg, kit_model=None):
         if campaign.is_partner:
             if kit_model is None:
                 continue
-            inner = BayesianQualifier(
-                seed=42,
-                n_mc_samples=cfg["qualification_n_mc_samples"],
-                save_path=None,
-            )
-            if len(X) > 0:
-                inner.warm_start(X, y)
-            qualifiers[campaign.pk] = KitQualifier(kit_model, inner)
+            qualifiers[campaign.pk] = KitQualifier(kit_model)
         else:
             q = BayesianQualifier(
                 seed=42,

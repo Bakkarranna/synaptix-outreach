@@ -221,8 +221,8 @@ class TestExplainProfile:
 
         profile = {"lead_id": 1, "public_identifier": "alice"}
         explanation = qualifier.explain(profile, session=MagicMock())
-        assert "prob=" in explanation
-        assert "entropy=" in explanation
+        assert "score=" in explanation
+        assert "obs=" in explanation
 
     def test_explain_unfitted(self, embeddings_db):
         from linkedin.models import ProfileEmbedding
