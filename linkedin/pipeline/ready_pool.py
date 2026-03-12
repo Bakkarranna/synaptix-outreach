@@ -46,13 +46,11 @@ def promote_to_ready(session, qualifier: BayesianQualifier, threshold: float) ->
 
     promoted = 0
     for prob, p in zip(probs, valid):
-        pid = p.get("public_identifier", "?")
         if prob > threshold:
+            pid = p.get("public_identifier", "?")
             logger.info("%s READY_TO_CONNECT (P(f>0.5)=%.3f)", pid, prob)
             set_profile_state(session, p["public_identifier"], ProfileState.READY_TO_CONNECT.value)
             promoted += 1
-        else:
-            logger.debug("%s not ready (P(f>0.5)=%.3f < %.3f)", pid, prob, threshold)
 
     return promoted
 
