@@ -244,10 +244,10 @@ def get_connected_profiles(session) -> list:
 
 
 @transaction.atomic
-def create_partner_deal(session, public_id: str):
-    """Create a single Deal in the partner campaign's department for a disqualified lead.
+def create_freemium_deal(session, public_id: str):
+    """Create a single Deal in the freemium campaign's department for a disqualified lead.
 
-    Called just-in-time when a partner candidate is selected for connection,
+    Called just-in-time when a freemium candidate is selected for connection,
     instead of bulk-creating Deals for all disqualified leads upfront.
 
     Returns the created Deal, or the existing Deal if one already exists.
@@ -268,7 +268,7 @@ def create_partner_deal(session, public_id: str):
         raise ValueError(f"No Lead for {public_id}")
 
     deal = Deal.objects.create(
-        name=f"Partner: {public_id}",
+        name=f"Freemium: {public_id}",
         lead=lead,
         contact=lead.contact,
         company=lead.company,
@@ -279,5 +279,5 @@ def create_partner_deal(session, public_id: str):
         next_step_date=date.today(),
         ticket=_make_ticket(),
     )
-    logger.info("%s %s", public_id, colored("PARTNER DEAL", "cyan", attrs=["bold"]))
+    logger.info("%s %s", public_id, colored("FREEMIUM DEAL", "cyan", attrs=["bold"]))
     return deal

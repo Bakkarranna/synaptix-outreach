@@ -1,5 +1,5 @@
-# linkedin/pipeline/partner_pool.py
-"""Partner candidate selection — queries ProfileEmbedding directly, no Deal pre-creation."""
+# linkedin/pipeline/freemium_pool.py
+"""Freemium candidate selection — queries ProfileEmbedding directly, no Deal pre-creation."""
 from __future__ import annotations
 
 import json
@@ -10,11 +10,11 @@ from linkedin.db.urls import url_to_public_id
 logger = logging.getLogger(__name__)
 
 
-def find_partner_candidate(session, qualifier) -> dict | None:
+def find_freemium_candidate(session, qualifier) -> dict | None:
     """Return the top-ranked disqualified+embedded lead not yet dealt in this campaign.
 
     Bypasses the Deal-based pool system entirely. Queries ProfileEmbedding
-    directly, excludes leads that already have a Deal in the partner campaign's
+    directly, excludes leads that already have a Deal in the freemium campaign's
     department, ranks by qualifier, and returns the best one.
     """
     from crm.models import Deal, Lead
@@ -25,7 +25,7 @@ def find_partner_candidate(session, qualifier) -> dict | None:
     # All embedded lead IDs
     embedded_pks = set(ProfileEmbedding.objects.values_list("lead_id", flat=True))
 
-    # Exclude leads that already have a Deal in this partner department
+    # Exclude leads that already have a Deal in this freemium department
     already_dealt = set(
         Deal.objects.filter(department=dept).values_list("lead_id", flat=True)
     )

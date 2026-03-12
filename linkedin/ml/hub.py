@@ -1,5 +1,5 @@
 # linkedin/ml/hub.py
-"""Campaign kit: download from HuggingFace, lazy-load, partner campaign import."""
+"""Campaign kit: download from HuggingFace, lazy-load, freemium campaign import."""
 from __future__ import annotations
 
 import json
@@ -8,7 +8,7 @@ import shutil
 from pathlib import Path
 from typing import Optional
 
-from linkedin.conf import MODELS_DIR, PARTNER_LOG_LEVEL
+from linkedin.conf import MODELS_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -42,10 +42,10 @@ def download_kit(revision: str = "v1") -> Optional[Path]:
         )
         # Remove HF download metadata cache — not needed after download
         shutil.rmtree(_KIT_DIR / ".cache", ignore_errors=True)
-        logger.log(PARTNER_LOG_LEVEL, "[Partner] Kit downloaded to %s", path)
+        logger.info("[Freemium] Kit downloaded to %s", path)
         return Path(path)
     except Exception:
-        logger.log(PARTNER_LOG_LEVEL, "[Partner] Kit download failed", exc_info=True)
+        logger.info("[Freemium] Kit download failed", exc_info=True)
         return None
 
 
@@ -59,13 +59,13 @@ def load_kit_config(kit_dir: Path) -> Optional[dict]:
                      "booking_link", "followup_template")
         for key in required:
             if key not in data:
-                logger.log(PARTNER_LOG_LEVEL, "[Partner] Kit config missing key: %s", key)
+                logger.info("[Freemium] Kit config missing key: %s", key)
                 return None
 
-        logger.log(PARTNER_LOG_LEVEL, "[Partner] Kit config loaded (action_fraction=%.2f)", data["action_fraction"])
+        logger.info("[Freemium] Kit config loaded (action_fraction=%.2f)", data["action_fraction"])
         return data
     except Exception:
-        logger.log(PARTNER_LOG_LEVEL, "[Partner] Kit config load failed", exc_info=True)
+        logger.info("[Freemium] Kit config load failed", exc_info=True)
         return None
 
 
@@ -81,13 +81,13 @@ def load_kit_model(kit_dir: Path):
         model = joblib.load(kit_dir / "model.joblib")
 
         if not hasattr(model, "predict"):
-            logger.log(PARTNER_LOG_LEVEL, "[Partner] Kit model has no predict() method")
+            logger.info("[Freemium] Kit model has no predict() method")
             return None
 
-        logger.log(PARTNER_LOG_LEVEL, "[Partner] Kit model loaded (%s)", type(model).__name__)
+        logger.info("[Freemium] Kit model loaded (%s)", type(model).__name__)
         return model
     except Exception:
-        logger.log(PARTNER_LOG_LEVEL, "[Partner] Kit model load failed", exc_info=True)
+        logger.info("[Freemium] Kit model load failed", exc_info=True)
         return None
 
 
@@ -115,6 +115,3 @@ def fetch_kit() -> Optional[dict]:
     _cached_kit = {"config": config, "model": model}
     return _cached_kit
 
-
-# Backwards-compatibility re-export
-from linkedin.setup.partner import import_partner_campaign  # noqa: F401

@@ -155,7 +155,7 @@ def ready_source(session, qualifier: BayesianQualifier, threshold: float | None 
 def find_candidate(session, qualifier: BayesianQualifier) -> dict | None:
     """Top profile ready for connection, backfilling if needed.
 
-    Only used by regular campaigns. Partner campaigns use
-    find_partner_candidate() from pipeline.partner_pool instead.
+    Only used by regular campaigns. Freemium campaigns use
+    find_freemium_candidate() from pipeline.freemium_pool instead.
     """
     return next(ready_source(session, qualifier), None)

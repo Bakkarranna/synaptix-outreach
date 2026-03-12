@@ -15,7 +15,7 @@ def ensure_self_profile(session):
     Creates two disqualified leads: one for the real profile URL (so auto-discovery
     won't re-enrich it) and a ``/in/me/`` sentinel for subsequent-run detection.
     Neither lead gets an embedding, so the self-profile is never eligible for
-    partner deals.
+    freemium deals.
 
     Returns the parsed profile dict on first run, or ``None`` on subsequent
     runs (the GDPR check is guarded by its own marker file).

@@ -422,11 +422,11 @@ class BayesianQualifier:
 
 
 # ---------------------------------------------------------------------------
-# KitQualifier  (pre-trained kit model for partner campaigns)
+# KitQualifier  (pre-trained kit model for freemium campaigns)
 # ---------------------------------------------------------------------------
 
 class KitQualifier:
-    """Qualifier for partner campaigns backed by a pre-trained GPR kit model.
+    """Qualifier for freemium campaigns backed by a pre-trained GPR kit model.
 
     Wraps a Pipeline(StandardScaler, GPR) loaded from a campaign kit.
     Ranks by raw GP mean and exposes posterior stats for explanation.

@@ -26,8 +26,8 @@ _HANDLERS = {
 }
 
 
-class _PromoRotator:
-    """Logs rotating promotional messages every *every* task executions."""
+class _FreemiumRotator:
+    """Logs rotating freemium messages every *every* task executions."""
 
     _MESSAGES = [
         colored("Join the community or give direct feedback on Telegram \u2192 https://t.me/+Y5bh9Vg8UVg5ODU0", "blue", attrs=["bold"]),
@@ -51,9 +51,9 @@ def _migrate_legacy_model(campaigns):
     if not _LEGACY_MODEL_PATH.exists():
         return
 
-    non_partner = [c for c in campaigns if not c.is_partner]
-    if len(non_partner) == 1:
-        dest = model_path_for_campaign(non_partner[0].pk)
+    non_freemium = [c for c in campaigns if not c.is_freemium]
+    if len(non_freemium) == 1:
+        dest = model_path_for_campaign(non_freemium[0].pk)
         if dest.exists():
             logger.info("Legacy model.joblib exists but %s already present — skipping migration", dest.name)
             return
@@ -61,9 +61,9 @@ def _migrate_legacy_model(campaigns):
         logger.info("Migrated legacy model.joblib → %s", dest.name)
     else:
         logger.warning(
-            "Legacy model.joblib found but %d non-partner campaigns exist — "
+            "Legacy model.joblib found but %d non-freemium campaigns exist — "
             "cannot auto-migrate. Remove it manually once per-campaign models are trained.",
-            len(non_partner),
+            len(non_freemium),
         )
 
 
@@ -71,7 +71,7 @@ def _build_qualifiers(campaigns, cfg, kit_model=None):
     """Create a qualifier for every campaign, keyed by campaign PK.
 
     Regular campaigns get a ``BayesianQualifier`` (persisted per-campaign).
-    Partner campaigns get a ``KitQualifier`` backed by the pre-trained kit
+    Freemium campaigns get a ``KitQualifier`` backed by the pre-trained kit
     model directly — no inner BayesianQualifier needed.
     """
     from linkedin.models import ProfileEmbedding
@@ -81,7 +81,7 @@ def _build_qualifiers(campaigns, cfg, kit_model=None):
     qualifiers: dict[int, BayesianQualifier | KitQualifier] = {}
     n_regular = 0
     for campaign in campaigns:
-        if campaign.is_partner:
+        if campaign.is_freemium:
             if kit_model is None:
                 continue
             qualifiers[campaign.pk] = KitQualifier(kit_model)
@@ -145,9 +145,9 @@ def heal_tasks(session):
     if stale_count:
         logger.info("Recovered %d stale running tasks", stale_count)
 
-    # 2. Seed connect tasks per campaign (regular first, partner deferred)
+    # 2. Seed connect tasks per campaign (regular first, freemium deferred)
     for campaign in session.campaigns:
-        delay = CAMPAIGN_CONFIG["connect_delay_seconds"] if campaign.is_partner else 0
+        delay = CAMPAIGN_CONFIG["connect_delay_seconds"] if campaign.is_freemium else 0
         enqueue_connect(campaign.pk, delay_seconds=delay)
 
     # 3. Check_pending tasks for PENDING profiles
@@ -201,15 +201,15 @@ def heal_tasks(session):
 def run_daemon(session):
     from linkedin.management.setup_crm import ensure_campaign_pipeline
     from linkedin.ml.hub import fetch_kit
-    from linkedin.setup.partner import import_partner_campaign
+    from linkedin.setup.freemium import import_freemium_campaign
     from linkedin.models import Campaign
 
     cfg = CAMPAIGN_CONFIG
 
-    # Load kit model for partner campaigns
+    # Load kit model for freemium campaigns
     kit = fetch_kit()
     if kit:
-        import_partner_campaign(kit["config"])
+        import_freemium_campaign(kit["config"])
 
     # Migrate legacy single model file before creating per-campaign qualifiers
     _migrate_legacy_model(list(session.campaigns))
@@ -237,7 +237,7 @@ def run_daemon(session):
         len(campaigns),
     )
 
-    promo = _PromoRotator(every=2)
+    freemium = _FreemiumRotator(every=2)
 
     while True:
         task = _pop_next_task()
@@ -278,4 +278,4 @@ def run_daemon(session):
         task.status = Task.Status.COMPLETED
         task.completed_at = timezone.now()
         task.save(update_fields=["status", "completed_at"])
-        promo.maybe_log()
+        freemium.maybe_log()

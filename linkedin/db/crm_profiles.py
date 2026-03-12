@@ -18,7 +18,7 @@ from linkedin.db.deals import (  # noqa: F401
     get_pending_profiles,
     get_connected_profiles,
     get_profile_dict_for_public_id,
-    create_partner_deal,
+    create_freemium_deal,
 )
 from linkedin.db.enrichment import (  # noqa: F401
     ensure_lead_enriched,
