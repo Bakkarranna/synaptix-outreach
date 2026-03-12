@@ -221,7 +221,7 @@ class TestExplainProfile:
 
         profile = {"lead_id": 1, "public_identifier": "alice"}
         explanation = qualifier.explain(profile, session=MagicMock())
-        assert "score=" in explanation
+        assert "mean=" in explanation
         assert "obs=" in explanation
 
     def test_explain_unfitted(self, embeddings_db):
