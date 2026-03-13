@@ -36,7 +36,7 @@ def get_connection_status(
         logger.debug("API reports 1st degree → instantly trusted as CONNECTED")
         return ProfileState.CONNECTED
 
-    logger.debug("connection_degree=%s → API unreliable, switching to UI inspection", degree or "None")
+    logger.debug("connection_degree=%s → falling back to UI inspection", degree or "None")
 
     top_card = find_top_card(session)
 
