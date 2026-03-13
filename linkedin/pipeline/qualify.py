@@ -110,7 +110,7 @@ def run_qualification(session, qualifier: BayesianQualifier) -> str | None:
 
 def _save_qualification_result(session, qualifier: BayesianQualifier, lead_id: int, public_id: str, embedding: np.ndarray, label: int, reason: str):
     # LLM rejections are tracked as FAILED Deals with "Disqualified" closing reason
-    # (campaign-scoped), not as Lead.disqualified (reserved for self-profile exclusion).
+    # (campaign-scoped), not as Lead.disqualified (permanent account-level exclusion).
     from linkedin.db.deals import create_disqualified_deal
     from linkedin.db.leads import promote_lead_to_contact
     from linkedin.models import ProfileEmbedding

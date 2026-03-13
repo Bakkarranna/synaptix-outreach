@@ -35,7 +35,7 @@ def find_freemium_candidate(session, qualifier) -> dict | None:
     if not eligible_pks:
         return None
 
-    # disqualified=False excludes self-profile only (account-level exclusion);
+    # disqualified=False excludes permanently disqualified leads (account-level);
     # campaign-scoped rejections are tracked as FAILED Deals, not lead flags.
     leads = Lead.objects.filter(pk__in=eligible_pks, disqualified=False)
     if not leads.exists():

@@ -33,6 +33,26 @@ def parse_next_step(deal) -> dict:
         return {}
 
 
+def increment_connect_attempts(session, public_id: str) -> int:
+    """Increment connect_attempts in deal.next_step and return the new count."""
+    from crm.models import Deal
+
+    clean_url = public_id_to_url(public_id)
+    dept = session.campaign.department
+    deal = Deal.objects.filter(
+        lead__website=clean_url, owner=session.django_user, department=dept,
+    ).first()
+    if not deal:
+        return 1
+
+    meta = parse_next_step(deal)
+    attempts = meta.get("connect_attempts", 0) + 1
+    meta["connect_attempts"] = attempts
+    deal.next_step = json.dumps(meta)
+    deal.save(update_fields=["next_step"])
+    return attempts
+
+
 def _deal_to_profile_dict(deal) -> dict:
     """Convert a Deal (with select_related lead) to a profile dict for lanes."""
     lead = deal.lead
@@ -170,7 +190,7 @@ def create_disqualified_deal(session, public_id: str, reason: str = ""):
     """Create a FAILED Deal with 'Disqualified' closing reason for an LLM-rejected lead.
 
     LLM qualification rejections are tracked as FAILED Deals (campaign-scoped),
-    NOT as Lead.disqualified (which is reserved for self-profile exclusion only).
+    NOT as Lead.disqualified (which is for permanent account-level exclusion).
     A lead can be rejected in one campaign but still be eligible for other campaigns.
     """
     from crm.models import ClosingReason

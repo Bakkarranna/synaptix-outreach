@@ -135,16 +135,16 @@ def promote_lead_to_contact(session, public_id: str):
 def get_leads_for_qualification(session) -> list:
     """Leads eligible for qualification in the current campaign.
 
-    Returns leads that are not self-profile (disqualified=False) and have no
-    Deal in this campaign's department. A lead rejected by another campaign
-    (FAILED Deal in a different department) is still eligible here.
+    Returns leads that are not permanently disqualified and have no Deal in
+    this campaign's department. A lead rejected by another campaign (FAILED
+    Deal in a different department) is still eligible here.
     """
     from crm.models import Lead
 
     dept = session.campaign.department
     leads = Lead.objects.filter(
         owner=session.django_user,
-        disqualified=False,  # excludes self-profile only (account-level)
+        disqualified=False,  # excludes permanently disqualified leads (account-level)
     ).exclude(
         deal__department=dept,  # excludes leads already evaluated in this campaign
     )
@@ -161,6 +161,19 @@ def get_leads_for_qualification(session) -> list:
         })
     return result
 
+
+
+def disqualify_lead(public_id: str):
+    """Set Lead.disqualified = True (account-level, permanent, cross-campaign)."""
+    from crm.models import Lead
+
+    clean_url = public_id_to_url(public_id)
+    lead = Lead.objects.filter(website=clean_url).first()
+    if not lead:
+        logger.warning("disqualify_lead: no Lead for %s", public_id)
+        return
+    lead.disqualified = True
+    lead.save(update_fields=["disqualified"])
 
 
 def lead_profile_by_id(lead_id: int) -> Optional[dict]:
