@@ -42,8 +42,10 @@ def send_follow_up_message(
         return None
 
     template_content = session.campaign.followup_template
-    if template_content:
-        message = render_template(session, template_content, profile)
+    if not template_content:
+        logger.error("No followup template for campaign %s", session.campaign)
+        return None
+    message = render_template(session, template_content, profile)
 
     sent = (
         _send_msg_pop_up(session, profile, message)
