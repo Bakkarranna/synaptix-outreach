@@ -1,85 +1,79 @@
 # Template Variables Reference
 
-When writing follow-up message templates (Jinja2 or AI-prompt), the profile dictionary is spread directly into
-the template context. This means all fields are available as top-level variables — you write `{{ first_name }}`,
-not `{{ profile.first_name }}`.
+This document describes the variables available in the follow-up agent's system prompt template
+(`assets/templates/prompts/follow_up_agent.j2`) and the data structures from LinkedIn's Voyager API.
 
-The data comes from LinkedIn's Voyager API, parsed into a clean structure by `linkedin/api/voyager.py`.
+## Agent System Prompt Variables
 
-## Top-Level Variables
+The follow-up agent template receives these named variables (not a spread profile dict):
 
 | Variable | Type | Description | Example |
 |:---------|:-----|:------------|:--------|
-| `first_name` | string | First name | `"Jane"` |
-| `last_name` | string | Last name | `"Doe"` |
-| `full_name` | string | First + last name combined | `"Jane Doe"` |
-| `headline` | string or null | Profile headline / tagline | `"VP of Engineering at Acme"` |
-| `summary` | string or null | The "About" section text | `"15 years building..."` |
-| `public_identifier` | string or null | LinkedIn handle (URL slug) | `"janedoe"` |
-| `url` | string | Full LinkedIn profile URL | `"https://www.linkedin.com/in/janedoe/"` |
-| `location_name` | string or null | Location as displayed on the profile | `"San Francisco, California"` |
-| `geo` | dict or null | Structured geographic info (see below) | |
-| `industry` | dict or null | Industry info (see below) | |
-| `positions` | list of dicts | Work experience entries (see below) | |
-| `educations` | list of dicts | Education entries (see below) | |
-| `connection_degree` | int or null | Connection degree (1 = connected, 2 = 2nd, 3 = 3rd) | `2` |
-| `connection_distance` | string or null | Raw distance value from the API | `"DISTANCE_2"` |
-| `urn` | string | LinkedIn internal URN identifier | |
+| `self_name` | string | The logged-in user's name (from `/in/me/` sentinel) | `"Jane Doe"` |
+| `product_docs` | string | Product/service description from Campaign | |
+| `campaign_objective` | string | Campaign goal from Campaign | |
+| `booking_link` | string | Calendar link from Campaign | `"https://calendly.com/your-link"` |
+| `full_name` | string | Lead's first + last name | `"John Smith"` |
+| `headline` | string or null | Lead's profile headline | `"VP of Engineering at Acme"` |
+| `current_company` | string or null | Company from first position | `"Acme Corp"` |
+| `location` | string or null | Location as displayed on profile | `"San Francisco, California"` |
+| `past_messages_count` | integer | Number of previous outgoing messages to this lead | `2` |
 
-## Positions
+## Voyager API Profile Structure
 
-Each entry in the `positions` list is a dict with these fields:
+The profile data parsed by `linkedin/api/voyager.py` contains the following fields. These are stored
+in `Lead.description` as JSON and used internally for enrichment and qualification, though only a subset
+is passed to the agent template.
 
-| Field | Type | Description | Example |
-|:------|:-----|:------------|:--------|
-| `title` | string | Job title | `"Senior Engineer"` |
-| `company_name` | string | Company name | `"Acme Corp"` |
-| `company_urn` | string or null | LinkedIn URN for the company | |
-| `location` | string or null | Position-specific location | `"New York, NY"` |
-| `description` | string or null | Role description text | `"Led a team of 12..."` |
-| `date_range` | dict or null | Start/end dates (see Date Range below) | |
-| `urn` | string or null | LinkedIn internal URN for this position | |
+### Top-Level Fields
 
-### Accessing positions in templates
+| Field | Type | Description |
+|:------|:-----|:------------|
+| `first_name` | string | First name |
+| `last_name` | string | Last name |
+| `full_name` | string | First + last name combined |
+| `headline` | string or null | Profile headline / tagline |
+| `summary` | string or null | The "About" section text |
+| `public_identifier` | string or null | LinkedIn handle (URL slug) |
+| `url` | string | Full LinkedIn profile URL |
+| `location_name` | string or null | Location as displayed on profile |
+| `geo` | dict or null | Structured geographic info |
+| `industry` | dict or null | Industry info |
+| `positions` | list of dicts | Work experience entries |
+| `educations` | list of dicts | Education entries |
+| `connection_degree` | int or null | Connection degree (1 = connected, 2 = 2nd, 3 = 3rd) |
+| `connection_distance` | string or null | Raw distance value from the API |
+| `urn` | string | LinkedIn internal URN identifier |
 
-```jinja2
-{# Current company (first position) #}
-{{ positions[0].company_name if positions else "their company" }}
+### Positions
 
-{# Current title #}
-{{ positions[0].title if positions else "professional" }}
+Each entry in the `positions` list:
 
-{# Loop over all positions #}
-{% for pos in positions %}
-- {{ pos.title }} at {{ pos.company_name }}
-{% endfor %}
-```
+| Field | Type | Description |
+|:------|:-----|:------------|
+| `title` | string | Job title |
+| `company_name` | string | Company name |
+| `company_urn` | string or null | LinkedIn URN for the company |
+| `location` | string or null | Position-specific location |
+| `description` | string or null | Role description text |
+| `date_range` | dict or null | Start/end dates (see below) |
+| `urn` | string or null | LinkedIn internal URN for this position |
 
-## Educations
+### Educations
 
-Each entry in the `educations` list is a dict with these fields:
+Each entry in the `educations` list:
 
-| Field | Type | Description | Example |
-|:------|:-----|:------------|:--------|
-| `school_name` | string | School or university name | `"MIT"` |
-| `degree_name` | string or null | Degree type | `"Bachelor of Science"` |
-| `field_of_study` | string or null | Field/major | `"Computer Science"` |
-| `date_range` | dict or null | Start/end dates (see Date Range below) | |
-| `urn` | string or null | LinkedIn internal URN | |
+| Field | Type | Description |
+|:------|:-----|:------------|
+| `school_name` | string | School or university name |
+| `degree_name` | string or null | Degree type |
+| `field_of_study` | string or null | Field/major |
+| `date_range` | dict or null | Start/end dates (see below) |
+| `urn` | string or null | LinkedIn internal URN |
 
-### Accessing educations in templates
+### Date Range
 
-```jinja2
-{# First school #}
-{{ educations[0].school_name if educations else "" }}
-
-{# Degree and field #}
-{{ educations[0].degree_name ~ " in " ~ educations[0].field_of_study if educations and educations[0].degree_name else "" }}
-```
-
-## Date Range
-
-Position and education entries may have a `date_range` dict with this structure:
+Position and education entries may have a `date_range` dict:
 
 ```json
 {
@@ -91,73 +85,20 @@ Position and education entries may have a `date_range` dict with this structure:
 - `start` and `end` are dicts with `year` (int or null) and `month` (int or null).
 - A null `end` means the position is current.
 
-```jinja2
-{# Check if currently employed at first position #}
-{% if positions and positions[0].date_range and positions[0].date_range.end is none %}
-  Currently at {{ positions[0].company_name }}
-{% endif %}
-```
-
-## Geo and Industry
+### Geo and Industry
 
 The `geo` and `industry` fields are dicts with API-specific keys:
 
-```jinja2
-{# Industry name #}
-{{ industry.name if industry else "" }}
-
-{# Geo region (localized name without country) #}
-{{ geo.defaultLocalizedNameWithoutCountryName if geo else "" }}
+```
+geo.defaultLocalizedNameWithoutCountryName  →  "San Francisco Bay Area"
+industry.name                                →  "Computer Software"
 ```
 
 ## Null Safety
 
-Many fields can be null. Use Jinja2's `default` filter or conditional checks to handle missing data
-gracefully:
+Many fields can be null. In Jinja2 templates, use the `default` filter or conditional checks:
 
 ```jinja2
-{# Using the default filter #}
 {{ headline | default("a professional") }}
-{{ location_name | default("") }}
-
-{# Conditional blocks #}
-{% if summary %}
-About: {{ summary }}
-{% endif %}
-
-{# Safe access to nested data #}
-{{ positions[0].company_name if positions else "their company" }}
-```
-
-## Complete Example (Jinja2 template)
-
-```jinja2
-Hey {{ first_name }},
-
-I saw you're working as {{ headline | default("a professional") }}{% if positions %} at {{ positions[0].company_name }}{% endif %}{% if location_name %} in {{ location_name }}{% endif %}.
-
-{% if summary %}I was particularly interested in your background — {{ summary[:100] }}...{% endif %}
-
-Would love to connect and exchange ideas.
-
-Best regards
-```
-
-## Complete Example (AI-prompt template)
-
-```jinja2
-Write a short (2-3 sentences) follow-up message to {{ full_name }},
-who is a {{ headline | default("professional") }}{% if positions %} at {{ positions[0].company_name }}{% endif %}.
-
-{% if summary %}
-Their profile summary:
-{{ summary }}
-{% endif %}
-
-{% if positions|length > 1 %}
-Previous roles: {% for pos in positions[1:3] %}{{ pos.title }} at {{ pos.company_name }}{{ ", " if not loop.last }}{% endfor %}
-{% endif %}
-
-Be friendly and professional. End with a soft call-to-action.
-Return ONLY the message — no quotes, no explanations.
+{% if positions %}Current company: {{ positions[0].company_name }}{% endif %}
 ```

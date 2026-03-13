@@ -3,29 +3,29 @@
 ## Overview
 
 Every LinkedIn profile flows through a fixed sequence of stages, from first
-discovery on a page to the final follow-up message.
+discovery on a page to agentic follow-up conversations.
 
 ```
-Discovery → Enrichment + Embedding → Qualification (LLM) → NEW → READY_TO_CONNECT (GP gate) → PENDING → CONNECTED → COMPLETED
-  (url)       (voyager + fastembed)     (always LLM)         (Deal)     (GP prob > threshold)     (sent)    (accepted)   (followed up)
+Discovery → Enrichment + Embedding → Qualification (LLM) → QUALIFIED → READY_TO_CONNECT (GP gate) → PENDING → CONNECTED → COMPLETED
+  (url)       (voyager + fastembed)     (always LLM)         (Deal)     (GP prob > threshold)         (sent)    (accepted)   (agent follow-up)
 ```
 
 ---
 
 ## 1. Discovery
 
-**Where:** `navigation/utils.py` — `goto_page()` → `_extract_in_urls()` → `_enrich_new_urls()`
+**Where:** `browser/nav.py` — `goto_page()` → `_extract_in_urls()` → `_discover_and_enrich()`
 
 Every time the daemon navigates to a LinkedIn page (search results, profile
 pages, feed), all `/in/` URLs on the page are extracted. New URLs (those
 without an existing Lead) are immediately processed.
 
-LLM-generated search keywords (`pipeline/search.py:search_one()`) drive
+LLM-generated search keywords (`pipeline/search.py:run_search()`) drive
 additional discovery when the candidate pool runs dry.
 
 ## 2. Enrichment + Embedding (eager, at discovery time)
 
-**Where:** `navigation/utils.py:_enrich_new_urls()` → `db/crm_profiles.py:create_enriched_lead()` → `ml/embeddings.py:embed_profile()`
+**Where:** `browser/nav.py:_discover_and_enrich()` → `db/leads.py:create_enriched_lead()` → `ml/embeddings.py:embed_profile()`
 
 For each new URL discovered:
 
@@ -38,13 +38,13 @@ All three steps happen atomically at discovery time. Rate-limited by
 `enrich_min_interval` (default 1s per profile).
 
 > **Robustness fallback:** Lazy helpers (`ensure_lead_enriched`,
-> `ensure_profile_embedded`) exist in `db/crm_profiles.py` for rare edge
+> `ensure_profile_embedded`) exist in `db/enrichment.py` for rare edge
 > cases (manual lead creation, interrupted enrichment, DB inconsistency).
 > They log a warning when triggered — this is not normal flow.
 
 ## 3. Qualification (LLM only)
 
-**Where:** `pipeline/qualify.py:qualify_one()` (called from connect lane backfill)
+**Where:** `pipeline/qualify.py:run_qualification()` (called from connect task backfill via `pools.py`)
 
 Unlabeled `ProfileEmbedding` rows are the qualification pool. Candidate
 selection depends on label balance:
@@ -65,66 +65,74 @@ The first candidate is selected in order and qualified via LLM.
 ### Result
 
 - `ProfileEmbedding.label` set to 0 or 1, with `llm_reason` and `labeled_at`
-- Accepted: Lead promoted → Contact + Company + Deal (stage=NEW)
-- Rejected: `Lead.disqualified = True`
+- Accepted: Lead promoted → Contact + Company + Deal (stage=QUALIFIED)
+- Rejected: FAILED Deal with "Disqualified" closing reason (campaign-scoped, not `Lead.disqualified`)
 
-## 4. Ready to Connect (NEW → READY_TO_CONNECT)
+## 4. Ready to Connect (QUALIFIED → READY_TO_CONNECT)
 
 **Where:** `pipeline/ready_pool.py:promote_to_ready()`
 
-After qualification, profiles sit at the NEW stage. Before connecting, they
+After qualification, profiles sit at the QUALIFIED stage. Before connecting, they
 must pass a GP confidence gate:
 
-- `promote_to_ready()` loads all NEW profiles, computes P(f > 0.5) via the GP model
+- `promote_to_ready()` loads all QUALIFIED profiles, computes P(f > 0.5) via the GP model
 - Profiles with probability above `min_ready_to_connect_prob` (default 0.9) are promoted to READY_TO_CONNECT
-- During cold start (GP not fitted), no profiles are promoted — the connect lane keeps triggering qualifications until enough labels accumulate
+- During cold start (GP not fitted), no profiles are promoted — the connect task keeps triggering qualifications until enough labels accumulate
 
 ## 5. Connect (READY_TO_CONNECT → PENDING)
 
-**Where:** `lanes/connect.py`
+**Where:** `tasks/connect.py:handle_connect()`
 
-The connect lane picks the top READY_TO_CONNECT profile from the pool
-(`pipeline/pools.py:get_candidate()` → `pipeline/ready_pool.py:get_ready_candidate()`).
+The connect handler picks the top READY_TO_CONNECT profile from the pool
+(`pipeline/pools.py:find_candidate()` → `pipeline/ready_pool.py:find_ready_candidate()`).
 
-If the pool is empty, the **backfill chain** runs:
-1. `promote_to_ready()` — check if any NEW profiles pass the GP gate
-2. `qualify_one()` — qualify the next unlabeled profile via LLM
-3. `search_one()` — discover new profiles via LinkedIn search
-4. Re-check pool — repeat until a candidate is found or all return None
+If the pool is empty, the **backfill chain** runs via composable generators:
+1. `ready_source()` — check if any QUALIFIED profiles pass the GP gate via `promote_to_ready()`
+2. `qualify_source()` — qualify the next unlabeled profile via `run_qualification()`
+3. `search_source()` — discover new profiles via `run_search()`
+
+Each generator pulls from the next when empty. Each `qualify_source` iteration
+produces exactly one label, preventing infinite-search-without-qualifying.
 
 Connection request is sent without a note. Deal moves to PENDING stage.
 Rate-limited by `LinkedInProfile.can_execute()` / `record_action()`.
 
+**Unreachable profile detection**: when `send_connection_request` returns
+QUALIFIED (no Connect button), `connect_attempts` is incremented; after
+`MAX_CONNECT_ATTEMPTS` (3), the lead is disqualified (`lead.disqualified=True`)
+and the Deal is marked FAILED.
+
 ## 6. Check Pending (PENDING → CONNECTED)
 
-**Where:** `lanes/check_pending.py`
+**Where:** `tasks/check_pending.py:handle_check_pending()`
 
-Polls all PENDING profiles for acceptance. Uses **exponential backoff**
-per profile:
+Checks **one** PENDING profile per task execution via `get_connection_status()`.
+Uses **exponential backoff** with multiplicative jitter per profile:
 
 - Initial interval: `check_pending_recheck_after_hours` (default 24h)
 - Doubles each time the profile is still pending
 - Stored in `deal.next_step` as `{"backoff_hours": N}`
 
-All ready profiles are checked per tick. On acceptance → CONNECTED.
+On acceptance → enqueues `follow_up` task.
 
 ## 7. Follow Up (CONNECTED → COMPLETED)
 
-**Where:** `lanes/follow_up.py`
+**Where:** `tasks/follow_up.py:handle_follow_up()` → `agents/follow_up.py:run_follow_up_agent()`
 
-Sends a follow-up message to one CONNECTED profile per tick:
+Runs an **agentic multi-turn conversation** for one CONNECTED profile:
 
-1. Renders Jinja2 template (`followup2.j2`) with profile context
-2. Passes through LLM for natural language refinement
-3. Appends booking link (after LLM call, not part of prompt)
-4. Sends via LinkedIn messaging
+1. The ReAct agent reads conversation history with the lead
+2. Sends one or more short messages (human-like LinkedIn DMs)
+3. Can mark the conversation as completed or schedule the next follow-up
+4. System prompt from `follow_up_agent.j2` with campaign context and lead profile data
 
-Deal moves to COMPLETED stage. Message persisted via `save_chat_message()`.
+Records `FOLLOW_UP` action if any message was sent. Safety net re-enqueues
+in 72h if the agent didn't schedule or complete.
 
 ## 8. Terminal States
 
-- **COMPLETED** — follow-up message sent successfully
-- **FAILED** — unrecoverable error at any stage
+- **COMPLETED** — conversation completed by the agent (booked, declined, or went cold)
+- **FAILED** — unrecoverable error at any stage, or LLM rejection (campaign-scoped "Disqualified" closing reason)
 
 ---
 
@@ -142,9 +150,9 @@ Deal moves to COMPLETED stage. Message persisted via `save_chat_message()`.
                        │       │
               rejected │       │ accepted
                        │       │
-            ┌──────────▼┐  ┌───▼──────┐
-            │Disqualified│  │   NEW    │  Contact + Deal created
-            │ (implicit) │  └────┬─────┘
+            ┌──────────▼┐  ┌───▼────────┐
+            │  FAILED    │  │  QUALIFIED │  Contact + Deal created
+            │(Disqualif.)│  └────┬───────┘
             └────────────┘       │
                                  │ GP confidence gate (P(f>0.5) > threshold)
                           ┌──────▼──────────────┐
@@ -158,7 +166,7 @@ Deal moves to COMPLETED stage. Message persisted via `save_chat_message()`.
                           ┌──────▼──────┐
                           │  CONNECTED  │  Ready for follow-up
                           └──────┬──────┘
-                                 │ send_follow_up_message()
+                                 │ run_follow_up_agent()
                           ┌──────▼──────┐
                           │  COMPLETED  │  Done
                           └─────────────┘
@@ -168,9 +176,10 @@ Deal moves to COMPLETED stage. Message persisted via `save_chat_message()`.
                           └─────────────┘
 ```
 
-## Partner Campaigns
+## Freemium Campaigns
 
-Partner campaigns skip qualification, READY_TO_CONNECT, and search entirely.
-They re-use disqualified leads from other campaigns, seeded via
-`seed_partner_deals()`. Profiles go straight from NEW pool to connect,
-gated by `action_fraction`.
+Freemium campaigns skip qualification, READY_TO_CONNECT, and search entirely.
+They query `ProfileEmbedding` for any embedded lead without a Deal in their
+department (excluding permanently disqualified leads), ranked by `KitQualifier`.
+Profiles go straight to connect, with delay scaled by `action_fraction` to
+maintain a target ratio of freemium vs regular connections.

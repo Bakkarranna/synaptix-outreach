@@ -1,107 +1,52 @@
 # Configuration
 
-All configuration lives in a single YAML file: `assets/accounts.secrets.yaml`. This file is gitignored and
-contains credentials, LLM settings, campaign behavior, and account definitions.
+Configuration is split between environment variables (`.env` file), Django models (managed via interactive
+onboarding or Django Admin), and hardcoded defaults in `linkedin/conf.py`.
 
-To get started, copy the template:
+## LLM Configuration (`.env`)
 
-```bash
-cp assets/accounts.secrets.template.yaml assets/accounts.secrets.yaml
-```
+LLM settings are stored in `.env` (at `assets/.env` for Docker, or project root for local dev). Any
+OpenAI-compatible provider works. These are prompted during interactive onboarding if missing.
 
-The file has three top-level sections: `env`, `campaign`, and `accounts`.
-
-## LLM Configuration (`env:`)
-
-Used for AI-powered follow-up messages, profile qualification, and search keyword generation. Any OpenAI-compatible provider works.
-
-```yaml
-env:
-  LLM_API_KEY:  sk-...                      # required
-  LLM_API_BASE: https://api.anthropic.com/v1 # provider base URL (optional)
-  AI_MODEL:     claude-opus-4-6               # model identifier
-```
-
-| Field | Description | Default |
-|:------|:------------|:--------|
+| Variable | Description | Default |
+|:---------|:------------|:--------|
 | `LLM_API_KEY` | API key for an OpenAI-compatible provider. | (required) |
+| `AI_MODEL` | Model identifier for qualification, follow-up, and search keyword generation. | (required) |
 | `LLM_API_BASE` | Base URL for the API endpoint. | (none) |
-| `AI_MODEL` | Model identifier for message generation, profile qualification, and search keyword generation. | `gpt-5.3-codex` |
 
-These can also be set via `.env` file or environment variables (the YAML file takes precedence).
+These can also be set as environment variables directly.
 
-## Campaign Settings (`campaign:`)
+## Campaign Settings (Django Model)
 
-Controls rate limits, timing, and behavior for each daemon lane.
+Campaign data is stored in the `Campaign` Django model (1:1 with `common.Department`), managed via
+Django Admin (`/admin/`) or created during interactive onboarding.
 
-```yaml
-campaign:
-  connect:
-    daily_limit: 20
-    weekly_limit: 100
-  check_pending:
-    recheck_after_hours: 24
-  follow_up:
-    daily_limit: 30
-    existing_connections: false
-  min_action_interval: 120
-  enrich_min_interval: 1
-```
+| Field | Type | Description |
+|:------|:-----|:------------|
+| `product_docs` | text | Product/service description. Used by LLM qualification, follow-up agent, and search keyword generation. |
+| `campaign_objective` | text | Campaign goal. Used by LLM qualification, follow-up agent, and search keyword generation. |
+| `booking_link` | string | URL included in follow-up messages when suggesting a meeting. |
+| `is_freemium` | boolean | Whether this is a freemium campaign (uses KitQualifier instead of BayesianQualifier). |
+| `action_fraction` | float | Target fraction of total connections for freemium campaigns. |
 
-| Field | Type | Description | Default |
-|:------|:-----|:------------|:--------|
-| `connect.daily_limit` | integer | Max connection requests per day (resets at midnight). | `20` |
-| `connect.weekly_limit` | integer | Max connection requests per week (resets on Monday). | `100` |
-| `check_pending.recheck_after_hours` | float | Base interval (hours) before first check. Doubles per profile via exponential backoff. | `24` |
-| `follow_up.daily_limit` | integer | Max follow-up messages per day (resets at midnight). | `30` |
-| `follow_up.existing_connections` | boolean | `false` = mark pre-existing connections as IGNORED. `true` = send follow-ups to all connections. | `false` |
-| `min_action_interval` | integer | Fixed minimum seconds between major actions (connect, follow-up). Rate limiters still enforce daily/weekly caps independently. | `120` |
-| `enrich_min_interval` | integer | Floor (seconds) between enrichment API calls. | `1` |
+## Account Settings (Django Model)
 
-### Qualification Settings (`campaign.qualification:`)
-
-Controls the Bayesian active learning pipeline for profile qualification.
-
-```yaml
-campaign:
-  qualification:
-    entropy_threshold: 0.3
-    n_mc_samples: 100
-    embedding_model: BAAI/bge-small-en-v1.5
-```
+Account data is stored in the `LinkedInProfile` Django model (1:1 with `auth.User`), managed via
+Django Admin or created during interactive onboarding.
 
 | Field | Type | Description | Default |
 |:------|:-----|:------------|:--------|
-| `entropy_threshold` | float | Predictive entropy below which the GPC model auto-decides without querying the LLM. Lower values = fewer auto-decisions, more LLM queries. | `0.3` |
-| `n_mc_samples` | integer | Monte Carlo samples drawn from the GP latent posterior for BALD computation. | `100` |
-| `embedding_model` | string | FastEmbed model identifier for profile embeddings (384-dim). | `BAAI/bge-small-en-v1.5` |
+| `linkedin_username` | string | LinkedIn login email. | (required) |
+| `linkedin_password` | string | LinkedIn password. | (required) |
+| `active` | boolean | Enable/disable this account. | `true` |
+| `subscribe_newsletter` | boolean | Receive OpenOutreach updates. | `true` |
+| `connect_daily_limit` | integer | Max connection requests per day. | `20` |
+| `connect_weekly_limit` | integer | Max connection requests per week. | `100` |
+| `follow_up_daily_limit` | integer | Max follow-up messages per day. | `30` |
+| `legal_accepted` | boolean | Whether the user accepted the legal notice. | `false` |
 
-### How scheduling works
-
-Major actions (connect, follow-up) fire at a fixed pace set by `min_action_interval` (default 120 seconds),
-with ±20% random jitter for human-like pacing. Daily and weekly rate limiters independently cap totals.
-
-## Account Configuration (`accounts:`)
-
-Define one or more LinkedIn accounts. The daemon uses the first active account by default.
-
-```yaml
-accounts:
-  jane_doe_main:
-    active: true
-    username: jane.doe@gmail.com
-    password: SuperSecret123!
-    subscribe_newsletter:
-    booking_link: https://calendly.com/your-link
-```
-
-| Field | Type | Description | Default |
-|:------|:-----|:------------|:--------|
-| `active` | boolean | Enable/disable this account without removing it. | `true` |
-| `username` | string | LinkedIn login email. | (required) |
-| `password` | string | LinkedIn password. | (required) |
-| `subscribe_newsletter` | boolean/null | Receive OpenOutreach updates. Auto-enabled for non-GDPR locations on first run (see below). | `null` |
-| `booking_link` | string | URL included in follow-up messages when suggesting a meeting (e.g. your calendar page). | (none) |
+Rate limiting is enforced by `LinkedInProfile` methods (`can_execute()`, `record_action()`,
+`mark_exhausted()`) backed by the `ActionLog` model, surviving daemon restarts.
 
 ### GDPR Location Detection
 
@@ -110,30 +55,36 @@ ISO-2 codes for jurisdictions with opt-in email marketing laws (EU/EEA, UK, Swit
 Australia, Japan, South Korea, New Zealand).
 
 - **Non-GDPR location**: `subscribe_newsletter` is auto-set to `true` for that account.
-- **GDPR-protected location**: the existing config value is preserved (no override).
+- **GDPR-protected location**: the existing value is preserved (no override).
 - **Unknown/empty location**: defaults to GDPR-protected (errs on the side of caution).
 
-This check runs once per account (a marker file in `assets/cookies/` prevents re-runs). Setting
-`subscribe_newsletter` explicitly in the config always takes precedence — the override only applies when
-the field is `null` / unset.
+This check runs once per account (a marker file in `assets/cookies/` prevents re-runs).
 
-### Derived Paths
+## Hardcoded Defaults (`conf.py:CAMPAIGN_CONFIG`)
+
+Timing and ML defaults are hardcoded in `linkedin/conf.py`. These are not user-configurable.
+
+| Key | Value | Description |
+|:----|:------|:------------|
+| `check_pending_recheck_after_hours` | `24` | Base interval (hours) before first pending check. Doubles per profile via exponential backoff. |
+| `enrich_min_interval` | `1` | Floor (seconds) between enrichment API calls during auto-discovery. |
+| `min_action_interval` | `120` | Minimum seconds between major actions. |
+| `qualification_n_mc_samples` | `100` | Monte Carlo samples for BALD computation. |
+| `min_ready_to_connect_prob` | `0.9` | GP probability threshold for promoting QUALIFIED to READY_TO_CONNECT. |
+| `min_positive_pool_prob` | `0.20` | P(f > 0.5) threshold for positive pool check in exploit mode. |
+| `embedding_model` | `BAAI/bge-small-en-v1.5` | FastEmbed model for 384-dim profile embeddings. |
+| `connect_delay_seconds` | `10` | Delay between connect tasks. |
+| `connect_no_candidate_delay_seconds` | `300` | Delay when candidate pool is empty. |
+| `check_pending_jitter_factor` | `0.2` | Multiplicative jitter factor for backoff. |
+| `worker_poll_seconds` | `5` | Sleep when task queue is empty. |
+
+Other constants: `MIN_DELAY` (5s) / `MAX_DELAY` (8s) for human-like wait timing.
+
+## Derived Paths
 
 The system automatically generates these paths per account:
 
 - **Cookie file**: `assets/cookies/<handle>.json` (session persistence)
+- **Model file**: `assets/models/campaign_<id>_model.joblib` (per-campaign GP model)
 
-## Campaign Files
-
-Campaign context is stored in `assets/campaign/` and created via interactive onboarding on first run
-(see [Architecture — Onboarding](./architecture.md#onboarding)):
-
-| File | Description |
-|:-----|:------------|
-| `product_docs.txt` | Product/service description. Used by the LLM qualification prompt and search keyword generation. |
-| `campaign_objective.txt` | Campaign objective. Used by the LLM qualification prompt and search keyword generation. |
-
-These files are created automatically during onboarding if they don't exist. They can also be edited
-manually at any time.
-
-See [Templating](./templating.md) for template configuration details.
+See [Templating](./templating.md) for follow-up messaging configuration.

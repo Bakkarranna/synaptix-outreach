@@ -12,8 +12,8 @@ This document describes the testing setup and conventions for OpenOutreach.
 ## Running Tests
 
 ```bash
-# Run all tests
-pytest
+# Run all tests locally
+make test
 
 # Run a single test file
 pytest tests/api/test_voyager.py
@@ -22,7 +22,7 @@ pytest tests/api/test_voyager.py
 pytest -k test_name
 
 # Run via Docker
-make test
+make docker-test
 ```
 
 ## Configuration
@@ -45,8 +45,8 @@ An autouse fixture in `tests/conftest.py` runs `setup_crm()` before each test to
 
 ```python
 @pytest.fixture(autouse=True)
-def _setup_crm(db):
-    from linkedin.management.setup_crm import setup_crm
+def _ensure_crm_data(db):
+    Group.objects.get_or_create(name="co-workers")
     setup_crm()
 ```
 
@@ -58,27 +58,31 @@ Tests live in `tests/` and mirror the source layout:
 
 ```
 tests/
-├── conftest.py              # Shared fixtures (autouse setup_crm)
+├── conftest.py              # Shared fixtures (autouse CRM setup, FakeAccountSession)
 ├── factories.py             # Factory-boy factories for CRM models
 ├── api/
 │   └── test_voyager.py      # Voyager API response parsing
 ├── db/
-│   └── test_profiles.py     # CRM profile CRUD operations
-├── lanes/
-│   ├── test_lanes.py        # Daemon lane logic
-│   └── test_qualify.py      # Qualification lane logic
+│   ├── test_profiles.py     # CRM profile CRUD operations
+│   └── test_lazy_enrichment.py  # Lazy enrichment/embedding fallbacks
+├── tasks/
+│   └── test_tasks.py        # Task handler logic (connect, check_pending, follow_up)
 ├── ml/
-│   ├── test_qualifier.py    # Bayesian qualifier (GPC + BALD)
-│   ├── test_embeddings.py   # DuckDB embedding store
+│   ├── test_qualifier.py    # Bayesian qualifier (GPR + BALD)
+│   ├── test_embeddings.py   # ProfileEmbedding storage (Django/SQLite)
 │   └── test_profile_text.py # Profile text builder
+├── test_action_log.py       # ActionLog rate limiting
 ├── test_conf.py             # Configuration loading
 ├── test_emails.py           # Newsletter subscription
 ├── test_gdpr.py             # GDPR location detection
+├── test_heal.py             # Task queue healing on startup
 ├── test_onboarding.py       # Interactive onboarding
-├── test_rate_limiter.py     # Rate limiter
-├── test_templates.py        # Message template rendering
+├── test_pools.py            # Candidate pool generators
+├── test_qualify.py          # Qualification pipeline
+├── test_ready_pool.py       # Ready-to-connect pool / GP gate
 └── fixtures/
-    └── profiles/            # Sample Voyager API JSON responses
+    ├── profiles/            # Sample Voyager API JSON responses
+    └── pages/               # Sample HTML pages
 ```
 
 ## Conventions

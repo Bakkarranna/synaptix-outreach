@@ -1,6 +1,6 @@
 # Docker Installation and Usage
 
-## ⚡ Quick Start (Pre-built Image — Recommended)
+## Quick Start (Pre-built Image — Recommended)
 
 Pre-built production images are published to GitHub Container Registry on every push to `master`.
 
@@ -44,7 +44,8 @@ docker run --pull always -it -p 5900:5900 --user "$(id -u):$(id -g)" -v ./assets
 
 ## Build from Source (Docker Compose)
 
-For development or customization, you can build the image locally.
+For development or customization, you can build the image locally. The compose file (`local.yml`)
+mounts the entire project directory into the container for live code editing.
 
 ### Prerequisites
 
@@ -64,16 +65,30 @@ make up
 
 This builds the Docker image from source with `BUILD_ENV=local` (includes test dependencies) and starts the daemon.
 
+**Note:** The compose file uses `HOST_UID` / `HOST_GID` environment variables (defaulting to 1000)
+for file ownership. If your host UID differs from 1000, set them explicitly:
+
+```bash
+HOST_UID=$(id -u) HOST_GID=$(id -g) make up
+```
+
 ### Useful Commands
 
 | Command | Description |
 |:--------|:------------|
+| `make build` | Build the Docker image without starting |
 | `make up` | Build and start the service |
 | `make stop` | Stop the running containers |
 | `make attach` | Follow application logs |
 | `make up-view` | Start + open VNC viewer (Linux, requires `vinagre`) |
+| `make view` | Open VNC viewer standalone (requires `vinagre`) |
 | `make docker-test` | Run the test suite in Docker |
 
 ### VNC with Docker Compose
 
 The VNC server is exposed on port 5900. Use `make up-view` to auto-open it, or connect manually to `localhost:5900` with any VNC client.
+
+### Volume Mounts
+
+The pre-built `docker run` command mounts only `./assets:/app/assets` (data persistence). The compose
+setup (`local.yml`) mounts the entire repo `.:/app` for live code editing during development.
