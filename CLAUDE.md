@@ -1,203 +1,42 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+## Rules
 
-## Documentation Rule
-
-When modifying code, always update CLAUDE.md and MEMORY.md to reflect the changes. This includes changes to models, function signatures, module structure, configuration keys, state machines, task queue behavior, ML pipeline, and any other architectural details documented in these files. Documentation must stay in sync with the code at all times.
-
-## Python Environment
-
-Always use `.venv/bin/python` (not system `python3`) when running commands in this project.
-
-## Commit Rule
-
-Do not add `Co-Authored-By` lines to commit messages. Commit messages must be a single line (no body or multi-line descriptions).
-
-## Dependency Rule
-
-Dependencies are managed in `requirements/*.txt` files. `requirements/` files are used by both local dev and Docker.
+- **Python env**: Always use `.venv/bin/python` (not system `python3`).
+- **Commits**: No `Co-Authored-By` lines. Single-line messages (no body).
+- **Dependencies**: Managed in `requirements/*.txt` (used by local dev and Docker).
+- **Docs sync**: When modifying code, update CLAUDE.md and MEMORY.md to reflect changes.
+- **Error handling**: App should crash on unexpected errors. `try/except` only for expected, recoverable errors. Custom exceptions in `exceptions.py`.
 
 ## Project Overview
 
-OpenOutreach is a self-hosted LinkedIn automation tool for B2B lead generation. It uses Playwright with stealth plugins for browser automation and LinkedIn's internal Voyager API for structured profile data. The CRM backend is powered by DjangoCRM with Django Admin UI.
+OpenOutreach — self-hosted LinkedIn automation for B2B lead generation. Playwright + stealth for browser automation, LinkedIn Voyager API for profile data, DjangoCRM + Django Admin for CRM.
 
 ## Commands
 
-### Docker (Recommended)
 ```bash
-docker run --pull always -it -p 5900:5900 --user "$(id -u):$(id -g)" -v ./assets:/app/assets ghcr.io/eracle/openoutreach:latest  # run from pre-built image
-make build    # build Docker images
-make up       # build from source + run
-make stop     # stop services
-make attach   # follow logs
-make up-view  # run + open VNC viewer
-make view     # open VNC viewer (vinagre)
+# Docker
+make build / make up / make stop / make attach / make up-view
+
+# Local dev
+make setup    # install deps + browsers + migrate + bootstrap CRM
+make run      # run daemon
+make admin    # Django Admin at localhost:8000/admin/
+
+# Testing
+make test / make docker-test
+pytest tests/api/test_voyager.py   # single file
+pytest -k test_name                # single test
 ```
 
-### Local Development
-```bash
-make setup                           # install deps + Playwright browsers + migrate + bootstrap CRM
-make run                             # run the daemon (interactive onboarding on first run)
-make admin                           # Django Admin at http://localhost:8000/admin/
-python manage.py migrate             # run Django migrations
-python manage.py createsuperuser     # create Django admin user
-```
+## Architecture (quick reference)
 
-### Testing
-```bash
-make test                         # run tests locally
-make docker-test                  # run tests in Docker
-pytest tests/api/test_voyager.py  # run single test file
-pytest -k test_name               # run single test by name
-```
+For detailed module docs, see `ARCHITECTURE.md`.
 
-## Architecture
-
-### Entry Flow
-`manage.py` (Django bootstrap + auto-migrate + CRM setup):
-- Suppresses Pydantic serialization warning from langchain-openai. Configures logging: DEBUG level, suppresses noisy third-party loggers (urllib3, httpx, langchain, openai, playwright, httpcore, fastembed, huggingface_hub, filelock).
-- No args → runs the daemon: `ensure_onboarding()` → validate `LLM_API_KEY` → `get_or_create_session()` (sets default campaign: first non-freemium or first available) → `ensure_browser()` → `ensure_self_profile()` from `setup/self_profile.py` (creates disqualified Lead + `/in/me/` sentinel via Voyager API) → GDPR newsletter override via `setup/gdpr.py` (guarded by marker file `.{handle}_newsletter_processed`) → `run_daemon(session)` which initializes the `BayesianQualifier` (GPR pipeline, warm-started from historical labels), runs startup healing (`heal_tasks`) to reconcile the persistent task queue with CRM state, then enters the task queue worker loop. New profiles are auto-discovered as the daemon navigates LinkedIn pages.
-- Any args → delegates to Django's `execute_from_command_line` (e.g. `runserver`, `migrate`, `createsuperuser`).
-
-### Onboarding (`onboarding.py`)
-Before the daemon starts, `ensure_onboarding()` ensures a Campaign, active LinkedInProfile, LLM config, and legal acceptance exist. Four checks:
-
-1. **Campaign** — if no `Campaign` exists in DB, runs interactive prompts for campaign name, product docs, campaign objective, booking link. Creates `Department` + `Campaign`.
-2. **LinkedInProfile** — if no active profile exists, prompts for LinkedIn email, password, newsletter preference, and rate limits. Creates `User` + `LinkedInProfile`. Handle derived from email slug (part before `@`, lowercased, dots/plus → underscores). User created with `is_staff=True` and unusable password.
-3. **LLM config** — if missing from `.env`, prompts user for `LLM_API_KEY` (required), `AI_MODEL` (required), and `LLM_API_BASE` (optional), and writes them to `.env`.
-4. **Legal notice** — `_require_legal_acceptance(profile)` displays GitHub URL to `LEGAL_NOTICE.md`, prompts for acceptance (y/n) per LinkedIn account. Acceptance is stored as `LinkedInProfile.legal_accepted` (BooleanField). On startup, all active profiles with `legal_accepted=False` are prompted.
-
-### Profile State Machine
-The `enums.py:ProfileState` is a `models.TextChoices` enum whose values ARE the CRM stage names: `QUALIFIED` ("Qualified"), `READY_TO_CONNECT` ("Ready to Connect"), `PENDING` ("Pending"), `CONNECTED` ("Connected"), `COMPLETED` ("Completed"), `FAILED` ("Failed"). Pre-Deal states are implicit: a Lead with no description is "url_only" (discovered), a Lead with description is "enriched". `Lead.disqualified=True` means permanently excluded from all campaigns (account-level, cross-campaign) — covers self-profile exclusion AND unreachable profiles (no Connect button after `MAX_CONNECT_ATTEMPTS` in `tasks/connect.py`). LLM qualification rejections are tracked as FAILED Deals with "Disqualified" closing reason (campaign-scoped) — a lead rejected by one campaign can still be evaluated by other campaigns. Promotion from Lead to Contact+Deal happens when qualification passes; rejection creates a FAILED Deal in the campaign's department.
-
-`_get_stage()` uses `state.value` directly to look up Stage objects — no mapping dict needed.
-
-The daemon (`daemon.py`) runs continuously with multi-campaign support using a **persistent task queue** backed by the `Task` Django model. Tasks are ordered by `scheduled_at` timestamp; the worker loop pops the oldest due task, executes it, and each task handler self-schedules follow-on tasks. On startup, `heal_tasks()` reconciles the queue with CRM state (recovers stale running tasks, seeds missing tasks). Daily/weekly rate limiters independently cap totals (shared across campaigns). Freemium campaigns use the same `connect` task type as regular campaigns; the `ConnectStrategy` dataclass handles differences (candidate sourcing, delay, pre-connect hooks) based on `campaign.is_freemium`.
-
-Three task types (all plain handler functions in `linkedin/tasks/`, signature: `handle_*(task, session, qualifiers)`):
-
-1. **`handle_connect`** (`tasks/connect.py`, per-campaign) — Unified handler for both regular and freemium campaigns via `ConnectStrategy` dataclass. `strategy_for(campaign, ...)` builds the right strategy based on `campaign.is_freemium`: regular campaigns use `find_candidate()` from `pools.py` (composable generators: `ready_source` → `qualify_source` → `search_source`); freemium campaigns use `find_freemium_candidate()` from `pipeline/freemium_pool.py` (queries `ProfileEmbedding` directly) with just-in-time Deal creation via `create_freemium_deal()`. The handler itself has zero `is_freemium` branches. Self-reschedules via `strategy.compute_delay(elapsed)`: regular campaigns use base delay (~10s); freemium campaigns scale by elapsed execution time — `max(base_delay, elapsed * (1 - action_fraction) / action_fraction)` — so the worker runs enough regular tasks before the freemium task becomes due. **Unreachable profile detection**: when `send_connection_request` returns QUALIFIED (no Connect button), `connect_attempts` is incremented in `deal.next_step`; after `MAX_CONNECT_ATTEMPTS` (3), the lead is disqualified (`lead.disqualified=True`) and the Deal is marked FAILED. `record_action` is only called when a connection is actually sent (not on QUALIFIED returns).
-2. **`handle_check_pending`** (`tasks/check_pending.py`, per-profile) — checks one PENDING profile for acceptance → CONNECTED. Uses exponential backoff with multiplicative jitter: `delay = backoff * uniform(1.0, 1.0 + jitter_factor)`. Doubles `backoff_hours` each time a profile is still pending. On acceptance, enqueues `follow_up` task.
-3. **`handle_follow_up`** (`tasks/follow_up.py`, per-profile) — runs the agentic follow-up for one CONNECTED profile via `run_follow_up_agent()`. The agent can read conversation history, send messages, mark the lead as completed, or schedule future follow-ups. Records `FOLLOW_UP` action if any message was sent. Safety net re-enqueues in 72h if the agent didn't schedule or complete. On rate limit, reschedules with 1h delay.
-
-### Qualification ML Pipeline
-
-The qualification pipeline (embedded in the connect task's `pools.py` chain) uses a **Gaussian Process Regressor** (sklearn, ConstantKernel * RBF) inside a `Pipeline(StandardScaler, GPR)` with BALD active learning:
-
-1. **Balance-driven selection** — Which profile to evaluate next depends on label balance:
-   - If `n_negatives > n_positives` → **exploit**: pick highest predicted probability (`predicted_probs()`)
-   - Otherwise → **explore**: pick highest BALD score (`bald_scores()`, MC sampling from GP posterior)
-
-2. **LLM decision** — All qualification decisions go through the LLM via `qualify_lead.j2` prompt. The GP model is used only for candidate selection strategy and the READY_TO_CONNECT confidence gate, not for auto-decisions.
-
-3. **READY_TO_CONNECT gate** — After LLM qualifies a profile to QUALIFIED, it must also pass a GP confidence gate before becoming connectable. `promote_to_ready()` computes P(f > 0.5) for all QUALIFIED profiles; those above `min_ready_to_connect_prob` (default 0.9) are promoted to READY_TO_CONNECT. During cold start (GP not fitted), no profiles reach READY_TO_CONNECT — the connect lane keeps triggering qualifications until the model can fit.
-
-The pipeline uses StandardScaler + GPR on 384-dim FastEmbed embeddings (no PCA — full dimensionality preserved). GPR kernel: `ConstantKernel(1.0) * RBF(length_scale=sqrt(384))` with `alpha=0.1` and `n_restarts_optimizer=3`. Training data is accumulated incrementally; the model is lazily re-fitted (on ALL data, O(n³)) whenever predictions are requested after new labels arrive. Each non-freemium campaign has its own model file at `assets/models/campaign_{id}_model.joblib` (via `model_path_for_campaign()`), persisted via `joblib` (atomic write via tmp+rename). On daemon restart, `warm_start()` bulk-loads historical labels and fits once. A legacy migration renames the old global `model.joblib` to the per-campaign path when exactly one non-freemium campaign exists.
-
-Cold start (< 2 labels or single class) returns `None` from `predict`/`bald_scores`/`predict_probs`, and `promote_to_ready()` returns 0. The connect task keeps triggering `run_qualification()` to accumulate labels until the GP model can fit.
-
-### CRM Data Model
-- **Campaign** (`linkedin.models.Campaign`) — 1:1 with `common.Department`. Stores `product_docs`, `campaign_objective`, `booking_link`, `is_freemium` (bool), `action_fraction` (float, target fraction of total connections for freemium campaigns; used to scale reschedule delay based on elapsed execution time).
-- **LinkedInProfile** (`linkedin.models.LinkedInProfile`) — 1:1 with `auth.User`. Stores `linkedin_username`, `linkedin_password`, `subscribe_newsletter`, `active`, `connect_daily_limit`, `connect_weekly_limit`, `follow_up_daily_limit`. Rate-limiting methods: `can_execute(action_type)` checks daily/weekly limits via `ActionLog` counts, `record_action(action_type, campaign)` persists an action, `mark_exhausted(action_type)` flags external exhaustion for the day. Campaign membership is via Django group (User → Group → Department → Campaign).
-- **SearchKeyword** (`linkedin.models.SearchKeyword`) — FK to Campaign. Stores `keyword`, `used` (bool), `used_at`. Unique together on `(campaign, keyword)`. Persists LLM-generated search keywords across restarts.
-- **ActionLog** (`linkedin.models.ActionLog`) — FK to LinkedInProfile + Campaign. Stores `action_type` (choices: `connect`, `follow_up`), `created_at` (auto). Composite index on `(linkedin_profile, action_type, created_at)`. Used by `LinkedInProfile` rate-limit methods to count actions in the current day/week, surviving daemon restarts.
-- **Lead** — Created per LinkedIn profile URL. Stores `first_name`, `last_name`, `title`, `website` (LinkedIn URL), `description` (full parsed profile JSON), `disqualified` (bool — permanent account-level exclusion: self-profile and unreachable profiles; LLM rejections use FAILED Deals instead).
-- **Contact** — Created after qualification (promotion from Lead), linked to Company.
-- **Company** — Created from first position's company name.
-- **Deal** — Tracks pipeline stage per campaign (department-scoped). One Deal per Lead per department. Stage maps to ProfileState. LLM rejections create FAILED Deals with "Disqualified" closing reason. `next_step` field stores JSON metadata (e.g. `{"backoff_hours": N}` for exponential backoff in check_pending). Closing reasons: "Completed" (success), "Failed" (failure), "Disqualified" (LLM rejection, campaign-scoped).
-- **ProfileEmbedding** (`linkedin.models.ProfileEmbedding`) — Stores 384-dim fastembed vectors as `BinaryField` blobs in SQLite. `lead_id` (IntegerField PK), `public_identifier`, `embedding` (bytes), `label` (0/1 or null), `llm_reason`, `created_at`, `labeled_at`. Property `embedding_array` converts between bytes and numpy. Classmethod `get_labeled_arrays()` returns `(X, y)` numpy arrays for warm start. Lazy loading goes through `load_embedding()` in `db/enrichment.py`.
-- **Task** (`linkedin.models.Task`) — Persistent priority queue for daemon actions. `task_type` (choices: `connect`, `check_pending`, `follow_up`), `status` (choices: `pending`, `running`, `completed`, `failed`), `scheduled_at` (datetime, priority ordering), `payload` (JSONField — `campaign_id` for connect, + `public_id`/`backoff_hours` for check_pending/follow_up), `error`, `created_at`, `started_at`, `completed_at`. Composite index on `(status, scheduled_at)`. Tasks self-schedule: each handler creates follow-on tasks after execution. Dedup via existence check on `(task_type, status=PENDING, campaign_id, public_id)` — campaign-scoped to allow the same profile to be tracked independently per campaign.
-- **TheFile** — Raw Voyager API JSON attached to Lead via GenericForeignKey.
-
-### Key Modules
-- **`models.py`** — Django models: `Campaign` (1:1 with Department; product_docs, campaign_objective, booking_link, is_freemium, action_fraction), `LinkedInProfile` (1:1 with User; credentials, rate limits, newsletter preference; rate-limit methods `can_execute`/`record_action`/`mark_exhausted`), `SearchKeyword` (FK to Campaign; keyword, used, used_at), `ActionLog` (FK to LinkedInProfile + Campaign; action_type, created_at), `ProfileEmbedding` (lead_id PK; embedding as BinaryField with `embedding_array` property for numpy conversion; `get_labeled_arrays()` classmethod; lazy loading via `load_embedding()` in `db/enrichment.py`), and `Task` (persistent task queue; task_type, status, scheduled_at, payload JSONField, error, timestamps; composite index on status+scheduled_at). Registered in `admin.py`.
-- **`daemon.py`** — Task queue worker loop. `_FreemiumRotator` logs rotating freemium messages every N ticks via `maybe_log()`. `_migrate_legacy_model(campaigns)` renames old global `model.joblib` to per-campaign path when exactly 1 non-freemium campaign exists (warns otherwise). `_build_qualifiers(campaigns, cfg, kit_model=None)` creates a `dict[int, qualifier]` keyed by campaign PK for ALL campaigns: regular campaigns get `BayesianQualifier` (with `save_path=model_path_for_campaign(campaign.pk)`, warm-started from labeled data), freemium campaigns get `KitQualifier(kit_model)` (standalone, no inner BayesianQualifier). `_pop_next_task()` returns oldest due pending Task (comment marks where `select_for_update(skip_locked=True)` goes for future postgres). `heal_tasks(session)` reconciles task queue with CRM state on startup: resets stale RUNNING→PENDING, seeds `connect` tasks for all campaigns (both regular and freemium), creates check_pending tasks for PENDING profiles (reading backoff from `deal.next_step`), creates follow_up tasks for CONNECTED profiles. `run_daemon(session)` calls `_build_qualifiers()`, runs `heal_tasks()`, then enters worker loop: pop task → set RUNNING → dispatch to `_HANDLERS[task_type]` → mark COMPLETED/FAILED. All handler calls are wrapped with `failure_diagnostics(session)`. Rate limiting is handled by `LinkedInProfile` methods (DB-backed via `ActionLog`). Also imports freemium campaigns via `setup/freemium.py`.
-- **`diagnostics.py`** — Failure diagnostics capture. `capture_failure(session, error)` saves page HTML (`page.html`), screenshot (`screenshot.png`), and traceback (`error.txt`) into a per-failure folder under `assets/diagnostics/`. `failure_diagnostics(session)` is a context manager that calls `capture_failure` on unhandled exceptions, then re-raises.
-- **`tasks/`** — Task handler functions executed by the daemon's task queue worker. All share the signature `handle_*(task, session, qualifiers)`.
-  - `connect.py` — `handle_connect`: unified handler for all campaigns. Uses `ConnectStrategy` dataclass built by `strategy_for()` to abstract differences between regular and freemium campaigns. Regular: `find_candidate()` from `pools.py`; freemium: `find_freemium_candidate()` from `pipeline/freemium_pool.py` with just-in-time Deal creation. Self-reschedules via `strategy.compute_delay(elapsed)` (freemium delay scales with execution time to maintain `action_fraction` ratio). Enqueues `check_pending` on PENDING, `follow_up` on CONNECTED. On `ReachedConnectionLimit`, reschedules to next day. Also defines enqueue helpers: `enqueue_connect()`, `enqueue_check_pending()` (with multiplicative jitter), `enqueue_follow_up()` — all with dedup via existence check.
-  - `check_pending.py` — `handle_check_pending`: per-profile. Checks one PENDING profile via `get_connection_status()`. If still pending, doubles backoff, updates `deal.next_step`, re-enqueues with jittered delay. If CONNECTED, enqueues `follow_up`.
-  - `follow_up.py` — `handle_follow_up`: per-profile. Rate-limits via `can_execute()`. Sends follow-up message to one CONNECTED profile, marks COMPLETED. Reschedules with 1h delay on rate limit.
-- **`pipeline/`** — Candidate sourcing, qualification, and pool management:
-  - `qualify.py` — Qualify orchestration. `run_qualification(session, qualifier)` calls `fetch_unlabeled_candidates(session)` for candidate sourcing, then selects via `qualifier.acquisition_scores()`, always queries LLM for decisions. Public: `fetch_unlabeled_candidates(session)` (returns unlabeled ProfileEmbedding rows, embedding one new lead if none exist). Private helpers: `_save_qualification_result()` (updates `ProfileEmbedding` label, promotes lead on accept or creates FAILED Deal with "Disqualified" closing reason on reject via `create_disqualified_deal()`), `_fetch_profile_text()` (enriches + builds text).
-  - `search.py` — Search keyword management. `run_search(session)` picks next unused keyword (generating fresh ones via LLM if exhausted), marks it used, runs LinkedIn People search via `search_people()`.
-  - `search_keywords.py` — `generate_search_keywords(product_docs, campaign_objective, n_keywords=10, exclude_keywords=None)`: calls LLM via `search_keywords.j2` prompt to generate LinkedIn People search queries. `exclude_keywords` prevents regenerating already-used terms. (Moved from `ml/search_keywords.py`.)
-  - `ready_pool.py` — Ready-to-connect pool: GP confidence gate between QUALIFIED and READY_TO_CONNECT (regular campaigns only). `promote_to_ready(session, qualifier, threshold)` loads all QUALIFIED profiles, computes P(f > 0.5) via GP model, and promotes those above threshold; returns 0 on cold start. `find_ready_candidate(session, qualifier)` returns the top-ranked READY_TO_CONNECT profile or None.
-  - `pools.py` — Pool management via composable generators (regular campaigns only). Three generators chain via `next(upstream, None)`: `search_source(session)` yields keywords from `run_search()`, `qualify_source(session, qualifier)` yields public_ids from `run_qualification()` (in exploit mode, keeps searching via `_needs_search()` until candidates with P(f > 0.5) above `min_positive_pool_prob` exist — search auto-heals so never exhausts), `ready_source(session, qualifier, threshold)` yields ready-to-connect candidates by checking `find_ready_candidate()` → `promote_to_ready()` → pulling from `qualify_source`. Each `qualify_source` iteration produces exactly one label, preventing infinite-search-without-qualifying. `_needs_search(qualifier, candidates)` uses adaptive threshold `max(0, base - 1/√n_obs)` — stays at zero until ~1/base² observations, then rises toward `min_positive_pool_prob`, favoring qualification over search early on; returns False on cold start, explore mode, empty candidates, or degenerate GP predictions (all identical P, detected via `np.ptp < 1e-6`). `find_candidate(session, qualifier)` calls `next(ready_source(...), None)`.
-  - `freemium_pool.py` — Freemium candidate selection with seed priority. `find_freemium_candidate(session, qualifier)` returns candidates in priority order: first seed profiles (QUALIFIED Deals in this department), then undiscovered profiles (embedded leads with no Deal). Both pools are ranked via `qualifier.rank_profiles()`, returning the top-1 candidate. Excludes disqualified leads and non-QUALIFIED deals (in-progress or terminal). Each campaign (department) maintains independent Deal state, so leads rejected by other campaigns are still eligible.
-- **`ml/embeddings.py`** — Fastembed text embedding utilities. Uses `fastembed` (BAAI/bge-small-en-v1.5 by default) for 384-dim embeddings. Functions: `embed_text()`, `embed_texts()`, `embed_profile()` (builds text + embeds + stores via `ProfileEmbedding` model). Storage and querying handled directly by `ProfileEmbedding` Django model.
-- **`ml/qualifier.py`** — `Qualifier` Protocol (runtime-checkable) defining the shared interface: `rank_profiles(profiles, session) -> list` (returns `[]` on cold start) and `explain(profile, session) -> str`. Two implementations sharing a common ranking approach (raw GP mean, descending). Module-level helpers: `_gpr_predict()` (GPR posterior with std, used only by BayesianQualifier internals), `_rank_by_score()` (ranks profiles via `pipeline.predict()`), `_load_profile_embeddings()`, `_explain_score()`. Also exports `qualify_with_llm(profile_text, product_docs, campaign_objective)` for LLM-based lead qualification with structured output (`QualificationDecision`).
-  - **`BayesianQualifier`** — Pipeline(StandardScaler, GPR) with lazy refit. Operates on full 384-dim embeddings. Training data balanced before fitting (max 2:1 imbalance ratio). `update(embedding, label)` appends + invalidates. `predict(embedding)` returns `(prob, entropy, std)` via P(f > 0.5) or `None` if unfitted. `predict_probs(embeddings)` returns P(f > 0.5) array (used by confidence gate and acquisition). `compute_bald(embeddings)` computes BALD via MC sampling. `acquisition_scores(embeddings)` uses balance-driven strategy (exploit/explore). `pool_has_targets(embeddings)` returns `bool | None`. `rank_profiles(profiles, session)` sorts by raw GP mean (descending), returns `[]` on cold start. `explain(profile, session)` returns `mean=X.XXX, P(f>0.5)=X.XXX, obs=N`. `warm_start(X, y)` bulk-loads. Persisted via `joblib` per-campaign.
-  - **`KitQualifier`** — Standalone qualifier for freemium campaigns. Wraps a pre-trained sklearn-compatible model as a black-box scorer — calls `model.predict(X)` directly for ranking and explanation. No inner BayesianQualifier, no GPR-specific assumptions. `rank_profiles(profiles, session)` sorts by raw score (descending), skips missing embeddings. `explain(profile, session)` returns `mean=X.XXX, P(f>0.5)=X.XXX`.
-- **`ml/profile_text.py`** — `build_profile_text()`: concatenates all text fields from profile dict (headline, summary, positions, educations, etc.), lowercased. Used for embedding input.
-- **`ml/hub.py`** — Freemium campaign kit loader. `fetch_kit()` downloads from HuggingFace (`eracle/campaign-kit`), loads `config.json` + `model.joblib`, returns `{"config": dict, "model": sklearn-compatible}` or `None`. Cached after first attempt.
-- **`setup/freemium.py`** — `import_freemium_campaign(kit_config)` creates/updates a freemium `Campaign` with `is_freemium=True`. `seed_profiles(session, kit_config)` creates Lead + ProfileEmbedding + QUALIFIED Deal for each seed, so seeds are prioritised for connection. (Moved from `ml/hub.py`.)
-- **`setup/gdpr.py`** — GDPR location detection for newsletter auto-subscription. Checks LinkedIn country code against a static set of ISO-2 codes for opt-in email marketing jurisdictions (EU/EEA, UK, Switzerland, Canada, Brazil, Australia, Japan, South Korea, New Zealand). Missing/None codes default to protected. `apply_gdpr_newsletter_override()` updates `LinkedInProfile.subscribe_newsletter` in DB for non-GDPR locations. (Moved from `gdpr.py`.)
-- **`setup/self_profile.py`** — Self-profile sentinel logic. The `/in/me/` sentinel Lead stores the real `public_identifier` as JSON in its `description` field for reverse lookup by the follow-up agent. (Moved from `self_profile.py`.)
-- **`browser/session.py:AccountSession`** — Central session object. Loads `LinkedInProfile` from DB, exposes `linkedin_profile`, `campaign` (singular, set by daemon before each task), `campaigns` (property, all campaigns via group membership), `django_user`, `account_cfg` dict (handle, username, password, subscribe_newsletter, active, cookie_file), and Playwright browser (`page`, `context`, `browser`, `playwright`). Key methods: `ensure_browser()` (launches/recovers browser + login), `wait()` (human delay + page load), `_maybe_refresh_cookies()` (re-login if `li_at` cookie expired), `close()` (graceful teardown). Passed throughout the codebase. (Moved from `sessions/account.py`; `sessions/account.py` remains as a backwards-compat shim.)
-- **`browser/registry.py:AccountSessionRegistry`** — Singleton registry for `AccountSession` instances. `get_or_create(handle)` normalizes handle (lowercase + strip) and reuses existing sessions. `close_all()` tears down all sessions. Public convenience function: `get_or_create_session(handle)` wraps `AccountSessionRegistry.get_or_create()`. (Moved from `sessions/registry.py`; `sessions/registry.py` remains as a backwards-compat shim.)
-- **`browser/login.py`** — Playwright browser setup and LinkedIn login. `launch_browser()` creates a fresh browser instance. `start_browser_session(session, handle)` loads saved cookies or performs fresh login. `playwright_login(session)` performs email/password login with human-like typing. (Moved from `navigation/login.py`; `navigation/login.py` remains as a backwards-compat shim.)
-- **`browser/nav.py`** — Browser navigation utilities. `goto_page(session, action, expected_url_pattern)` navigates and auto-discovers `/in/` URLs via `_extract_in_urls()`. `_discover_and_enrich(session, urls)` auto-enriches discovered profiles (Voyager API + create Lead + embed), rate-limited by `enrich_min_interval` (1s). `human_type(locator, text)` types with random per-keystroke delay (50-200ms). `find_top_card(session)` finds profile card with fallback selectors (`TOP_CARD_SELECTORS`). `find_first_visible(page, selectors)` returns first visible locator. `dump_page_html(session, profile)` saves HTML to fixtures. `random_sleep()` provides human-like wait timing. (Moved from `navigation/utils.py`; `navigation/utils.py` remains as a backwards-compat shim.)
-- **`db/`** — Profile CRUD backed by DjangoCRM models. Split from the former monolithic `db/crm_profiles.py`:
-  - `db/_helpers.py` — Private helpers: `_make_ticket()` (uuid4 hex[:16]), `_get_stage()`, `_get_lead_source()`.
-  - `db/urls.py` — URL helpers: `url_to_public_id(url)` (strict extractor, path must start with `/in/`), `public_id_to_url(public_id)`.
-  - `db/leads.py` — Lead CRUD: `lead_to_profile_dict(lead)` (canonical Lead→profile dict conversion, used by pools and qualification), `lead_exists()`, `create_enriched_lead()`, `promote_lead_to_contact()`, `get_leads_for_qualification()` (excludes disqualified leads and leads with any Deal in the current campaign's department), `disqualify_lead(public_id)` (sets `lead.disqualified=True`, account-level permanent exclusion), `lead_profile_by_id(lead_id)`.
-  - `db/deals.py` — Deal/state operations: `set_profile_state()` (department-scoped), `get_qualified_profiles()`, `get_ready_to_connect_profiles()`, `get_profile_dict_for_public_id(session, public_id)` (department-scoped), `parse_next_step(deal)`, `increment_connect_attempts(session, public_id)` (increments `connect_attempts` in `deal.next_step` JSON, returns new count), `create_disqualified_deal(session, public_id, reason)` (creates FAILED Deal with "Disqualified" closing reason for LLM rejections), `create_freemium_deal(session, public_id)`. `set_profile_state()` clears `next_step` on actual transitions into/out of PENDING (not same-state).
-  - `db/enrichment.py` — Lazy enrichment/embedding: `ensure_lead_enriched(session, lead_id, public_id)` (Voyager API enrichment for url-only leads), `ensure_profile_embedded(lead_id, public_id, session)` (enrichment + fastembed as single lazy operation; enriches url-only leads first), `load_embedding(lead_id, public_id, session)` (loads embedding array, lazily enriching+embedding if needed).
-  - `db/chat.py` — `save_chat_message()`.
-- **`onboarding.py`** — DB-backed onboarding. `ensure_onboarding()` ensures `LLM_API_KEY` + `AI_MODEL` in `.env`, Campaign in DB, and active LinkedInProfile in DB. If missing, prompts user interactively. Creates Django models directly.
-- **`conf.py`** — Loads `LLM_API_KEY` from `.env`. `load_dotenv()` checks `assets/.env` first (Docker volume, persists across recreations), then project root for backwards compat. `ENV_FILE = ASSETS_DIR / ".env"` (writes go to `assets/.env`). Exports `CAMPAIGN_CONFIG` dict (timing and ML defaults as Python constants), `AI_MODEL`, `LLM_API_BASE`, path constants (`PROMPTS_DIR`, `DIAGNOSTICS_DIR`, etc.). `model_path_for_campaign(campaign_id)` returns `MODELS_DIR / f"campaign_{campaign_id}_model.joblib"`. `_LEGACY_MODEL_PATH` (private) points to old global `model.joblib` for migration. `MIN_DELAY`/`MAX_DELAY` (5/8s) for human-like wait timing. `get_first_active_profile_handle()` queries `LinkedInProfile` model. Creates `COOKIES_DIR`, `DATA_DIR`, `MODELS_DIR`, `DIAGNOSTICS_DIR` on import.
-- **`api/voyager.py`** — Parses LinkedIn's Voyager API JSON responses into clean dicts via internal dataclasses (`LinkedInProfile`, `Position`, `Education`). Uses URN reference resolution from the `included` array.
-- **`django_settings.py`** — Django settings importing DjangoCRM's default settings. SQLite DB at `assets/data/crm.db`. Key settings: `SECRET_KEY` = hardcoded dev key, `DEBUG = True`, `ALLOWED_HOSTS = ["*"]`, `SITE_ID = 1`, `SITE_TITLE = "OpenOutreach CRM"`, `ADMIN_HEADER = "OpenOutreach Admin"`, `MEDIA_ROOT = DATA_DIR / "media"` (Path, not str), `DJANGO_ALLOW_ASYNC_UNSAFE = "true"`. INSTALLED_APPS includes all DjangoCRM apps + `linkedin`.
-- **`admin.py`** — Django Admin registrations: `CampaignAdmin` (list_display: department, booking_link, is_freemium, action_fraction), `LinkedInProfileAdmin` (list_display: user, username, active; list_filter: active), `SearchKeywordAdmin` (list_display: keyword, campaign, used, used_at; list_filter: used, campaign), `ActionLogAdmin` (list_display: action_type, linkedin_profile, campaign, created_at; date_hierarchy: created_at; readonly), `TaskAdmin` (list_display: task_type, status, scheduled_at, payload, created_at; list_filter: task_type, status; date_hierarchy: scheduled_at; readonly). All use `raw_id_fields` for FK/O2O fields.
-- **`management/setup_crm.py`** — Idempotent bootstrap. `setup_crm()` creates Site, "co-workers" Group, Department (`DEPARTMENT_NAME = "LinkedIn Outreach"`). `ensure_campaign_pipeline(dept)` creates 6 stages (Qualified, Ready to Connect, Pending, Connected, Completed, Failed), 3 closing reasons (Completed=success, Failed=failure, Disqualified=LLM rejection), and "LinkedIn Scraper" LeadSource. `_check_legacy_stages(dept)` aborts if DB has deals at invalid stages.
-- **`agents/follow_up.py`** — ReAct agent for agentic follow-up conversations. Uses a simple tool-calling loop (not LangGraph) to stay compatible with Playwright's greenlet-based single-thread model. `run_follow_up_agent(session, public_id, profile, campaign_id)` builds tools (`read_conversation`, `send_message`, `mark_completed`, `schedule_follow_up`), renders the system prompt from `follow_up_agent.j2`, and runs an LLM tool-calling loop (max 10 iterations). Returns `{"messages": [...], "actions": [...]}`. `_get_self_name(session)` resolves the logged-in user's name from the `/in/me/` sentinel Lead. `_count_past_messages(session, public_id)` counts saved outgoing ChatMessages. Has CLI `__main__` block (`--profile` or `--task-id`).
-- **`actions/message.py`** — `send_raw_message(session, profile, message) → bool`: sends an arbitrary message to a profile via popup (`_send_msg_pop_up`) or direct messaging thread (`_send_message`), persists via `save_chat_message()`. Returns True if sent. Has CLI `__main__` block (`--profile`, `--message`).
-- **`enums.py`** — `ProfileState` enum (top-level). (Moved from `navigation/enums.py`; `navigation/enums.py` remains as a backwards-compat shim.)
-- **`exceptions.py`** — Custom exceptions: `AuthenticationError`, `TerminalStateError`, `SkipProfile`, `ReachedConnectionLimit`. (Moved from `navigation/exceptions.py`; `navigation/exceptions.py` remains as a backwards-compat shim.)
-- **`api/messaging/`** — Voyager Messaging API package (split from former `api/messaging.py`). `__init__.py` re-exports all public symbols. `utils.py`: shared helpers (`get_self_urn`, `encode_urn`, `check_response`). `send.py`: `send_message(api, conversation_urn, message_text)` via REST API. `conversations.py`: `fetch_conversations(api)` and `fetch_messages(api, conversation_urn)` via Voyager GraphQL (`voyagerMessagingGraphQL/graphql`); uses `application/graphql` accept header and percent-encoded URNs in variables. Has CLI `__main__` block (`--conversations` to list, `--messages URN` to fetch).
-- **`api/newsletter.py`** — Newsletter subscription utilities. (Renamed from `api/emails.py`.)
-- **`actions/status.py`** — `get_connection_status(session, profile) → ProfileState`: fast path via `connection_degree == 1` (trusted), fallback to UI text/button inspection. Text priority: "Pending" → PENDING, "1st"/"1st degree" → CONNECTED, "Connect" button → QUALIFIED. Has CLI `__main__` block. (Renamed from `actions/connection_status.py`.)
-- **`actions/connect.py`** — `send_connection_request(session, profile) → ProfileState`: tries `_connect_direct()` (top card button), falls back to `_connect_via_more()` (More menu). Sends WITHOUT a note. `_check_weekly_invitation_limit(session)` raises `ReachedConnectionLimit` on limit popup. Has CLI `__main__` block.
-- **`actions/conversations.py`** — `get_conversation(session, public_identifier) → list[dict] | None`: retrieves past messages with a LinkedIn profile. Resolves profile URN from Lead description, finds conversation URN via API scan (recent conversations) with navigation fallback (older conversations), then fetches and parses messages into `{sender, text, timestamp}` dicts. Has CLI `__main__` block (`--profile` required).
-- **`actions/profile.py`** — `scrape_profile(session, profile) → (profile_dict, raw_data)`: calls Voyager API via `PlaywrightLinkedinAPI`. Has CLI `__main__` block with `--save-fixture` flag.
-- **`actions/search.py`** — `search_profile(session, profile)`: direct URL navigation (no human search simulation). `search_people(session, keyword, page=1)`: LinkedIn People search with pagination. Auto-discovery via `goto_page()`. Has CLI `__main__` block.
-
-### Configuration
-- **`.env`** — `LLM_API_KEY` (required), `AI_MODEL` (required). Optionally `LLM_API_BASE`. All prompted during onboarding if missing.
-- **`conf.py:CAMPAIGN_CONFIG`** — Hardcoded timing/ML defaults:
-  - `check_pending_recheck_after_hours` (24), `enrich_min_interval` (1), `min_action_interval` (120)
-  - `qualification_n_mc_samples` (100)
-  - `min_ready_to_connect_prob` (0.9) — GP probability threshold for promoting QUALIFIED profiles to READY_TO_CONNECT
-  - `min_positive_pool_prob` (0.20) — P(f > 0.5) threshold for positive pool check in exploit mode
-  - `embedding_model` ("BAAI/bge-small-en-v1.5")
-  - `connect_delay_seconds` (10) — delay between connect tasks (burn daily quota)
-  - `connect_no_candidate_delay_seconds` (300) — delay when pool is empty
-  - `check_pending_jitter_factor` (0.2) — multiplicative jitter factor for backoff
-  - `worker_poll_seconds` (5) — sleep when task queue is empty
-- **Campaign model** — `product_docs`, `campaign_objective`, `booking_link` — managed via Django Admin or onboarding.
-- **LinkedInProfile model** — `linkedin_username`, `linkedin_password`, `subscribe_newsletter`, `active`, `connect_daily_limit` (20), `connect_weekly_limit` (100), `follow_up_daily_limit` (30) — managed via Django Admin or onboarding.
-- **`assets/templates/prompts/qualify_lead.j2`** — LLM-based lead qualification. Receives `product_docs`, `campaign_objective`, `profile_text`. Structured output: `QualificationDecision(qualified: bool, reason: str)`. LLM temperature: **0.7**, timeout: 60s.
-- **`assets/templates/prompts/search_keywords.j2`** — LLM-based search keyword generation. Receives `product_docs`, `campaign_objective`, `n_keywords`, `exclude_keywords`. Structured output: `SearchKeywords(keywords: list[str])`. LLM temperature: **0.9** (high diversity).
-- **`assets/templates/prompts/follow_up_agent.j2`** — Agentic follow-up system prompt. Receives `self_name`, `product_docs`, `campaign_objective`, `booking_link`, `full_name`, `headline`, `current_company`, `location`, `past_messages_count`. Instructs the LLM agent to manage multi-turn LinkedIn conversations using tools (read_conversation, send_message, mark_completed, schedule_follow_up).
-- **`requirements/`** — `crm.txt` (DjangoCRM, installed with `--no-deps`), `base.txt` (runtime deps), `local.txt` (adds pytest/factory-boy), `production.txt`. Used by both local dev and Docker.
-
-### Error Handling Convention
-The application should crash on unexpected errors. `try/except` blocks should only handle expected, recoverable errors. Custom exceptions in `exceptions.py`: `AuthenticationError`, `TerminalStateError`, `SkipProfile`, `ReachedConnectionLimit`.
-
-### Docker
-- **Base image:** `mcr.microsoft.com/playwright/python:v1.55.0-noble` (includes browsers + system deps).
-- **VNC access:** Xvfb (virtual display) + x11vnc on port 5900 for remote viewing.
-- **Build arg:** `BUILD_ENV` (default: production) selects requirements file.
-- **Install order:** uv pip → DjangoCRM via `--no-deps` → requirements → Playwright chromium.
-- **Startup:** `/start` script (CRLF normalized with sed).
-
-### CI/CD
-- **`.github/workflows/tests.yml`** — Runs pytest (in Docker) on push to `master` and PRs.
-- **`.github/workflows/deploy.yml`** — On push to `master` or version tags (`v*`): runs tests, then builds and pushes the production Docker image to `ghcr.io/eracle/openoutreach`. Tags: `latest`, `sha-<commit>`, semver (`v1.0.0` → `1.0.0` + `1.0`).
-
-### Dependencies
-Managed via `requirements/` files. DjangoCRM's `mysqlclient` is excluded via `--no-deps` in the install step. `uv pip install` is used for fast installs (both locally via `make setup` and in Docker).
-
-Core: `playwright`, `playwright-stealth`, `Django`, `django-crm-admin`, `pandas`, `langchain`/`langchain-openai`, `jinja2`, `pydantic`, `jsonpath-ng`, `tendo`, `termcolor`
-ML/Embeddings: `scikit-learn` (GaussianProcessRegressor), `numpy`, `fastembed`, `joblib`
+- **Entry**: `manage.py` — no args runs daemon (onboarding → browser → task queue loop); with args delegates to Django CLI.
+- **State machine**: `enums.py:ProfileState` — QUALIFIED → READY_TO_CONNECT → PENDING → CONNECTED → COMPLETED / FAILED. `Lead.disqualified=True` = permanent exclusion. LLM rejections = FAILED Deals (campaign-scoped).
+- **Task queue**: `Task` model (persistent). Three types: `connect`, `check_pending`, `follow_up`. Handlers in `linkedin/tasks/`, signature: `handle_*(task, session, qualifiers)`.
+- **ML pipeline**: GPR (sklearn) + BALD active learning + LLM qualification. Per-campaign models at `assets/models/campaign_{id}_model.joblib`.
+- **Config**: `.env` (LLM_API_KEY, AI_MODEL), `conf.py:CAMPAIGN_CONFIG` (timing/ML defaults), Campaign/LinkedInProfile models (Django Admin).
+- **Docker**: Playwright base image, VNC on port 5900, `BUILD_ENV` arg selects requirements.
+- **CI/CD**: `.github/workflows/tests.yml` (pytest), `deploy.yml` (build + push to ghcr.io).
