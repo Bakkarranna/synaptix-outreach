@@ -110,7 +110,6 @@ make admin
 ```
 Then open:
 - **Django Admin:** http://localhost:8000/admin/
-- **CRM UI:** http://localhost:8000/crm/
 
 ---
 ## ✨ Features

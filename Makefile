@@ -23,7 +23,6 @@ test: ## run the test suite
 admin: ## start the Django Admin web server
 	@echo ""
 	@echo "  Django Admin: http://localhost:8000/admin/"
-	@echo "  CRM UI:       http://localhost:8000/crm/"
 	@echo "  No superuser yet? Run: python manage.py createsuperuser"
 	@echo ""
 	python manage.py runserver
