@@ -184,6 +184,15 @@ def run_follow_up_agent(
 
             messages.append(ToolMessage(content=str(result), tool_call_id=tc["id"]))
 
+    action_names = [a["tool"] for a in actions_taken]
+    logger.info(
+        "Agent finished for %s: %d messages, %d actions %s",
+        public_id,
+        len(messages),
+        len(actions_taken),
+        action_names,
+    )
+
     return {"messages": messages, "actions": actions_taken}
 
 
