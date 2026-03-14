@@ -57,14 +57,6 @@ def _deal_to_profile_dict(deal) -> dict:
     from linkedin.db.leads import lead_to_profile_dict
 
     base = lead_to_profile_dict(deal.lead)
-    if base is None:
-        return {
-            "lead_id": deal.lead.pk,
-            "public_identifier": "",
-            "url": deal.lead.website or "",
-            "profile": {},
-            "meta": parse_next_step(deal),
-        }
     base["meta"] = parse_next_step(deal)
     return base
 
