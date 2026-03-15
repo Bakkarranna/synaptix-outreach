@@ -5,10 +5,12 @@
 Pre-built production images are published to GitHub Container Registry on every push to `master`.
 
 ```bash
+git clone https://github.com/eracle/OpenOutreach.git
+cd OpenOutreach
 docker run --pull always -it -p 5900:5900 --user "$(id -u):$(id -g)" -v ./assets:/app/assets ghcr.io/eracle/openoutreach:latest
 ```
 
-That's it. The interactive onboarding will guide you through LinkedIn credentials, LLM API key, and campaign setup on first run. All data (CRM database, cookies, embeddings) persists in the local `assets/` directory — the same database used by `python manage.py`.
+The clone ensures the `assets/` directory exists with correct ownership before Docker mounts it. The interactive onboarding will guide you through LinkedIn credentials, LLM API key, and campaign setup on first run. All data (CRM database, cookies, embeddings) persists in the local `assets/` directory — the same database used by `python manage.py`.
 
 ### Available Tags
 
@@ -36,7 +38,7 @@ docker ps
 # Stop it
 docker stop <container-id>
 
-# Restart (data persists in ./assets/)
+# Restart from the repo directory (data persists in ./assets/)
 docker run --pull always -it -p 5900:5900 --user "$(id -u):$(id -g)" -v ./assets:/app/assets ghcr.io/eracle/openoutreach:latest
 ```
 
