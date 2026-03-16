@@ -202,9 +202,9 @@ def _onboard_account(campaign):
     subscribe_raw = _prompt("Subscribe to OpenOutreach newsletter? (Y/n)", default="Y")
     subscribe = subscribe_raw.lower() not in ("n", "no", "false", "0")
 
-    connect_daily = int(_prompt("Connection requests daily limit", default="20"))
-    connect_weekly = int(_prompt("Connection requests weekly limit", default="100"))
-    follow_up_daily = int(_prompt("Follow-up messages daily limit", default="30"))
+    connect_daily = int(_prompt("Connection requests daily limit", default="50"))
+    connect_weekly = int(_prompt("Connection requests weekly limit", default="250"))
+    follow_up_daily = int(_prompt("Follow-up messages daily limit", default="100"))
 
     # Derive handle from email slug
     handle = username.split("@")[0].lower().replace(".", "_").replace("+", "_")
@@ -279,15 +279,12 @@ def ensure_onboarding() -> None:
     from linkedin.models import Campaign, LinkedInProfile
 
     campaign = Campaign.objects.first()
-    is_new = campaign is None
-    if is_new:
+    if campaign is None:
         campaign = _onboard_campaign()
+        _onboard_seed_urls(campaign)
 
     if not LinkedInProfile.objects.filter(active=True).exists():
         _onboard_account(campaign)
-
-    if is_new:
-        _onboard_seed_urls(campaign)
 
     _ensure_llm_config()
 
