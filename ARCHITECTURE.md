@@ -43,7 +43,7 @@ GPR (sklearn, ConstantKernel * RBF) inside Pipeline(StandardScaler, GPR) with BA
 2. **LLM decision** — All decisions via LLM (`qualify_lead.j2`). GP only for candidate selection and confidence gate.
 3. **READY_TO_CONNECT gate** — P(f > 0.5) above `min_ready_to_connect_prob` (0.9) promotes QUALIFIED → READY_TO_CONNECT.
 
-384-dim FastEmbed embeddings stored directly on Lead model, per-campaign GP models at `assets/models/campaign_{id}_model.joblib`. Cold start returns None until >=2 labels of both classes.
+384-dim FastEmbed embeddings stored directly on Lead model, per-campaign GP models at ``Campaign.model_blob` (BinaryField)`. Cold start returns None until >=2 labels of both classes.
 
 ## Django Apps
 
@@ -67,7 +67,7 @@ Three apps in `INSTALLED_APPS`:
 ## Key Modules
 
 - **`daemon.py`** — Worker loop, `_build_qualifiers()`, `heal_tasks()`, freemium import, `_FreemiumRotator`.
-- **`diagnostics.py`** — `failure_diagnostics()` context manager, `capture_failure()` saves page HTML/screenshot/traceback to `assets/diagnostics/`.
+- **`diagnostics.py`** — `failure_diagnostics()` context manager, `capture_failure()` saves page HTML/screenshot/traceback to `/tmp/openoutreach-diagnostics/`.
 - **`tasks/connect.py`** — `handle_connect`, `ConnectStrategy`, `enqueue_connect`/`enqueue_check_pending`/`enqueue_follow_up`.
 - **`tasks/check_pending.py`** — `handle_check_pending`, exponential backoff.
 - **`tasks/follow_up.py`** — `handle_follow_up`, rate limiting.
@@ -90,7 +90,7 @@ Three apps in `INSTALLED_APPS`:
 - **`db/enrichment.py`** — Lazy enrichment/embedding (`ensure_profile_embedded()`).
 - **`db/chat.py`** — `save_chat_message()`.
 - **`db/urls.py`** — `url_to_public_id()`, `public_id_to_url()` — LinkedIn URL ↔ public identifier conversion.
-- **`conf.py`** — Config loading (dotenv), `CAMPAIGN_CONFIG`, path constants, `model_path_for_campaign()`, `get_first_active_profile_handle()`.
+- **`conf.py`** — Config loading (dotenv), `CAMPAIGN_CONFIG`, path constants, `get_first_active_profile_handle()`.
 - **`exceptions.py`** — `AuthenticationError`, `TerminalStateError`, `SkipProfile`, `ReachedConnectionLimit`.
 - **`onboarding.py`** — Interactive setup.
 - **`agents/follow_up.py`** — ReAct agent for follow-up conversations. Tools: `read_conversation`, `send_message`, `mark_completed`, `schedule_follow_up`.
@@ -106,13 +106,13 @@ Three apps in `INSTALLED_APPS`:
 - **`setup/self_profile.py`** — `ensure_self_profile()`.
 - **`management/setup_crm.py`** — Idempotent CRM bootstrap (Site creation).
 - **`admin.py`** — Django Admin: Campaign, LinkedInProfile, SearchKeyword, ActionLog, Task, ChatMessage.
-- **`django_settings.py`** — Django settings (SQLite at `assets/data/crm.db`). Apps: crm, chat, linkedin.
+- **`django_settings.py`** — Django settings (SQLite at `db.sqlite3`). Apps: crm, chat, linkedin.
 
 ## Configuration
 
-- **`.env`** (at `assets/.env` or project root) — `LLM_API_KEY` (required), `AI_MODEL` (required), `LLM_API_BASE` (optional).
+- **`.env`** (project root) — `LLM_API_KEY` (required), `AI_MODEL` (required), `LLM_API_BASE` (optional). For Docker, pass via `docker run -e`.
 - **`conf.py:CAMPAIGN_CONFIG`** — `min_ready_to_connect_prob` (0.9), `min_positive_pool_prob` (0.20), `connect_delay_seconds` (10), `connect_no_candidate_delay_seconds` (300), `check_pending_recheck_after_hours` (24), `check_pending_jitter_factor` (0.2), `qualification_n_mc_samples` (100), `enrich_min_interval` (1), `min_action_interval` (120), `embedding_model` ("BAAI/bge-small-en-v1.5").
-- **Prompt templates** (at `assets/templates/prompts/`) — `qualify_lead.j2` (temp 0.7), `search_keywords.j2` (temp 0.9), `follow_up_agent.j2`, `followup2.j2`.
+- **Prompt templates** (at `linkedin/templates/prompts/`) — `qualify_lead.j2` (temp 0.7), `search_keywords.j2` (temp 0.9), `follow_up_agent.j2`.
 - **`requirements/`** — `base.txt`, `local.txt`, `production.txt`, `crm.txt` (empty — DjangoCRM installed via `--no-deps`).
 
 ## Docker
