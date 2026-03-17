@@ -51,7 +51,6 @@ CAMPAIGN_CONFIG = {
     "connect_delay_seconds": 10,
     "connect_no_candidate_delay_seconds": 300,
     "check_pending_jitter_factor": 0.2,
-    "worker_poll_seconds": 5,
 }
 
 # ----------------------------------------------------------------------

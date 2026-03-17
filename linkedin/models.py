@@ -158,6 +158,24 @@ class ActionLog(models.Model):
         return f"{self.action_type} by {self.linkedin_profile} at {self.created_at}"
 
 
+class TaskQuerySet(models.QuerySet):
+    def pending(self):
+        return self.filter(status=Task.Status.PENDING).order_by("scheduled_at")
+
+    def due(self):
+        return self.pending().filter(scheduled_at__lte=timezone.now())
+
+    def claim_next(self) -> "Task | None":
+        return self.due().first()
+
+    def seconds_to_next(self) -> float | None:
+        """Seconds until the next pending task, or None if queue is empty."""
+        next_task = self.pending().only("scheduled_at").first()
+        if next_task is None:
+            return None
+        return max((next_task.scheduled_at - timezone.now()).total_seconds(), 0)
+
+
 class Task(models.Model):
     class TaskType(models.TextChoices):
         CONNECT = "connect"
@@ -179,6 +197,8 @@ class Task(models.Model):
     started_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
 
+    objects = TaskQuerySet.as_manager()
+
     class Meta:
         app_label = "linkedin"
         indexes = [
@@ -187,3 +207,18 @@ class Task(models.Model):
 
     def __str__(self):
         return f"{self.task_type} [{self.status}] scheduled={self.scheduled_at}"
+
+    def mark_running(self):
+        self.status = self.Status.RUNNING
+        self.started_at = timezone.now()
+        self.save(update_fields=["status", "started_at"])
+
+    def mark_completed(self):
+        self.status = self.Status.COMPLETED
+        self.completed_at = timezone.now()
+        self.save(update_fields=["status", "completed_at"])
+
+    def mark_failed(self, error: str):
+        self.status = self.Status.FAILED
+        self.error = error
+        self.save(update_fields=["status", "error"])

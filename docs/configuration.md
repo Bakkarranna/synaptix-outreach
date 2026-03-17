@@ -76,7 +76,6 @@ Timing and ML defaults are hardcoded in `linkedin/conf.py`. These are not user-c
 | `connect_delay_seconds` | `10` | Delay between connect tasks. |
 | `connect_no_candidate_delay_seconds` | `300` | Delay when candidate pool is empty. |
 | `check_pending_jitter_factor` | `0.2` | Multiplicative jitter factor for backoff. |
-| `worker_poll_seconds` | `5` | Sleep when task queue is empty. |
 
 Other constants: `MIN_DELAY` (5s) / `MAX_DELAY` (8s) for human-like wait timing.
 

@@ -84,15 +84,6 @@ def _build_qualifiers(campaigns, cfg, kit_model=None):
 # ------------------------------------------------------------------
 
 
-def _pop_next_task() -> Task | None:
-    """Claim the oldest due pending task. Returns None if queue is empty."""
-    now = timezone.now()
-    return (
-        Task.objects.filter(status=Task.Status.PENDING, scheduled_at__lte=now)
-        .order_by("scheduled_at")
-        .first()
-    )
-
 
 def heal_tasks(session):
     """Reconcile task queue with CRM state on daemon startup.
@@ -149,7 +140,7 @@ def heal_tasks(session):
                 continue
             enqueue_follow_up(campaign.pk, public_id, delay_seconds=random.uniform(5, 60))
 
-    pending_count = Task.objects.filter(status=Task.Status.PENDING).count()
+    pending_count = Task.objects.pending().count()
     logger.info("Task queue healed: %d pending tasks", pending_count)
 
 
@@ -191,43 +182,41 @@ def run_daemon(session):
 
     freemium = _FreemiumRotator(every=2)
 
+    # Single-threaded: one task at a time, no concurrent enqueuing,
+    # so sleeping until the next scheduled_at is safe.
     while True:
-        task = _pop_next_task()
+        task = Task.objects.claim_next()
         if task is None:
-            time.sleep(cfg["worker_poll_seconds"])
+            wait = Task.objects.seconds_to_next()
+            if wait is None:
+                logger.info("Queue empty — nothing to do")
+                return
+            if wait > 0:
+                h, m = int(wait // 3600), int(wait % 3600 // 60)
+                logger.info("Next task in %dh%02dm — sleeping", h, m)
+                time.sleep(wait)
             continue
 
         campaign = Campaign.objects.filter(pk=task.payload.get("campaign_id")).first()
         if not campaign:
-            task.status = Task.Status.FAILED
-            task.error = f"Campaign {task.payload.get('campaign_id')} not found"
-            task.save(update_fields=["status", "error"])
+            task.mark_failed(f"Campaign {task.payload.get('campaign_id')} not found")
             continue
 
         session.campaign = campaign
-
-        task.status = Task.Status.RUNNING
-        task.started_at = timezone.now()
-        task.save(update_fields=["status", "started_at"])
+        task.mark_running()
 
         handler = _HANDLERS.get(task.task_type)
         if handler is None:
-            task.status = Task.Status.FAILED
-            task.error = f"Unknown task type: {task.task_type}"
-            task.save(update_fields=["status", "error"])
+            task.mark_failed(f"Unknown task type: {task.task_type}")
             continue
 
         try:
             with failure_diagnostics(session):
                 handler(task, session, qualifiers)
         except Exception:
-            task.status = Task.Status.FAILED
-            task.error = traceback.format_exc()
-            task.save(update_fields=["status", "error"])
+            task.mark_failed(traceback.format_exc())
             logger.exception("Task %s failed", task)
             continue
 
-        task.status = Task.Status.COMPLETED
-        task.completed_at = timezone.now()
-        task.save(update_fields=["status", "completed_at"])
+        task.mark_completed()
         freemium.maybe_log()
