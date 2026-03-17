@@ -34,9 +34,7 @@ class FakeAccountSession:
     @property
     def campaigns(self):
         from linkedin.models import Campaign
-        return Campaign.objects.filter(
-            department__in=self.django_user.groups.all()
-        ).select_related("department")
+        return Campaign.objects.filter(users=self.django_user)
 
     def ensure_browser(self):
         pass
@@ -45,17 +43,14 @@ class FakeAccountSession:
 @pytest.fixture
 def fake_session(db):
     """An AccountSession-like object backed by the Django test DB."""
-    from common.models import Department
     from linkedin.models import Campaign, LinkedInProfile
 
     user = UserFactory(username="testuser")
-    dept = Department.objects.get(name="LinkedIn Outreach")
-    if dept not in user.groups.all():
-        user.groups.add(dept)
 
-    campaign = Campaign.objects.filter(department=dept).first()
+    campaign = Campaign.objects.first()
     if campaign is None:
-        campaign = Campaign.objects.create(department=dept)
+        campaign = Campaign.objects.create(name="LinkedIn Outreach")
+    campaign.users.add(user)
 
     linkedin_profile, _ = LinkedInProfile.objects.get_or_create(
         user=user,

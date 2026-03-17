@@ -38,36 +38,22 @@ def create_seed_leads(campaign, public_ids: list[str]) -> int:
     """
     from crm.models import Deal, Lead
 
-    dept = campaign.department
-    user = dept.user_set.first()
-    if not user:
-        logger.error("No users in department %s — cannot create seed leads", dept.name)
-        return 0
-
     existing_seeds = set(campaign.seed_public_ids or [])
     created = 0
     for public_id in public_ids:
         url = public_id_to_url(public_id)
 
-        lead, _ = Lead.objects.get_or_create(
-            website=url,
-            defaults={
-                "owner": user,
-                "department": dept,
-            },
-        )
+        lead, _ = Lead.objects.get_or_create(website=url)
 
-        if Deal.objects.filter(lead=lead, department=dept).exists():
+        if Deal.objects.filter(lead=lead, campaign=campaign).exists():
             logger.debug("Seed %s already has a deal, skipping", public_id)
             existing_seeds.add(public_id)
             continue
 
         Deal.objects.create(
-            name=f"Seed: {public_id}",
             lead=lead,
+            campaign=campaign,
             state=ProfileState.QUALIFIED,
-            owner=user,
-            department=dept,
         )
         existing_seeds.add(public_id)
         created += 1

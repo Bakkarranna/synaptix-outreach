@@ -52,11 +52,9 @@ class AccountSession:
 
     @property
     def campaigns(self):
-        """All campaigns this user belongs to (via group membership)."""
+        """All campaigns this user belongs to."""
         from linkedin.models import Campaign
-        return Campaign.objects.filter(
-            department__in=self.django_user.groups.all()
-        ).select_related("department")
+        return Campaign.objects.filter(users=self.django_user)
 
     def ensure_browser(self):
         """Launch or recover browser + login if needed. Call before using .page"""

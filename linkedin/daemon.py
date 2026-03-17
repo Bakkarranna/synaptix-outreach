@@ -64,7 +64,7 @@ def _build_qualifiers(campaigns, cfg, kit_model=None):
                 n_mc_samples=cfg["qualification_n_mc_samples"],
                 save_path=model_path_for_campaign(campaign.pk),
             )
-            X, y = ProfileEmbedding.get_labeled_arrays(campaign.department)
+            X, y = ProfileEmbedding.get_labeled_arrays(campaign)
             if len(X) > 0:
                 q.warm_start(X, y)
                 logger.info(
@@ -125,7 +125,7 @@ def heal_tasks(session):
         session.campaign = campaign
         pending_deals = Deal.objects.filter(
             state=ProfileState.PENDING,
-            department=campaign.department,
+            campaign=campaign,
         ).select_related("lead")
 
         for deal in pending_deals:
@@ -140,7 +140,7 @@ def heal_tasks(session):
         session.campaign = campaign
         connected_deals = Deal.objects.filter(
             state=ProfileState.CONNECTED,
-            department=campaign.department,
+            campaign=campaign,
         ).select_related("lead")
 
         for deal in connected_deals:

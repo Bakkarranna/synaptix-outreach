@@ -15,7 +15,6 @@ FAKE_PROFILE = {
     "headline": "Engineer at Acme",
     "positions": [{"company_name": "Acme Corp"}],
 }
-FAKE_RAW_DATA = {"included": [], "data": {}}
 
 
 class TestEnsureLeadEnriched:
@@ -26,7 +25,6 @@ class TestEnsureLeadEnriched:
 
         lead = Lead.objects.create(
             website="https://www.linkedin.com/in/alice/",
-            owner=fake_session.django_user,
             description=json.dumps(FAKE_PROFILE),
         )
 
@@ -41,13 +39,12 @@ class TestEnsureLeadEnriched:
 
         lead = Lead.objects.create(
             website="https://www.linkedin.com/in/alice/",
-            owner=fake_session.django_user,
         )
         assert not lead.description
 
         with patch(
             "linkedin.db.enrichment._fetch_profile",
-            return_value=(FAKE_PROFILE, FAKE_RAW_DATA),
+            return_value=FAKE_PROFILE,
         ):
             assert ensure_lead_enriched(fake_session, lead.pk, "alice") is True
 
@@ -62,12 +59,11 @@ class TestEnsureLeadEnriched:
 
         lead = Lead.objects.create(
             website="https://www.linkedin.com/in/alice/",
-            owner=fake_session.django_user,
         )
 
         with patch(
             "linkedin.db.enrichment._fetch_profile",
-            return_value=(None, None),
+            return_value=None,
         ):
             assert ensure_lead_enriched(fake_session, lead.pk, "alice") is False
 
@@ -103,7 +99,6 @@ class TestEnsureProfileEmbedded:
 
         Lead.objects.create(
             website="https://www.linkedin.com/in/alice/",
-            owner=fake_session.django_user,
             description=json.dumps(FAKE_PROFILE),
             pk=42,
         )
@@ -119,14 +114,13 @@ class TestEnsureProfileEmbedded:
 
         Lead.objects.create(
             website="https://www.linkedin.com/in/bob/",
-            owner=fake_session.django_user,
             pk=44,
         )
 
         with (
             patch(
                 "linkedin.db.enrichment._fetch_profile",
-                return_value=(FAKE_PROFILE, FAKE_RAW_DATA),
+                return_value=FAKE_PROFILE,
             ),
             patch(
                 "linkedin.ml.embeddings.embed_profile",
@@ -143,12 +137,11 @@ class TestEnsureProfileEmbedded:
 
         Lead.objects.create(
             website="https://www.linkedin.com/in/bob/",
-            owner=fake_session.django_user,
             pk=45,
         )
 
         with patch(
             "linkedin.db.enrichment._fetch_profile",
-            return_value=(None, None),
+            return_value=None,
         ):
             assert ensure_profile_embedded(45, "bob", session=fake_session) is False

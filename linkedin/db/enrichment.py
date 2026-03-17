@@ -1,5 +1,4 @@
 import logging
-from typing import Any
 
 from linkedin.db.leads import lead_profile_by_id
 
@@ -17,7 +16,7 @@ def ensure_lead_enriched(session, lead_id: int, public_id: str, *, quiet: bool =
     or missing lead).
     """
     from crm.models import Lead
-    from linkedin.db.leads import _update_lead_fields, _attach_raw_data
+    from linkedin.db.leads import _update_lead_fields
 
     lead = Lead.objects.filter(pk=lead_id).first()
     if not lead:
@@ -25,13 +24,11 @@ def ensure_lead_enriched(session, lead_id: int, public_id: str, *, quiet: bool =
     if lead.description:
         return True
 
-    profile, data = _fetch_profile(session, public_id)
+    profile = _fetch_profile(session, public_id)
     if not profile:
         return False
 
     _update_lead_fields(lead, profile)
-    if data:
-        _attach_raw_data(lead, public_id, data)
 
     if not quiet:
         logger.warning("Lazy-enriched %s (lead_id=%d) — should already have been enriched at discovery", public_id, lead_id)
@@ -81,14 +78,15 @@ def load_embedding(lead_id: int, public_id: str, session):
     return row.embedding_array if row else None
 
 
-def _fetch_profile(session, public_id: str) -> tuple[dict, Any] | tuple[None, None]:
-    """Call Voyager API for a single profile. Returns (profile, raw_data) or (None, None)."""
+def _fetch_profile(session, public_id: str) -> dict | None:
+    """Call Voyager API for a single profile. Returns parsed profile or None."""
     from linkedin.api.client import PlaywrightLinkedinAPI
 
     session.ensure_browser()
     api = PlaywrightLinkedinAPI(session=session)
     try:
-        return api.get_profile(public_identifier=public_id)
+        profile, _raw = api.get_profile(public_identifier=public_id)
+        return profile
     except Exception:
         logger.warning("Voyager API failed for %s", public_id)
-        return None, None
+        return None

@@ -127,17 +127,7 @@ class TestCreateEnrichedLead:
             "https://www.linkedin.com/in/alice/",
             SAMPLE_PROFILE,
         )
-        assert Deal.objects.filter(owner=fake_session.django_user).count() == 0
-
-    def test_attaches_raw_data(self, fake_session):
-        from common.models import TheFile
-        create_enriched_lead(
-            fake_session,
-            "https://www.linkedin.com/in/alice/",
-            SAMPLE_PROFILE,
-            data={"raw": "voyager"},
-        )
-        assert TheFile.objects.count() == 1
+        assert Deal.objects.count() == 0
 
     def test_no_company_name_when_no_positions(self, fake_session):
         from crm.models import Lead
@@ -289,7 +279,7 @@ class TestCreateDisqualifiedDeal:
         assert deal.reason == "Bad fit"
 
     def test_excludes_from_qualification(self, fake_session):
-        """A lead with a disqualified Deal in this department is excluded."""
+        """A lead with a disqualified Deal in this campaign is excluded."""
         create_enriched_lead(
             fake_session,
             "https://www.linkedin.com/in/alice/",
@@ -315,14 +305,12 @@ class TestCreateDisqualifiedDeal:
 @pytest.mark.django_db
 class TestMultiCampaignQualification:
     def _make_other_session(self, fake_session):
-        """Create a second campaign/session in a different department."""
-        from common.models import Department
+        """Create a second campaign/session."""
         from linkedin.models import Campaign
         from tests.conftest import FakeAccountSession
 
-        dept2 = Department.objects.create(name="Other Campaign")
-        fake_session.django_user.groups.add(dept2)
-        campaign2 = Campaign.objects.create(department=dept2)
+        campaign2 = Campaign.objects.create(name="Other Campaign")
+        campaign2.users.add(fake_session.django_user)
         return FakeAccountSession(
             django_user=fake_session.django_user,
             linkedin_profile=fake_session.linkedin_profile,

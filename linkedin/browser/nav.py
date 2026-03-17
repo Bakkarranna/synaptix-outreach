@@ -89,7 +89,7 @@ def _discover_and_enrich(session, urls: set):
             api = PlaywrightLinkedinAPI(session=session)
 
         try:
-            profile, data = api.get_profile(profile_url=url)
+            profile, _raw = api.get_profile(profile_url=url)
         except Exception:
             logger.warning("Voyager API failed for %s — skipping", url)
             continue
@@ -98,7 +98,7 @@ def _discover_and_enrich(session, urls: set):
             logger.warning("Empty profile for %s — skipping", url)
             continue
 
-        if create_enriched_lead(session, url, profile, data) is not None:
+        if create_enriched_lead(session, url, profile) is not None:
             enriched += 1
 
         time.sleep(min_interval)

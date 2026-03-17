@@ -61,8 +61,8 @@ class TestProfileEmbeddingModel:
     def test_get_labeled_arrays_empty(self, fake_session):
         from linkedin.models import ProfileEmbedding
 
-        dept = fake_session.campaign.department
-        X, y = ProfileEmbedding.get_labeled_arrays(dept)
+        campaign = fake_session.campaign
+        X, y = ProfileEmbedding.get_labeled_arrays(campaign)
         assert X.shape == (0, 384)
         assert y.shape == (0,)
 
@@ -72,28 +72,26 @@ class TestProfileEmbeddingModel:
         from linkedin.enums import ProfileState
         from linkedin.models import ProfileEmbedding
 
-        dept = fake_session.campaign.department
-        user = fake_session.django_user
+        campaign = fake_session.campaign
 
         # Create a lead + embedding + QUALIFIED deal → label=1
-        lead = Lead.objects.create(website="https://linkedin.com/in/alice", owner=user, department=dept)
+        lead = Lead.objects.create(website="https://linkedin.com/in/alice")
         emb = np.random.randn(384).astype(np.float32)
         ProfileEmbedding.objects.create(lead_id=lead.pk, public_identifier="alice", embedding=emb.tobytes())
         Deal.objects.create(
-            name="test", lead=lead, state=ProfileState.QUALIFIED,
-            owner=user, department=dept,
+            lead=lead, campaign=campaign, state=ProfileState.QUALIFIED,
         )
 
         # Create a lead + embedding + FAILED/Disqualified deal → label=0
-        lead2 = Lead.objects.create(website="https://linkedin.com/in/bob", owner=user, department=dept)
+        lead2 = Lead.objects.create(website="https://linkedin.com/in/bob")
         emb2 = np.random.randn(384).astype(np.float32)
         ProfileEmbedding.objects.create(lead_id=lead2.pk, public_identifier="bob", embedding=emb2.tobytes())
         Deal.objects.create(
-            name="test2", lead=lead2, state=ProfileState.FAILED,
-            owner=user, department=dept, closing_reason=ClosingReason.DISQUALIFIED,
+            lead=lead2, campaign=campaign, state=ProfileState.FAILED,
+            closing_reason=ClosingReason.DISQUALIFIED,
         )
 
-        X, y = ProfileEmbedding.get_labeled_arrays(dept)
+        X, y = ProfileEmbedding.get_labeled_arrays(campaign)
         assert len(X) == 2
         assert set(y) == {0, 1}
 
@@ -103,18 +101,17 @@ class TestProfileEmbeddingModel:
         from linkedin.enums import ProfileState
         from linkedin.models import ProfileEmbedding
 
-        dept = fake_session.campaign.department
-        user = fake_session.django_user
+        campaign = fake_session.campaign
 
-        lead = Lead.objects.create(website="https://linkedin.com/in/charlie", owner=user, department=dept)
+        lead = Lead.objects.create(website="https://linkedin.com/in/charlie")
         emb = np.random.randn(384).astype(np.float32)
         ProfileEmbedding.objects.create(lead_id=lead.pk, public_identifier="charlie", embedding=emb.tobytes())
         Deal.objects.create(
-            name="test", lead=lead, state=ProfileState.FAILED,
-            owner=user, department=dept, closing_reason=ClosingReason.FAILED,
+            lead=lead, campaign=campaign, state=ProfileState.FAILED,
+            closing_reason=ClosingReason.FAILED,
         )
 
-        X, y = ProfileEmbedding.get_labeled_arrays(dept)
+        X, y = ProfileEmbedding.get_labeled_arrays(campaign)
         assert len(X) == 0
 
     def test_embedded_lead_ids(self, embeddings_db):

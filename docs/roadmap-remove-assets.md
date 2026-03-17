@@ -19,7 +19,7 @@ All persistent state lives inside the SQLite database (already a Docker volume),
 | Path | Contents | Migration Strategy |
 |------|----------|--------------------|
 | `data/crm.db` | SQLite database | Keep as a named Docker volume (`-v openoutreach-data:/app/assets/data`) |
-| `data/media/docs/` | Raw Voyager JSON files (attached to Leads via `TheFile`) | Already in DB via `TheFile` model — stop writing to disk |
+| `data/media/docs/` | Raw Voyager JSON files (previously attached via TheFile) | TheFile model removed — raw data no longer persisted |
 | `cookies/*.json` | Playwright browser cookies | Store as `BinaryField` on `LinkedInProfile` model |
 | `cookies/.legal_notice_accepted` | Legal acceptance marker | Add `legal_accepted` `BooleanField` to `LinkedInProfile` |
 | `cookies/.*_newsletter_processed` | GDPR newsletter marker | Add `newsletter_processed` `BooleanField` to `LinkedInProfile` |

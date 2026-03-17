@@ -10,17 +10,15 @@ logger = logging.getLogger(__name__)
 def import_freemium_campaign(kit_config: dict):
     """Create or update a freemium Campaign from kit config.
 
-    Creates the department and adds all active users to the group.
+    Adds all active users to the campaign.
     Returns the Campaign instance or None.
     """
-    from common.models import Department
     from linkedin.models import Campaign, LinkedInProfile
 
-    dept_name = kit_config.get("campaign_name", "Freemium Outreach")
-    dept, _ = Department.objects.get_or_create(name=dept_name)
+    campaign_name = kit_config.get("campaign_name", "Freemium Outreach")
 
     campaign, _ = Campaign.objects.update_or_create(
-        department=dept,
+        name=campaign_name,
         defaults={
             "product_docs": kit_config["product_docs"],
             "campaign_objective": kit_config["campaign_objective"],
@@ -30,13 +28,12 @@ def import_freemium_campaign(kit_config: dict):
         },
     )
 
-    # Add all active LinkedIn users to this department group
+    # Add all active LinkedIn users to this campaign
     for lp in LinkedInProfile.objects.filter(active=True).select_related("user"):
-        if dept not in lp.user.groups.all():
-            lp.user.groups.add(dept)
+        campaign.users.add(lp.user)
 
     logger.info("[Freemium] Campaign imported: %s (action_fraction=%.2f)",
-               dept_name, kit_config["action_fraction"])
+               campaign_name, kit_config["action_fraction"])
     return campaign
 
 
@@ -55,13 +52,7 @@ def seed_profiles(session, kit_config: dict):
     for public_id in public_ids:
         url = public_id_to_url(public_id)
 
-        lead, _ = Lead.objects.get_or_create(
-            website=url,
-            defaults={
-                "owner": session.django_user,
-                "department": session.campaign.department,
-            },
-        )
+        lead, _ = Lead.objects.get_or_create(website=url)
 
         ensure_profile_embedded(lead.pk, public_id, session, quiet=True)
         create_freemium_deal(session, public_id)

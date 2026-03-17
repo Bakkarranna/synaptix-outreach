@@ -23,9 +23,8 @@ def increment_connect_attempts(session, public_id: str) -> int:
     from crm.models import Deal
 
     clean_url = public_id_to_url(public_id)
-    dept = session.campaign.department
     deal = Deal.objects.filter(
-        lead__website=clean_url, department=dept,
+        lead__website=clean_url, campaign=session.campaign,
     ).first()
     if not deal:
         return 1
@@ -49,18 +48,18 @@ def _deal_to_profile_dict(deal) -> dict:
 
 
 def _deals_at_state(session, state: ProfileState) -> list:
-    """Return profile dicts for all Deals at the given state in this campaign's department."""
+    """Return profile dicts for all Deals at the given state in this campaign."""
     from crm.models import Deal
 
     qs = Deal.objects.filter(
         state=state,
-        department=session.campaign.department,
+        campaign=session.campaign,
     ).select_related("lead")
     return [_deal_to_profile_dict(d) for d in qs]
 
 
-def _existing_deal_or_lead(public_id: str, dept):
-    """Check for an existing Deal in dept; if none, look up the Lead.
+def _existing_deal_or_lead(public_id: str, campaign):
+    """Check for an existing Deal in campaign; if none, look up the Lead.
 
     Returns (lead, existing_deal) — exactly one will be non-None,
     or both None if no Lead exists at all.
@@ -68,7 +67,7 @@ def _existing_deal_or_lead(public_id: str, dept):
     from crm.models import Deal, Lead
 
     clean_url = public_id_to_url(public_id)
-    existing = Deal.objects.filter(lead__website=clean_url, department=dept).first()
+    existing = Deal.objects.filter(lead__website=clean_url, campaign=campaign).first()
     if existing:
         return None, existing
     lead = Lead.objects.filter(website=clean_url).first()
@@ -81,14 +80,13 @@ def _existing_deal_or_lead(public_id: str, dept):
 def set_profile_state(session, public_identifier: str, new_state: str, reason: str = ""):
     """Move the Deal to the corresponding state.
 
-    Department-scoped: only finds Deals in the current campaign's department.
+    Campaign-scoped: only finds Deals in the current campaign.
     Raises ValueError if no Deal exists.
     """
     from crm.models import Deal, ClosingReason
 
     clean_url = public_id_to_url(public_identifier)
-    dept = session.campaign.department
-    deal = Deal.objects.filter(lead__website=clean_url, department=dept).first()
+    deal = Deal.objects.filter(lead__website=clean_url, campaign=session.campaign).first()
     if not deal:
         raise ValueError(f"No Deal for {public_identifier} — cannot set state {new_state}")
 
@@ -128,13 +126,12 @@ def get_ready_to_connect_profiles(session) -> list:
 
 
 def get_profile_dict_for_public_id(session, public_id: str) -> dict | None:
-    """Load profile dict for a single public_id from Deal + Lead (department-scoped)."""
+    """Load profile dict for a single public_id from Deal + Lead (campaign-scoped)."""
     from crm.models import Deal
 
     clean_url = public_id_to_url(public_id)
-    dept = session.campaign.department
     deal = (
-        Deal.objects.filter(lead__website=clean_url, department=dept)
+        Deal.objects.filter(lead__website=clean_url, campaign=session.campaign)
         .select_related("lead")
         .first()
     )
@@ -155,8 +152,8 @@ def create_disqualified_deal(session, public_id: str, reason: str = ""):
     """
     from crm.models import ClosingReason
 
-    dept = session.campaign.department
-    lead, existing = _existing_deal_or_lead(public_id, dept)
+    campaign = session.campaign
+    lead, existing = _existing_deal_or_lead(public_id, campaign)
     if existing:
         return existing
     if not lead:
@@ -164,7 +161,6 @@ def create_disqualified_deal(session, public_id: str, reason: str = ""):
         return None
 
     deal = _create_deal(
-        name=f"LinkedIn: {public_id}",
         lead=lead,
         state=ProfileState.FAILED,
         session=session,
@@ -179,16 +175,15 @@ def create_disqualified_deal(session, public_id: str, reason: str = ""):
 
 @transaction.atomic
 def create_freemium_deal(session, public_id: str):
-    """Create a Deal in the freemium campaign's department for a candidate lead."""
-    dept = session.campaign.department
-    lead, existing = _existing_deal_or_lead(public_id, dept)
+    """Create a Deal in the freemium campaign for a candidate lead."""
+    campaign = session.campaign
+    lead, existing = _existing_deal_or_lead(public_id, campaign)
     if existing:
         return existing
     if not lead:
         raise ValueError(f"No Lead for {public_id}")
 
     deal = _create_deal(
-        name=f"Freemium: {public_id}",
         lead=lead,
         state=ProfileState.QUALIFIED,
         session=session,
@@ -199,18 +194,16 @@ def create_freemium_deal(session, public_id: str):
 
 
 def _create_deal(
-    *, name, lead, state, session,
+    *, lead, state, session,
     closing_reason="", reason="",
 ):
     """Shared Deal creation with common defaults."""
     from crm.models import Deal
 
     return Deal.objects.create(
-        name=name,
         lead=lead,
+        campaign=session.campaign,
         state=state,
-        owner=session.django_user,
-        department=session.campaign.department,
         closing_reason=closing_reason,
         reason=reason,
     )

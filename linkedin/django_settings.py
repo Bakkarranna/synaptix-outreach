@@ -32,7 +32,6 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "crm.apps.CrmConfig",
     "chat.apps.ChatConfig",
-    "common.apps.CommonConfig",
     "linkedin",
 ]
 

@@ -43,11 +43,9 @@ class TestEnsureOnboardingAlreadyExist:
     def test_runs_account_onboarding_when_no_profile(self, db):
         """If Campaign exists but no active profile → runs _onboard_account."""
         from linkedin.models import Campaign, LinkedInProfile
-        from common.models import Department
 
         LinkedInProfile.objects.all().delete()
-        dept = Department.objects.get(name="LinkedIn Outreach")
-        campaign, _ = Campaign.objects.get_or_create(department=dept)
+        campaign, _ = Campaign.objects.get_or_create(name="LinkedIn Outreach")
 
         with (
             patch.object(onboarding, "_onboard_campaign") as mock_campaign,

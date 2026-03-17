@@ -14,7 +14,7 @@ Detailed module documentation for OpenOutreach. See `CLAUDE.md` for rules and qu
 
 `ensure_onboarding()` ensures Campaign, active LinkedInProfile, LLM config, and legal acceptance exist. Four checks:
 
-1. **Campaign** — interactive prompts for campaign name, product docs, objective, booking link. Creates `Department` + `Campaign`.
+1. **Campaign** — interactive prompts for campaign name, product docs, objective, booking link. Creates `Campaign` with M2M user membership.
 2. **LinkedInProfile** — prompts for LinkedIn email, password, newsletter, rate limits. Handle from email slug.
 3. **LLM config** — prompts for `LLM_API_KEY`, `AI_MODEL`, `LLM_API_BASE` → writes to `.env`.
 4. **Legal notice** — per-account acceptance stored as `LinkedInProfile.legal_accepted`.
@@ -47,25 +47,23 @@ GPR (sklearn, ConstantKernel * RBF) inside Pipeline(StandardScaler, GPR) with BA
 
 ## Django Apps
 
-Four apps in `INSTALLED_APPS`:
+Three apps in `INSTALLED_APPS`:
 
-- **`linkedin`** — Main app: Campaign, LinkedInProfile, SearchKeyword, ActionLog, ProfileEmbedding, Task models. All automation logic.
+- **`linkedin`** — Main app: Campaign (with users M2M), LinkedInProfile, SearchKeyword, ActionLog, ProfileEmbedding, Task models. All automation logic.
 - **`crm`** — Lead and Deal models (in `crm/models/lead.py` and `crm/models/deal.py`). Also defines `ClosingReason` enum.
-- **`common`** — `BaseModel` (abstract: creation_date, update_date, owner FK, department FK), `Department` (Group subclass), `TheFile` (GenericForeignKey attachments).
 - **`chat`** — `ChatMessage` model (GenericForeignKey to any object, content, owner, answer_to threading, topic).
 
 ## CRM Data Model
 
-- **Campaign** (`linkedin/models.py`) — 1:1 with Department. `product_docs`, `campaign_objective`, `booking_link`, `is_freemium`, `action_fraction`, `seed_public_ids` (JSONField).
+- **Campaign** (`linkedin/models.py`) — `name` (unique), `users` (M2M to User), `product_docs`, `campaign_objective`, `booking_link`, `is_freemium`, `action_fraction`, `seed_public_ids` (JSONField).
 - **LinkedInProfile** (`linkedin/models.py`) — 1:1 with User. Credentials, rate limits (`connect_daily_limit`, `connect_weekly_limit`, `follow_up_daily_limit`). Methods: `can_execute`/`record_action`/`mark_exhausted`. In-memory `_exhausted` dict for daily rate limit caching.
 - **SearchKeyword** (`linkedin/models.py`) — FK to Campaign. `keyword`, `used`, `used_at`. Unique on `(campaign, keyword)`.
 - **ActionLog** (`linkedin/models.py`) — FK to LinkedInProfile + Campaign. `action_type` (connect/follow_up), `created_at`. Composite index on `(linkedin_profile, action_type, created_at)`.
-- **Lead** (`crm/models/lead.py`) — Per LinkedIn URL (`website` = unique). `description` = parsed profile JSON. `company_name` = from first position. `disqualified` = permanent exclusion. Inherits BaseModel.
-- **Deal** (`crm/models/deal.py`) — Per campaign (department-scoped). `state` = CharField (ProfileState choices). `closing_reason` = CharField (ClosingReason choices: COMPLETED/FAILED/DISQUALIFIED). `reason` = qualification/failure reason. `connect_attempts` = retry count. `backoff_hours` = check_pending backoff. Inherits BaseModel.
-- **ProfileEmbedding** (`linkedin/models.py`) — 384-dim float32 vectors as BinaryField. `lead_id` PK, `public_identifier`. `get_labeled_arrays(department)` returns (X, y) for GP warm start. Labels: non-FAILED state → 1, FAILED+DISQUALIFIED → 0, other FAILED → skipped.
+- **Lead** (`crm/models/lead.py`) — Per LinkedIn URL (`website` = unique). `first_name`, `last_name`, `company_name`. `description` = parsed profile JSON. `disqualified` = permanent exclusion. `creation_date`, `update_date`.
+- **Deal** (`crm/models/deal.py`) — Per campaign (campaign-scoped via FK). `state` = CharField (ProfileState choices). `closing_reason` = CharField (ClosingReason choices: COMPLETED/FAILED/DISQUALIFIED). `reason` = qualification/failure reason. `connect_attempts` = retry count. `backoff_hours` = check_pending backoff. `creation_date`, `update_date`.
+- **ProfileEmbedding** (`linkedin/models.py`) — 384-dim float32 vectors as BinaryField. `lead_id` PK, `public_identifier`. `get_labeled_arrays(campaign)` returns (X, y) for GP warm start. Labels: non-FAILED state → 1, FAILED+DISQUALIFIED → 0, other FAILED → skipped.
 - **Task** (`linkedin/models.py`) — `task_type` (connect/check_pending/follow_up), `status` (pending/running/completed/failed), `scheduled_at`, `payload` (JSONField), `error`, `started_at`, `completed_at`. Composite index on `(status, scheduled_at)`.
 - **ChatMessage** (`chat/models.py`) — GenericForeignKey to any object. `content`, `owner`, `answer_to` (self FK), `topic` (self FK), `recipients`, `to` (M2M to User).
-- **TheFile** (`common/models.py`) — File attachments via GenericForeignKey.
 
 ## Key Modules
 
@@ -84,7 +82,7 @@ Four apps in `INSTALLED_APPS`:
 - **`ml/embeddings.py`** — FastEmbed utilities, `embed_profile()`.
 - **`ml/profile_text.py`** — `build_profile_text()`.
 - **`ml/hub.py`** — HuggingFace kit loader (`fetch_kit()`).
-- **`browser/session.py`** — `AccountSession`: handle, linkedin_profile, page, context, browser, playwright. `campaigns` property (via group membership). `ensure_browser()` launches/recovers browser. Cookie expiry check via `_maybe_refresh_cookies()`.
+- **`browser/session.py`** — `AccountSession`: handle, linkedin_profile, page, context, browser, playwright. `campaigns` property (via Campaign.users M2M). `ensure_browser()` launches/recovers browser. Cookie expiry check via `_maybe_refresh_cookies()`.
 - **`browser/registry.py`** — `AccountSessionRegistry`, `get_or_create_session()`.
 - **`browser/login.py`** — `start_browser_session()` — browser launch + LinkedIn login.
 - **`browser/nav.py`** — Navigation, auto-discovery, `goto_page()`.
@@ -107,9 +105,9 @@ Four apps in `INSTALLED_APPS`:
 - **`setup/freemium.py`** — `import_freemium_campaign()`, `seed_profiles()`.
 - **`setup/gdpr.py`** — `apply_gdpr_newsletter_override()`.
 - **`setup/self_profile.py`** — `ensure_self_profile()`.
-- **`management/setup_crm.py`** — Idempotent CRM bootstrap (Department creation).
+- **`management/setup_crm.py`** — Idempotent CRM bootstrap (Site creation).
 - **`admin.py`** — Django Admin: Campaign, LinkedInProfile, SearchKeyword, ProfileEmbedding, ActionLog, Task, ChatMessage.
-- **`django_settings.py`** — Django settings (SQLite at `assets/data/crm.db`). Apps: crm, chat, common, linkedin.
+- **`django_settings.py`** — Django settings (SQLite at `assets/data/crm.db`). Apps: crm, chat, linkedin.
 
 ## Configuration
 

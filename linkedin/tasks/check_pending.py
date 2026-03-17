@@ -55,7 +55,7 @@ def handle_check_pending(task, session, qualifiers):
         with transaction.atomic():
             deal = Deal.objects.filter(
                 lead__website=clean_url,
-                department=session.campaign.department,
+                campaign=session.campaign,
             ).first()
             if deal:
                 deal.backoff_hours = new_backoff

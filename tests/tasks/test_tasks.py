@@ -39,7 +39,7 @@ def _assert_deal_state(session, public_id, expected_state: ProfileState):
     from crm.models import Deal
     deal = Deal.objects.get(
         lead__website=f"https://www.linkedin.com/in/{public_id}/",
-        owner=session.django_user,
+        campaign=session.campaign,
     )
     assert deal.state == expected_state
 
@@ -62,7 +62,7 @@ def _make_connected(session, public_id="alice"):
 
 def _make_old_deal(session, days):
     from crm.models import Deal
-    deal = Deal.objects.filter(owner=session.django_user).first()
+    deal = Deal.objects.filter(campaign=session.campaign).first()
     Deal.objects.filter(pk=deal.pk).update(
         update_date=timezone.now() - timedelta(days=days)
     )

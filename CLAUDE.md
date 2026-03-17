@@ -39,6 +39,6 @@ For detailed module docs, see `ARCHITECTURE.md`.
 - **Task queue**: `Task` model (persistent). Three types: `connect`, `check_pending`, `follow_up`. Handlers in `linkedin/tasks/`, signature: `handle_*(task, session, qualifiers)`.
 - **ML pipeline**: GPR (sklearn) + BALD active learning + LLM qualification. Per-campaign models at `assets/models/campaign_{id}_model.joblib`.
 - **Config**: `.env` (LLM_API_KEY, AI_MODEL), `conf.py:CAMPAIGN_CONFIG` (timing/ML defaults), Campaign/LinkedInProfile models (Django Admin).
-- **Django apps**: `linkedin` (main), `crm` (Lead/Deal), `common` (BaseModel/Department), `chat` (ChatMessage).
+- **Django apps**: `linkedin` (main — Campaign with users M2M), `crm` (Lead/Deal), `chat` (ChatMessage).
 - **Docker**: Playwright base image, VNC on port 5900, `BUILD_ENV` arg selects requirements.
 - **CI/CD**: `.github/workflows/tests.yml` (pytest), `deploy.yml` (build + push to ghcr.io).

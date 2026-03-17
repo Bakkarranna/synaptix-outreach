@@ -115,7 +115,7 @@ def handle_connect(task, session, qualifiers):
 
     deal = Deal.objects.filter(
         lead__website=public_id_to_url(public_id),
-        department=session.campaign.department,
+        campaign=session.campaign,
     ).first()
     reason = deal.reason if deal else ""
     stats = strategy.qualifier.explain(candidate, session) if strategy.qualifier else ""

@@ -1,8 +1,7 @@
 from django.db import models
-from django.urls import reverse
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
-from common.models import BaseModel
 from linkedin.enums import ProfileState
 
 
@@ -12,14 +11,17 @@ class ClosingReason(models.TextChoices):
     DISQUALIFIED = "Disqualified"
 
 
-class Deal(BaseModel):
+class Deal(models.Model):
     class Meta:
         verbose_name = _("Deal")
         verbose_name_plural = _("Deals")
+        constraints = [
+            models.UniqueConstraint(fields=["lead", "campaign"], name="unique_deal_per_campaign"),
+        ]
 
-    name = models.CharField(max_length=250)
-    lead = models.ForeignKey(
-        "Lead", blank=True, null=True, on_delete=models.CASCADE,
+    lead = models.ForeignKey("Lead", on_delete=models.CASCADE)
+    campaign = models.ForeignKey(
+        "linkedin.Campaign", on_delete=models.CASCADE, related_name="deals",
     )
     state = models.CharField(
         max_length=20,
@@ -35,9 +37,9 @@ class Deal(BaseModel):
     reason = models.TextField(blank=True, default="")
     connect_attempts = models.IntegerField(default=0)
     backoff_hours = models.IntegerField(default=0)
+    creation_date = models.DateTimeField(default=timezone.now)
+    update_date = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return self.name
-
-    def get_absolute_url(self):
-        return reverse("admin:crm_deal_change", args=(self.id,))
+        lead_str = str(self.lead) if self.lead_id else "?"
+        return f"{lead_str} [{self.state}]"

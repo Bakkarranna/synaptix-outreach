@@ -71,7 +71,7 @@ def _build_tools(session, public_id: str, profile: dict, campaign_id: int):
 
 
 def _count_past_messages(session, public_id: str) -> int:
-    """Count saved outgoing ChatMessages for this lead sent by this account."""
+    """Count saved outgoing ChatMessages for this lead."""
     from chat.models import ChatMessage
     from django.contrib.contenttypes.models import ContentType
     from crm.models import Lead
@@ -84,7 +84,8 @@ def _count_past_messages(session, public_id: str) -> int:
         return 0
     ct = ContentType.objects.get_for_model(lead)
     return ChatMessage.objects.filter(
-        content_type=ct, object_id=lead.pk, owner=session.django_user,
+        content_type=ct, object_id=lead.pk,
+        owner=session.django_user,
     ).count()
 
 

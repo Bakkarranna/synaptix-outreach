@@ -19,11 +19,8 @@ _RATE_LIMIT_FIELDS = {
 
 
 class Campaign(models.Model):
-    department = models.OneToOneField(
-        "common.Department",
-        on_delete=models.CASCADE,
-        related_name="campaign",
-    )
+    name = models.CharField(max_length=200, unique=True)
+    users = models.ManyToManyField(User, blank=True, related_name="campaigns")
     product_docs = models.TextField(blank=True)
     campaign_objective = models.TextField(blank=True)
     booking_link = models.URLField(max_length=500, blank=True)
@@ -32,7 +29,7 @@ class Campaign(models.Model):
     seed_public_ids = models.JSONField(default=list, blank=True)
 
     def __str__(self):
-        return self.department.name
+        return self.name
 
     class Meta:
         app_label = "linkedin"
@@ -181,8 +178,8 @@ class ProfileEmbedding(models.Model):
         self.embedding = np.asarray(arr, dtype=np.float32).tobytes()
 
     @classmethod
-    def get_labeled_arrays(cls, department) -> tuple[np.ndarray, np.ndarray]:
-        """Labeled embeddings for a department as (X, y) numpy arrays for warm start.
+    def get_labeled_arrays(cls, campaign) -> tuple[np.ndarray, np.ndarray]:
+        """Labeled embeddings for a campaign as (X, y) numpy arrays for warm start.
 
         Labels are derived from Deal state and closing_reason:
         - label=1: Deals at any non-FAILED state (QUALIFIED and beyond)
@@ -193,7 +190,7 @@ class ProfileEmbedding(models.Model):
         from linkedin.enums import ProfileState
 
         deals = Deal.objects.filter(
-            department=department, lead_id__isnull=False,
+            campaign=campaign, lead_id__isnull=False,
         ).values_list("lead_id", "state", "closing_reason")
 
         label_by_lead: dict[int, int] = {}

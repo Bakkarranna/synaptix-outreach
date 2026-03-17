@@ -18,7 +18,7 @@ These can also be set as environment variables directly.
 
 ## Campaign Settings (Django Model)
 
-Campaign data is stored in the `Campaign` Django model (1:1 with `common.Department`), managed via
+Campaign data is stored in the `Campaign` Django model (with `name` and `users` M2M), managed via
 Django Admin (`/admin/`) or created during interactive onboarding.
 
 | Field | Type | Description |

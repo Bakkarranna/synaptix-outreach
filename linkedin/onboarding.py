@@ -95,8 +95,7 @@ def _ensure_llm_config() -> None:
 
 def _onboard_campaign():
     """Create a Campaign via interactive prompts. Returns the Campaign instance."""
-    from common.models import Department
-    from linkedin.management.setup_crm import DEPARTMENT_NAME
+    from linkedin.management.setup_crm import DEFAULT_CAMPAIGN_NAME
     from linkedin.models import Campaign
 
     print()
@@ -105,7 +104,7 @@ def _onboard_campaign():
     print("=" * 60)
     print()
 
-    campaign_name = _prompt("Campaign name", default=DEPARTMENT_NAME)
+    campaign_name = _prompt("Campaign name", default=DEFAULT_CAMPAIGN_NAME)
 
     # Load defaults from files
     default_product = ""
@@ -164,10 +163,8 @@ def _onboard_campaign():
     print()
     booking_link = _prompt("Booking link (optional, e.g. https://cal.com/you)", default="")
 
-    dept, _ = Department.objects.get_or_create(name=campaign_name)
-
     campaign = Campaign.objects.create(
-        department=dept,
+        name=campaign_name,
         product_docs=product_docs,
         campaign_objective=objective,
         booking_link=booking_link,
@@ -245,10 +242,8 @@ def _onboard_account(campaign):
         user.set_unusable_password()
         user.save()
 
-    # Add user to department group
-    dept = campaign.department
-    if dept not in user.groups.all():
-        user.groups.add(dept)
+    # Add user to campaign
+    campaign.users.add(user)
 
     profile = LinkedInProfile.objects.create(
         user=user,

@@ -14,29 +14,29 @@ def find_freemium_candidate(session, qualifier) -> dict | None:
 
     Priority: seed profiles with QUALIFIED Deals are returned first (ranked by
     the kit model).  Once all seeds are exhausted (connected / failed), falls
-    back to embedded leads without any Deal in this department.
+    back to embedded leads without any Deal in this campaign.
     """
     from crm.models import Deal, Lead
     from linkedin.models import ProfileEmbedding
 
-    dept = session.campaign.department
+    campaign = session.campaign
 
     # All embedded lead IDs
     embedded_pks = set(ProfileEmbedding.objects.values_list("lead_id", flat=True))
 
-    # Seed profiles: QUALIFIED Deals in this department (ready to connect)
+    # Seed profiles: QUALIFIED Deals in this campaign (ready to connect)
     seed_pks = set(
-        Deal.objects.filter(department=dept, state=ProfileState.QUALIFIED)
+        Deal.objects.filter(campaign=campaign, state=ProfileState.QUALIFIED)
         .values_list("lead_id", flat=True)
     )
     seed_pks &= embedded_pks  # must have embeddings
 
-    # Leads with any Deal in this department (all states)
+    # Leads with any Deal in this campaign (all states)
     all_dealt_pks = set(
-        Deal.objects.filter(department=dept).values_list("lead_id", flat=True)
+        Deal.objects.filter(campaign=campaign).values_list("lead_id", flat=True)
     )
 
-    # Undiscovered: embedded leads with no Deal at all in this department
+    # Undiscovered: embedded leads with no Deal at all in this campaign
     undiscovered_pks = embedded_pks - all_dealt_pks
 
     # Try seeds first, then undiscovered

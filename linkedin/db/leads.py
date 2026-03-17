@@ -2,9 +2,7 @@ import json
 import logging
 from typing import Dict, Any, Optional
 
-from django.core.files.base import ContentFile
 from django.db import transaction
-from termcolor import colored
 
 from linkedin.db.urls import url_to_public_id, public_id_to_url
 from linkedin.enums import ProfileState
@@ -74,7 +72,7 @@ def lead_exists(url: str) -> bool:
 
 
 @transaction.atomic
-def create_enriched_lead(session, url: str, profile: Dict[str, Any], data: Optional[Dict[str, Any]] = None) -> Optional[int]:
+def create_enriched_lead(session, url: str, profile: Dict[str, Any]) -> Optional[int]:
     """Create Lead with full profile data and embedding.
 
     Returns lead PK or None if exists.
@@ -91,16 +89,9 @@ def create_enriched_lead(session, url: str, profile: Dict[str, Any], data: Optio
     if Lead.objects.filter(website=clean_url).exists():
         return None
 
-    lead = Lead.objects.create(
-        website=clean_url,
-        owner=session.django_user,
-        department=session.campaign.department,
-    )
+    lead = Lead.objects.create(website=clean_url)
 
     _update_lead_fields(lead, profile)
-
-    if data:
-        _attach_raw_data(lead, public_id, data)
 
     embed_profile(lead.pk, public_id, profile)
 
@@ -124,17 +115,14 @@ def promote_lead_to_deal(session, public_id: str, reason: str = ""):
     if not lead.company_name:
         raise ValueError(f"Lead {public_id} has no company_name — cannot create Deal")
 
-    dept = session.campaign.department
-
     deal = Deal.objects.create(
-        name=f"LinkedIn: {public_id}",
         lead=lead,
+        campaign=session.campaign,
         state=ProfileState.QUALIFIED,
-        owner=session.django_user,
-        department=dept,
         reason=reason,
     )
 
+    from termcolor import colored
     logger.info("%s %s", public_id, colored("QUALIFIED", "green", attrs=["bold"]))
     return deal
 
@@ -143,17 +131,15 @@ def get_leads_for_qualification(session) -> list:
     """Leads eligible for qualification in the current campaign.
 
     Returns leads that are not permanently disqualified and have no Deal in
-    this campaign's department. A lead rejected by another campaign (FAILED
-    Deal in a different department) is still eligible here.
+    this campaign. A lead rejected by another campaign (FAILED Deal in a
+    different campaign) is still eligible here.
     """
     from crm.models import Lead
 
-    dept = session.campaign.department
     leads = Lead.objects.filter(
-        owner=session.django_user,
         disqualified=False,
     ).exclude(
-        deal__department=dept,
+        deal__campaign=session.campaign,
     )
 
     result = []
@@ -191,13 +177,6 @@ def _update_lead_fields(lead, profile: Dict[str, Any]):
     """Update Lead model fields from parsed LinkedIn profile."""
     lead.first_name = profile.get("first_name", "") or ""
     lead.last_name = profile.get("last_name", "") or ""
-    lead.title = profile.get("headline", "") or ""
-    lead.city_name = profile.get("location_name", "") or ""
-
-    if profile.get("email"):
-        lead.email = profile["email"]
-    if profile.get("phone"):
-        lead.phone = profile["phone"]
 
     positions = profile.get("positions", [])
     if positions:
@@ -205,18 +184,3 @@ def _update_lead_fields(lead, profile: Dict[str, Any]):
 
     lead.description = json.dumps(profile, ensure_ascii=False, default=str)
     lead.save()
-
-
-def _attach_raw_data(lead, public_id: str, data: Dict[str, Any]):
-    """Save raw Voyager JSON as TheFile attached to the Lead."""
-    from common.models import TheFile
-    from django.contrib.contenttypes.models import ContentType
-
-    ct = ContentType.objects.get_for_model(lead)
-    raw_json = json.dumps(data, ensure_ascii=False, default=str)
-    the_file = TheFile(content_type=ct, object_id=lead.pk)
-    the_file.file.save(
-        f"{public_id}_voyager.json",
-        ContentFile(raw_json.encode("utf-8")),
-        save=True,
-    )

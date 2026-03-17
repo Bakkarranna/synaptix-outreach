@@ -40,15 +40,10 @@ def ensure_self_profile(session):
     real_id = profile["public_identifier"]
     real_url = public_id_to_url(real_id)
 
-    dept = session.campaign.department
-
     # Disqualified lead for the real profile URL (no embedding).
-    # Use update_or_create so auto-discovered leads are also marked disqualified.
     Lead.objects.update_or_create(
         website=real_url,
         defaults={
-            "owner": session.django_user,
-            "department": dept,
             "first_name": profile.get("first_name", ""),
             "last_name": profile.get("last_name", ""),
             "disqualified": True,
@@ -57,13 +52,10 @@ def ensure_self_profile(session):
     logger.info("Self-profile discovered: %s", real_url)
 
     # /in/me/ sentinel — disqualified, used for subsequent-run detection.
-    # description stores the real public_identifier as JSON for reverse lookup.
     import json
     Lead.objects.update_or_create(
         website=ME_URL,
         defaults={
-            "owner": session.django_user,
-            "department": dept,
             "disqualified": True,
             "description": json.dumps({"public_identifier": real_id}),
         },
