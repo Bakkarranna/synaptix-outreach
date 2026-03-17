@@ -52,9 +52,6 @@ class TaskAdmin(admin.ModelAdmin):
     date_hierarchy = "scheduled_at"
 
 
-admin.site.unregister(ChatMessage)
-
-
 @admin.register(ChatMessage)
 class ChatMessageAdmin(admin.ModelAdmin):
     list_display = ("content_type", "object_id", "owner", "creation_date")
