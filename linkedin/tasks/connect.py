@@ -114,7 +114,7 @@ def handle_connect(task, session, qualifiers):
     from crm.models import Deal
 
     deal = Deal.objects.filter(
-        lead__website=public_id_to_url(public_id),
+        lead__linkedin_url=public_id_to_url(public_id),
         campaign=session.campaign,
     ).first()
     reason = deal.reason if deal else ""

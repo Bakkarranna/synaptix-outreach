@@ -45,9 +45,10 @@ def ensure_profile_embedded(lead_id: int, public_id: str, session, *, quiet: boo
     Url-only leads are enriched via Voyager API before embedding.
     Returns False when embedding is not possible.
     """
-    from linkedin.models import ProfileEmbedding
+    from crm.models import Lead
 
-    if ProfileEmbedding.objects.filter(lead_id=lead_id).exists():
+    lead = Lead.objects.filter(pk=lead_id).only("embedding", "description").first()
+    if lead and lead.embedding is not None:
         return True
 
     profile_data = lead_profile_by_id(lead_id)
@@ -71,11 +72,11 @@ def load_embedding(lead_id: int, public_id: str, session):
     The embedding should already exist from eager discovery. The lazy
     fallback is kept for robustness and should rarely fire in practice.
     """
-    from linkedin.models import ProfileEmbedding
+    from crm.models import Lead
 
     ensure_profile_embedded(lead_id, public_id, session)
-    row = ProfileEmbedding.objects.filter(lead_id=lead_id).first()
-    return row.embedding_array if row else None
+    lead = Lead.objects.filter(pk=lead_id).only("embedding").first()
+    return lead.embedding_array if lead else None
 
 
 def _fetch_profile(session, public_id: str) -> dict | None:

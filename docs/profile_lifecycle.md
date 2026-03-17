@@ -31,7 +31,7 @@ For each new URL discovered:
 
 1. **Voyager API** fetches structured profile data (name, headline, positions, education, etc.)
 2. **Lead** is created with the full profile JSON in `description`
-3. **ProfileEmbedding** is computed (384-dim BAAI/bge-small-en-v1.5 via fastembed) and stored with `label=null`
+3. **Embedding** is computed (384-dim BAAI/bge-small-en-v1.5 via fastembed) and stored directly on the Lead's `embedding` BinaryField
 
 All steps happen atomically at discovery time. Rate-limited by
 `enrich_min_interval` (default 1s per profile).
@@ -45,7 +45,7 @@ All steps happen atomically at discovery time. Rate-limited by
 
 **Where:** `pipeline/qualify.py:run_qualification()` (called from connect task backfill via `pools.py`)
 
-Unlabeled `ProfileEmbedding` rows are the qualification pool. Candidate
+Leads with embeddings but no Deal are the qualification pool. Candidate
 selection depends on label balance:
 
 | Condition | Strategy | Method |
@@ -139,7 +139,7 @@ in 72h if the agent didn't schedule or complete.
 ```
                     ┌─────────────┐
                     │  Discovered │  Lead created (url-only or enriched)
-                    │  (implicit) │  ProfileEmbedding created (label=null)
+                    │  (implicit) │  Embedding stored on Lead
                     └──────┬──────┘
                            │
                     ┌──────▼──────┐
@@ -177,7 +177,7 @@ in 72h if the agent didn't schedule or complete.
 ## Freemium Campaigns
 
 Freemium campaigns skip qualification, READY_TO_CONNECT, and search entirely.
-They query `ProfileEmbedding` for any embedded lead without a Deal in their
+They query `Lead` for any embedded lead without a Deal in their
 campaign (excluding permanently disqualified leads), ranked by `KitQualifier`.
 Profiles go straight to connect, with delay scaled by `action_fraction` to
 maintain a target ratio of freemium vs regular connections.

@@ -38,7 +38,7 @@ def import_freemium_campaign(kit_config: dict):
 
 
 def seed_profiles(session, kit_config: dict):
-    """Seed Lead + ProfileEmbedding + QUALIFIED Deal for profiles listed in kit config."""
+    """Seed Lead (with embedding) + QUALIFIED Deal for profiles listed in kit config."""
     from crm.models import Lead
 
     from linkedin.db.deals import create_freemium_deal
@@ -52,7 +52,7 @@ def seed_profiles(session, kit_config: dict):
     for public_id in public_ids:
         url = public_id_to_url(public_id)
 
-        lead, _ = Lead.objects.get_or_create(website=url)
+        lead, _ = Lead.objects.get_or_create(linkedin_url=url, defaults={"public_identifier": public_id})
 
         ensure_profile_embedded(lead.pk, public_id, session, quiet=True)
         create_freemium_deal(session, public_id)

@@ -48,8 +48,8 @@ class TestPromoteToReady:
         assert count == 1
 
         from crm.models import Deal
-        alice_deal = Deal.objects.get(lead__website="https://www.linkedin.com/in/alice/")
-        bob_deal = Deal.objects.get(lead__website="https://www.linkedin.com/in/bob/")
+        alice_deal = Deal.objects.get(lead__linkedin_url="https://www.linkedin.com/in/alice/")
+        bob_deal = Deal.objects.get(lead__linkedin_url="https://www.linkedin.com/in/bob/")
         assert alice_deal.state == ProfileState.READY_TO_CONNECT
         assert bob_deal.state == ProfileState.QUALIFIED
 

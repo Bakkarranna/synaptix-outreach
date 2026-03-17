@@ -12,7 +12,7 @@ def save_chat_message(session: "AccountSession", public_identifier: str, content
     from crm.models import Lead
 
     clean_url = public_id_to_url(public_identifier)
-    lead = Lead.objects.filter(website=clean_url).first()
+    lead = Lead.objects.filter(linkedin_url=clean_url).first()
     if not lead:
         logger.warning("save_chat_message: no Lead for %s", public_identifier)
         return

@@ -74,7 +74,7 @@ class TestHealTasks:
         from crm.models import Deal
         from linkedin.db.urls import public_id_to_url
         Deal.objects.filter(
-            lead__website=public_id_to_url("alice"),
+            lead__linkedin_url=public_id_to_url("alice"),
         ).update(backoff_hours=96)
 
         heal_tasks(fake_session)

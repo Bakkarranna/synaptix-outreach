@@ -26,7 +26,7 @@ def ensure_self_profile(session):
     from linkedin.db.urls import public_id_to_url
 
     # Sentinel check — already ran once
-    if Lead.objects.filter(website=ME_URL).exists():
+    if Lead.objects.filter(linkedin_url=ME_URL).exists():
         logger.debug("Self-profile already discovered (sentinel exists)")
         return None
 
@@ -42,7 +42,7 @@ def ensure_self_profile(session):
 
     # Disqualified lead for the real profile URL (no embedding).
     Lead.objects.update_or_create(
-        website=real_url,
+        linkedin_url=real_url,
         defaults={
             "first_name": profile.get("first_name", ""),
             "last_name": profile.get("last_name", ""),
@@ -54,7 +54,7 @@ def ensure_self_profile(session):
     # /in/me/ sentinel — disqualified, used for subsequent-run detection.
     import json
     Lead.objects.update_or_create(
-        website=ME_URL,
+        linkedin_url=ME_URL,
         defaults={
             "disqualified": True,
             "description": json.dumps({"public_identifier": real_id}),

@@ -20,12 +20,13 @@ def _make_trained_qualifier(seed=42):
     return qualifier
 
 
-def _create_embedding(lead_id, public_id):
-    from linkedin.models import ProfileEmbedding
+def _create_lead_with_embedding(lead_id, public_id):
+    from crm.models import Lead
     emb = np.ones(384, dtype=np.float32)
-    return ProfileEmbedding.objects.create(
-        lead_id=lead_id,
+    return Lead.objects.create(
+        pk=lead_id,
         public_identifier=public_id,
+        linkedin_url=f"https://linkedin.com/in/{public_id}/",
         embedding=emb.tobytes(),
     )
 
@@ -39,7 +40,7 @@ class TestQualifyAutoDecisions:
     def test_always_calls_llm(self, embeddings_db):
         qualifier = _make_trained_qualifier()
         session = MagicMock()
-        _create_embedding(1, "alice")
+        _create_lead_with_embedding(1, "alice")
 
         with (
             patch("linkedin.db.leads.get_leads_for_qualification", return_value=_fake_leads()),
@@ -54,7 +55,7 @@ class TestQualifyAutoDecisions:
     def test_llm_on_cold_start(self, embeddings_db):
         qualifier = BayesianQualifier(seed=42)
         session = MagicMock()
-        _create_embedding(1, "alice")
+        _create_lead_with_embedding(1, "alice")
 
         with (
             patch("linkedin.db.leads.get_leads_for_qualification", return_value=_fake_leads()),
@@ -69,7 +70,7 @@ class TestQualifyAutoDecisions:
     def test_disqualify_on_promote_failure(self, embeddings_db):
         qualifier = _make_trained_qualifier()
         session = MagicMock()
-        _create_embedding(1, "alice")
+        _create_lead_with_embedding(1, "alice")
 
         with (
             patch("linkedin.db.leads.get_leads_for_qualification", return_value=_fake_leads()),

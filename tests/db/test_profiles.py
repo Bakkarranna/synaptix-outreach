@@ -94,7 +94,7 @@ class TestCreateEnrichedLead:
             SAMPLE_PROFILE,
         )
         assert pk is not None
-        lead = Lead.objects.get(website="https://www.linkedin.com/in/alice/")
+        lead = Lead.objects.get(linkedin_url="https://www.linkedin.com/in/alice/")
         assert lead.first_name == "Alice"
 
     def test_sets_company_name(self, fake_session):
@@ -104,7 +104,7 @@ class TestCreateEnrichedLead:
             "https://www.linkedin.com/in/alice/",
             SAMPLE_PROFILE,
         )
-        lead = Lead.objects.get(website="https://www.linkedin.com/in/alice/")
+        lead = Lead.objects.get(linkedin_url="https://www.linkedin.com/in/alice/")
         assert lead.company_name == "Acme"
 
     def test_returns_none_for_duplicate(self, fake_session):
@@ -137,7 +137,7 @@ class TestCreateEnrichedLead:
             "https://www.linkedin.com/in/bob/",
             profile,
         )
-        lead = Lead.objects.get(website="https://www.linkedin.com/in/bob/")
+        lead = Lead.objects.get(linkedin_url="https://www.linkedin.com/in/bob/")
         assert lead.company_name == ""
 
 
@@ -187,7 +187,7 @@ class TestGetLeadsForQualification:
             "https://www.linkedin.com/in/alice/",
             SAMPLE_PROFILE,
         )
-        Lead.objects.filter(website="https://www.linkedin.com/in/alice/").update(disqualified=True)
+        Lead.objects.filter(linkedin_url="https://www.linkedin.com/in/alice/").update(disqualified=True)
         leads = get_leads_for_qualification(fake_session)
         assert len(leads) == 0
 
@@ -226,7 +226,7 @@ class TestSetProfileState:
         )
         promote_lead_to_deal(fake_session, "alice")
         set_profile_state(fake_session, "alice", ProfileState.PENDING.value)
-        deal = Deal.objects.get(lead__website="https://www.linkedin.com/in/alice/")
+        deal = Deal.objects.get(lead__linkedin_url="https://www.linkedin.com/in/alice/")
         assert deal.state == ProfileState.PENDING
 
     def test_set_state_requires_deal(self, fake_session):

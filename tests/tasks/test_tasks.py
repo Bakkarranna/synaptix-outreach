@@ -38,7 +38,7 @@ def _mock_strategy(candidate, qualifier=None):
 def _assert_deal_state(session, public_id, expected_state: ProfileState):
     from crm.models import Deal
     deal = Deal.objects.get(
-        lead__website=f"https://www.linkedin.com/in/{public_id}/",
+        lead__linkedin_url=f"https://www.linkedin.com/in/{public_id}/",
         campaign=session.campaign,
     )
     assert deal.state == expected_state
@@ -265,7 +265,7 @@ class TestHandleCheckPending:
         # Deal should have doubled backoff
         from crm.models import Deal
         from linkedin.db.urls import public_id_to_url
-        deal = Deal.objects.get(lead__website=public_id_to_url("alice"))
+        deal = Deal.objects.get(lead__linkedin_url=public_id_to_url("alice"))
         assert deal.backoff_hours == 144
 
         # Should have re-enqueued check_pending with new backoff

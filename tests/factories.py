@@ -21,7 +21,7 @@ class LeadFactory(factory.django.DjangoModelFactory):
 
     first_name = factory.LazyFunction(fake.first_name)
     last_name = factory.LazyFunction(fake.last_name)
-    website = factory.LazyFunction(
+    linkedin_url = factory.LazyFunction(
         lambda: f"https://www.linkedin.com/in/{fake.user_name()}/"
     )
 
@@ -30,5 +30,4 @@ class DealFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = "crm.Deal"
 
-    name = factory.LazyFunction(lambda: f"LinkedIn: {fake.user_name()}")
     lead = factory.SubFactory(LeadFactory)

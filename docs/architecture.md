@@ -17,13 +17,12 @@ The system automates LinkedIn outreach through a daemon that schedules actions c
 
 The system uses Django with a single SQLite database at `assets/data/crm.db`. The key models are:
 
-- **Lead** (`crm/models/lead.py`) — One per LinkedIn profile URL. Stores `first_name`, `last_name`, `company_name`, `website` (LinkedIn URL, unique), `description` (full parsed profile JSON). `disqualified` (bool) marks permanent account-level exclusion (self-profile, unreachable profiles). `creation_date`, `update_date`.
+- **Lead** (`crm/models/lead.py`) — One per LinkedIn profile URL. Stores `first_name`, `last_name`, `company_name`, `linkedin_url` (LinkedIn URL, unique), `description` (full parsed profile JSON), `embedding` (BinaryField storing 384-dim fastembed vector as bytes, with `embedding_array` numpy property accessor). `disqualified` (bool) marks permanent account-level exclusion (self-profile, unreachable profiles). `creation_date`, `update_date`.
 - **Deal** (`crm/models/deal.py`) — Tracks pipeline state. One Deal per Lead per campaign (campaign-scoped via FK). `state` = CharField (ProfileState choices). `closing_reason` = CharField (ClosingReason: COMPLETED/FAILED/DISQUALIFIED). `reason` = qualification/failure reason. `connect_attempts` = retry count. `backoff_hours` = check_pending backoff. `creation_date`, `update_date`.
 - **Campaign** (`linkedin/models.py`) — `name` (unique), `users` (M2M to User for membership), `product_docs`, `campaign_objective`, `booking_link`, `is_freemium` (bool), `action_fraction` (float), `seed_public_ids` (JSONField).
 - **LinkedInProfile** (`linkedin/models.py`) — 1:1 with `auth.User`. Stores credentials, rate limits, newsletter preference. Rate-limiting methods: `can_execute()`, `record_action()`, `mark_exhausted()`.
 - **SearchKeyword** (`linkedin/models.py`) — FK to Campaign. Stores `keyword`, `used` (bool), `used_at`.
 - **ActionLog** (`linkedin/models.py`) — FK to LinkedInProfile + Campaign. Tracks `connect` and `follow_up` actions for rate limiting.
-- **ProfileEmbedding** (`linkedin/models.py`) — Stores 384-dim fastembed vectors as `BinaryField` blobs in SQLite. Labels derived from Deal state/closing_reason via `get_labeled_arrays(campaign)`. Property `embedding_array` converts between bytes and numpy.
 - **Task** (`linkedin/models.py`) — Persistent priority queue for daemon actions. `task_type`, `status`, `scheduled_at`, `payload` (JSONField).
 - **ChatMessage** (`chat/models.py`) — GenericForeignKey to any object. `content`, `owner`, `answer_to` (threading), `topic`.
 
@@ -84,12 +83,12 @@ Freemium campaigns use the same `connect` task type; the `ConnectStrategy` datac
 
 Candidate sourcing, qualification, and pool management:
 
-- **`qualify.py`** — `run_qualification()`: selects candidates via `qualifier.acquisition_scores()`, always queries LLM for decisions. `fetch_qualification_candidates()` returns `ProfileEmbedding` rows for leads awaiting qualification.
+- **`qualify.py`** — `run_qualification()`: selects candidates via `qualifier.acquisition_scores()`, always queries LLM for decisions. `fetch_qualification_candidates()` returns `Lead` rows with embeddings for leads awaiting qualification.
 - **`search.py`** — `run_search()`: picks next unused keyword (generating fresh ones via LLM if exhausted), runs LinkedIn People search.
 - **`search_keywords.py`** — `generate_search_keywords()`: calls LLM to generate LinkedIn People search queries from campaign context.
 - **`ready_pool.py`** — GP confidence gate between QUALIFIED and READY_TO_CONNECT. `promote_to_ready()` promotes profiles above `min_ready_to_connect_prob` threshold.
 - **`pools.py`** — Composable generators for regular campaigns. `find_candidate()` → `ready_source()` → `qualify_source()` → `search_source()`.
-- **`freemium_pool.py`** — `find_freemium_candidate()`: queries `ProfileEmbedding` for embedded leads without a Deal in the campaign.
+- **`freemium_pool.py`** — `find_freemium_candidate()`: queries `Lead` for embedded leads without a Deal in the campaign.
 
 ## API Client (`linkedin/api/`)
 
@@ -155,8 +154,8 @@ Profile CRUD backed by Django models:
 ### `embeddings.py`
 
 - Uses `fastembed` for embedding generation (model configurable, default BAAI/bge-small-en-v1.5).
-- Functions: `embed_text()`, `embed_texts()`, `embed_profile()` (builds text + embeds + stores via `ProfileEmbedding` model).
-- Storage and querying handled by the `ProfileEmbedding` Django model in SQLite.
+- Functions: `embed_text()`, `embed_texts()`, `embed_profile()` (builds text + embeds + stores directly on the `Lead` model's `embedding` BinaryField).
+- Storage and querying handled by the `Lead` model's `embedding` field (with `embedding_array` numpy property accessor).
 
 ### `profile_text.py`
 

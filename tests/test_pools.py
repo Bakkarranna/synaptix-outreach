@@ -23,7 +23,7 @@ SAMPLE_PROFILE = {
 
 
 def _make_candidate(lead_id, embedding_array):
-    """Create a mock ProfileEmbedding candidate."""
+    """Create a mock Lead candidate with embedding."""
     c = MagicMock()
     c.lead_id = lead_id
     c.embedding_array = embedding_array

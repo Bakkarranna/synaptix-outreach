@@ -54,7 +54,7 @@ def handle_check_pending(task, session, qualifiers):
         clean_url = public_id_to_url(public_id)
         with transaction.atomic():
             deal = Deal.objects.filter(
-                lead__website=clean_url,
+                lead__linkedin_url=clean_url,
                 campaign=session.campaign,
             ).first()
             if deal:

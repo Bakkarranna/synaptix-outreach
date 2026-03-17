@@ -3,7 +3,7 @@ from django.contrib import admin
 
 from chat.models import ChatMessage
 
-from linkedin.models import ActionLog, Campaign, LinkedInProfile, ProfileEmbedding, SearchKeyword, Task
+from linkedin.models import ActionLog, Campaign, LinkedInProfile, SearchKeyword, Task
 
 
 @admin.register(Campaign)
@@ -24,12 +24,6 @@ class SearchKeywordAdmin(admin.ModelAdmin):
     list_display = ("keyword", "campaign", "used", "used_at")
     list_filter = ("used", "campaign")
     raw_id_fields = ("campaign",)
-
-
-@admin.register(ProfileEmbedding)
-class ProfileEmbeddingAdmin(admin.ModelAdmin):
-    list_display = ("lead_id", "public_identifier", "created_at")
-    readonly_fields = ("lead_id", "public_identifier", "embedding", "created_at")
 
 
 @admin.register(ActionLog)

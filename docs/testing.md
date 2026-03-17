@@ -69,7 +69,7 @@ tests/
 │   └── test_tasks.py        # Task handler logic (connect, check_pending, follow_up)
 ├── ml/
 │   ├── test_qualifier.py    # Bayesian qualifier (GPR + BALD)
-│   ├── test_embeddings.py   # ProfileEmbedding storage (Django/SQLite)
+│   ├── test_embeddings.py   # Embedding storage on Lead model (Django/SQLite)
 │   └── test_profile_text.py # Profile text builder
 ├── test_action_log.py       # ActionLog rate limiting
 ├── test_conf.py             # Configuration loading

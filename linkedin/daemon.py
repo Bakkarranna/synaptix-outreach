@@ -49,7 +49,7 @@ class _FreemiumRotator:
 
 def _build_qualifiers(campaigns, cfg, kit_model=None):
     """Create a qualifier for every campaign, keyed by campaign PK."""
-    from linkedin.models import ProfileEmbedding
+    from crm.models import Lead
 
     qualifiers: dict[int, BayesianQualifier | KitQualifier] = {}
     n_regular = 0
@@ -64,7 +64,7 @@ def _build_qualifiers(campaigns, cfg, kit_model=None):
                 n_mc_samples=cfg["qualification_n_mc_samples"],
                 save_path=model_path_for_campaign(campaign.pk),
             )
-            X, y = ProfileEmbedding.get_labeled_arrays(campaign)
+            X, y = Lead.get_labeled_arrays(campaign)
             if len(X) > 0:
                 q.warm_start(X, y)
                 logger.info(
@@ -129,7 +129,7 @@ def heal_tasks(session):
         ).select_related("lead")
 
         for deal in pending_deals:
-            public_id = url_to_public_id(deal.lead.website) if deal.lead.website else None
+            public_id = url_to_public_id(deal.lead.linkedin_url) if deal.lead.linkedin_url else None
             if not public_id:
                 continue
             backoff = deal.backoff_hours or cfg["check_pending_recheck_after_hours"]
@@ -144,7 +144,7 @@ def heal_tasks(session):
         ).select_related("lead")
 
         for deal in connected_deals:
-            public_id = url_to_public_id(deal.lead.website) if deal.lead.website else None
+            public_id = url_to_public_id(deal.lead.linkedin_url) if deal.lead.linkedin_url else None
             if not public_id:
                 continue
             enqueue_follow_up(campaign.pk, public_id, delay_seconds=random.uniform(5, 60))

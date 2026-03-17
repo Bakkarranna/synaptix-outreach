@@ -120,11 +120,19 @@ class TestRankProfiles:
         assert qualifier.rank_profiles([], session=MagicMock()) == []
 
     def test_rank_profiles_orders_by_posterior(self, embeddings_db):
-        qualifier, pos_emb, neg_emb = _make_trained_qualifier()
+        from crm.models import Lead
 
-        from linkedin.models import ProfileEmbedding
-        ProfileEmbedding.objects.create(lead_id=1, public_identifier="positive", embedding=pos_emb.tobytes())
-        ProfileEmbedding.objects.create(lead_id=2, public_identifier="negative", embedding=neg_emb.tobytes())
+        qualifier, pos_emb, neg_emb = _make_trained_qualifier()
+        Lead.objects.create(
+            pk=1, public_identifier="positive",
+            linkedin_url="https://linkedin.com/in/positive/",
+            embedding=pos_emb.tobytes(),
+        )
+        Lead.objects.create(
+            pk=2, public_identifier="negative",
+            linkedin_url="https://linkedin.com/in/negative/",
+            embedding=neg_emb.tobytes(),
+        )
 
         profiles = [
             {"lead_id": 2, "public_identifier": "negative"},
@@ -214,10 +222,14 @@ class TestExplainProfile:
         assert "no embedding" in explanation.lower()
 
     def test_explain_with_embedding(self, embeddings_db):
-        from linkedin.models import ProfileEmbedding
+        from crm.models import Lead
 
         qualifier, pos_emb, _ = _make_trained_qualifier()
-        ProfileEmbedding.objects.create(lead_id=1, public_identifier="alice", embedding=pos_emb.tobytes())
+        Lead.objects.create(
+            pk=1, public_identifier="alice",
+            linkedin_url="https://linkedin.com/in/alice/",
+            embedding=pos_emb.tobytes(),
+        )
 
         profile = {"lead_id": 1, "public_identifier": "alice"}
         explanation = qualifier.explain(profile, session=MagicMock())
@@ -225,11 +237,15 @@ class TestExplainProfile:
         assert "obs=" in explanation
 
     def test_explain_unfitted(self, embeddings_db):
-        from linkedin.models import ProfileEmbedding
+        from crm.models import Lead
 
         qualifier = BayesianQualifier(seed=42)
         emb = np.ones(384, dtype=np.float32)
-        ProfileEmbedding.objects.create(lead_id=1, public_identifier="alice", embedding=emb.tobytes())
+        Lead.objects.create(
+            pk=1, public_identifier="alice",
+            linkedin_url="https://linkedin.com/in/alice/",
+            embedding=emb.tobytes(),
+        )
 
         profile = {"lead_id": 1, "public_identifier": "alice"}
         explanation = qualifier.explain(profile, session=MagicMock())

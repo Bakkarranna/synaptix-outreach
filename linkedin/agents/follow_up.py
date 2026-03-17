@@ -79,7 +79,7 @@ def _count_past_messages(session, public_id: str) -> int:
     from linkedin.db.urls import public_id_to_url
 
     clean_url = public_id_to_url(public_id)
-    lead = Lead.objects.filter(website=clean_url).first()
+    lead = Lead.objects.filter(linkedin_url=clean_url).first()
     if not lead:
         return 0
     ct = ContentType.objects.get_for_model(lead)
@@ -96,7 +96,7 @@ def _get_self_name(session) -> str:
     from linkedin.db.urls import public_id_to_url
     from linkedin.setup.self_profile import ME_URL
 
-    sentinel = Lead.objects.filter(website=ME_URL).first()
+    sentinel = Lead.objects.filter(linkedin_url=ME_URL).first()
     if not sentinel or not sentinel.description:
         return session.account_cfg.get("handle", "")
     try:
@@ -105,7 +105,7 @@ def _get_self_name(session) -> str:
     except (ValueError, KeyError, TypeError):
         return session.account_cfg.get("handle", "")
     real_url = public_id_to_url(real_id)
-    lead = Lead.objects.filter(website=real_url).first()
+    lead = Lead.objects.filter(linkedin_url=real_url).first()
     if not lead:
         return session.account_cfg.get("handle", "")
     full = f"{lead.first_name or ''} {lead.last_name or ''}".strip()

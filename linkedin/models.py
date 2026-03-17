@@ -4,7 +4,6 @@ from __future__ import annotations
 import logging
 from datetime import date, timedelta
 
-import numpy as np
 from django.contrib.auth.models import User
 from django.db import models
 from django.utils import timezone
@@ -157,74 +156,6 @@ class ActionLog(models.Model):
 
     def __str__(self):
         return f"{self.action_type} by {self.linkedin_profile} at {self.created_at}"
-
-
-class ProfileEmbedding(models.Model):
-    lead_id = models.IntegerField(primary_key=True)
-    public_identifier = models.CharField(max_length=200)
-    embedding = models.BinaryField()
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        app_label = "linkedin"
-
-    @property
-    def embedding_array(self) -> np.ndarray:
-        """384-dim float32 numpy array from stored bytes."""
-        return np.frombuffer(bytes(self.embedding), dtype=np.float32).copy()
-
-    @embedding_array.setter
-    def embedding_array(self, arr: np.ndarray):
-        self.embedding = np.asarray(arr, dtype=np.float32).tobytes()
-
-    @classmethod
-    def get_labeled_arrays(cls, campaign) -> tuple[np.ndarray, np.ndarray]:
-        """Labeled embeddings for a campaign as (X, y) numpy arrays for warm start.
-
-        Labels are derived from Deal state and closing_reason:
-        - label=1: Deals at any non-FAILED state (QUALIFIED and beyond)
-        - label=0: FAILED Deals with closing_reason "Disqualified" (LLM rejection)
-        - Skipped: FAILED Deals with other closing reasons (operational failures)
-        """
-        from crm.models import Deal, ClosingReason
-        from linkedin.enums import ProfileState
-
-        deals = Deal.objects.filter(
-            campaign=campaign, lead_id__isnull=False,
-        ).values_list("lead_id", "state", "closing_reason")
-
-        label_by_lead: dict[int, int] = {}
-        for lid, state, cr in deals:
-            if state == ProfileState.FAILED:
-                if cr == ClosingReason.DISQUALIFIED:
-                    label_by_lead[lid] = 0
-                # other closing reasons → skip (operational failure)
-            else:
-                label_by_lead[lid] = 1
-
-        if not label_by_lead:
-            return np.empty((0, 384), dtype=np.float32), np.empty(0, dtype=np.int32)
-
-        embeddings = dict(
-            cls.objects.filter(lead_id__in=label_by_lead)
-            .values_list("lead_id", "embedding")
-        )
-
-        X_list, y_list = [], []
-        for lid, label in label_by_lead.items():
-            emb = embeddings.get(lid)
-            if emb is None:
-                continue
-            X_list.append(np.frombuffer(bytes(emb), dtype=np.float32))
-            y_list.append(label)
-
-        if not X_list:
-            return np.empty((0, 384), dtype=np.float32), np.empty(0, dtype=np.int32)
-
-        return np.array(X_list, dtype=np.float32), np.array(y_list, dtype=np.int32)
-
-    def __str__(self):
-        return f"Embedding for lead {self.lead_id} ({self.public_identifier})"
 
 
 class Task(models.Model):

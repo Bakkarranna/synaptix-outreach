@@ -17,12 +17,11 @@ def find_freemium_candidate(session, qualifier) -> dict | None:
     back to embedded leads without any Deal in this campaign.
     """
     from crm.models import Deal, Lead
-    from linkedin.models import ProfileEmbedding
 
     campaign = session.campaign
 
     # All embedded lead IDs
-    embedded_pks = set(ProfileEmbedding.objects.values_list("lead_id", flat=True))
+    embedded_pks = set(Lead.objects.filter(embedding__isnull=False).values_list("pk", flat=True))
 
     # Seed profiles: QUALIFIED Deals in this campaign (ready to connect)
     seed_pks = set(

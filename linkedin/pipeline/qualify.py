@@ -13,10 +13,10 @@ logger = logging.getLogger(__name__)
 
 
 def fetch_qualification_candidates(session):
-    """Return ProfileEmbedding rows for leads awaiting qualification."""
+    """Return Lead rows (with embeddings) for leads awaiting qualification."""
+    from crm.models import Lead
     from linkedin.db.leads import get_leads_for_qualification
     from linkedin.db.enrichment import ensure_profile_embedded
-    from linkedin.models import ProfileEmbedding
 
     leads = get_leads_for_qualification(session)
     if not leads:
@@ -25,23 +25,23 @@ def fetch_qualification_candidates(session):
     lead_ids = {ld["lead_id"] for ld in leads}
 
     candidates = list(
-        ProfileEmbedding.objects.filter(lead_id__in=lead_ids)
-        .order_by("created_at")
+        Lead.objects.filter(pk__in=lead_ids, embedding__isnull=False)
+        .order_by("creation_date")
     )
     if candidates:
         return candidates
 
     # Robustness fallback: embed any lead that was missed at discovery time
     embedded_ids = set(
-        ProfileEmbedding.objects.filter(lead_id__in=lead_ids)
-        .values_list("lead_id", flat=True)
+        Lead.objects.filter(pk__in=lead_ids, embedding__isnull=False)
+        .values_list("pk", flat=True)
     )
     for ld in leads:
         lid = ld["lead_id"]
         if lid in embedded_ids:
             continue
         if ensure_profile_embedded(lid, ld["public_identifier"], session):
-            row = ProfileEmbedding.objects.filter(lead_id=lid).first()
+            row = Lead.objects.filter(pk=lid, embedding__isnull=False).first()
             if row:
                 return [row]
 
@@ -77,7 +77,7 @@ def run_qualification(session, qualifier: BayesianQualifier) -> str | None:
             logger.info("Strategy: %s (neg=%d, pos=%d)",
                         colored(strategy, "cyan", attrs=["bold"]), n_neg, n_pos)
 
-    lead_id = candidate.lead_id
+    lead_id = candidate.pk
     public_id = candidate.public_identifier
     embedding = candidate.embedding_array
 

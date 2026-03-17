@@ -24,7 +24,7 @@ def increment_connect_attempts(session, public_id: str) -> int:
 
     clean_url = public_id_to_url(public_id)
     deal = Deal.objects.filter(
-        lead__website=clean_url, campaign=session.campaign,
+        lead__linkedin_url=clean_url, campaign=session.campaign,
     ).first()
     if not deal:
         return 1
@@ -67,10 +67,10 @@ def _existing_deal_or_lead(public_id: str, campaign):
     from crm.models import Deal, Lead
 
     clean_url = public_id_to_url(public_id)
-    existing = Deal.objects.filter(lead__website=clean_url, campaign=campaign).first()
+    existing = Deal.objects.filter(lead__linkedin_url=clean_url, campaign=campaign).first()
     if existing:
         return None, existing
-    lead = Lead.objects.filter(website=clean_url).first()
+    lead = Lead.objects.filter(linkedin_url=clean_url).first()
     return lead, None
 
 
@@ -86,7 +86,7 @@ def set_profile_state(session, public_identifier: str, new_state: str, reason: s
     from crm.models import Deal, ClosingReason
 
     clean_url = public_id_to_url(public_identifier)
-    deal = Deal.objects.filter(lead__website=clean_url, campaign=session.campaign).first()
+    deal = Deal.objects.filter(lead__linkedin_url=clean_url, campaign=session.campaign).first()
     if not deal:
         raise ValueError(f"No Deal for {public_identifier} — cannot set state {new_state}")
 
@@ -131,7 +131,7 @@ def get_profile_dict_for_public_id(session, public_id: str) -> dict | None:
 
     clean_url = public_id_to_url(public_id)
     deal = (
-        Deal.objects.filter(lead__website=clean_url, campaign=session.campaign)
+        Deal.objects.filter(lead__linkedin_url=clean_url, campaign=session.campaign)
         .select_related("lead")
         .first()
     )

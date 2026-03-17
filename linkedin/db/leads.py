@@ -29,7 +29,7 @@ def resolve_urn(public_id: str, session=None) -> Optional[str]:
     from crm.models import Lead
 
     clean_url = public_id_to_url(public_id)
-    lead = Lead.objects.filter(website=clean_url).first()
+    lead = Lead.objects.filter(linkedin_url=clean_url).first()
     if not lead:
         return None
 
@@ -45,16 +45,18 @@ def resolve_urn(public_id: str, session=None) -> Optional[str]:
 def lead_to_profile_dict(lead) -> dict | None:
     """Convert a Lead to the standard profile dict shape used by qualifiers and pools.
 
-    Returns None if the lead has no public_identifier derivable from its website.
+    Returns None if the lead has no public_identifier.
     """
     profile = _lead_profile(lead) or {}
-    public_id = url_to_public_id(lead.website) if lead.website else ""
+    public_id = lead.public_identifier
+    if not public_id:
+        public_id = url_to_public_id(lead.linkedin_url) if lead.linkedin_url else ""
     if not public_id:
         return None
     return {
         "lead_id": lead.pk,
         "public_identifier": public_id,
-        "url": lead.website or "",
+        "url": lead.linkedin_url or "",
         "profile": profile,
         "meta": {},
     }
@@ -68,7 +70,7 @@ def lead_exists(url: str) -> bool:
     if not pid:
         return False
     clean_url = public_id_to_url(pid)
-    return Lead.objects.filter(website=clean_url).exists()
+    return Lead.objects.filter(linkedin_url=clean_url).exists()
 
 
 @transaction.atomic
@@ -86,10 +88,10 @@ def create_enriched_lead(session, url: str, profile: Dict[str, Any]) -> Optional
     public_id = canonical_pid or url_to_public_id(url)
     clean_url = public_id_to_url(public_id)
 
-    if Lead.objects.filter(website=clean_url).exists():
+    if Lead.objects.filter(linkedin_url=clean_url).exists():
         return None
 
-    lead = Lead.objects.create(website=clean_url)
+    lead = Lead.objects.create(linkedin_url=clean_url, public_identifier=public_id)
 
     _update_lead_fields(lead, profile)
 
@@ -108,7 +110,7 @@ def promote_lead_to_deal(session, public_id: str, reason: str = ""):
     from crm.models import Lead, Deal
 
     clean_url = public_id_to_url(public_id)
-    lead = Lead.objects.filter(website=clean_url).first()
+    lead = Lead.objects.filter(linkedin_url=clean_url).first()
     if not lead:
         raise ValueError(f"No Lead for {public_id}")
 
@@ -155,7 +157,7 @@ def disqualify_lead(public_id: str):
     from crm.models import Lead
 
     clean_url = public_id_to_url(public_id)
-    lead = Lead.objects.filter(website=clean_url).first()
+    lead = Lead.objects.filter(linkedin_url=clean_url).first()
     if not lead:
         logger.warning("disqualify_lead: no Lead for %s", public_id)
         return

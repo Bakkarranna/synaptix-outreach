@@ -24,7 +24,8 @@ class TestEnsureLeadEnriched:
         from linkedin.db.enrichment import ensure_lead_enriched
 
         lead = Lead.objects.create(
-            website="https://www.linkedin.com/in/alice/",
+            linkedin_url="https://www.linkedin.com/in/alice/",
+            public_identifier="alice",
             description=json.dumps(FAKE_PROFILE),
         )
 
@@ -38,7 +39,8 @@ class TestEnsureLeadEnriched:
         from linkedin.db.enrichment import ensure_lead_enriched
 
         lead = Lead.objects.create(
-            website="https://www.linkedin.com/in/alice/",
+            linkedin_url="https://www.linkedin.com/in/alice/",
+            public_identifier="alice",
         )
         assert not lead.description
 
@@ -58,7 +60,8 @@ class TestEnsureLeadEnriched:
         from linkedin.db.enrichment import ensure_lead_enriched
 
         lead = Lead.objects.create(
-            website="https://www.linkedin.com/in/alice/",
+            linkedin_url="https://www.linkedin.com/in/alice/",
+            public_identifier="alice",
         )
 
         with patch(
@@ -80,12 +83,14 @@ class TestEnsureLeadEnriched:
 class TestEnsureProfileEmbedded:
     def test_already_embedded(self, fake_session, embeddings_db):
         """Returns True immediately when embedding exists."""
-        from linkedin.models import ProfileEmbedding
+        from crm.models import Lead
         from linkedin.db.enrichment import ensure_profile_embedded
 
         emb = np.ones(384, dtype=np.float32)
-        ProfileEmbedding.objects.create(
-            lead_id=1, public_identifier="alice", embedding=emb.tobytes(),
+        Lead.objects.create(
+            pk=1, public_identifier="alice",
+            linkedin_url="https://www.linkedin.com/in/alice/",
+            embedding=emb.tobytes(),
         )
 
         with patch("linkedin.ml.embeddings.embed_profile") as mock_embed:
@@ -98,7 +103,8 @@ class TestEnsureProfileEmbedded:
         from linkedin.db.enrichment import ensure_profile_embedded
 
         Lead.objects.create(
-            website="https://www.linkedin.com/in/alice/",
+            linkedin_url="https://www.linkedin.com/in/alice/",
+            public_identifier="alice",
             description=json.dumps(FAKE_PROFILE),
             pk=42,
         )
@@ -113,7 +119,8 @@ class TestEnsureProfileEmbedded:
         from linkedin.db.enrichment import ensure_profile_embedded
 
         Lead.objects.create(
-            website="https://www.linkedin.com/in/bob/",
+            linkedin_url="https://www.linkedin.com/in/bob/",
+            public_identifier="bob",
             pk=44,
         )
 
@@ -136,7 +143,8 @@ class TestEnsureProfileEmbedded:
         from linkedin.db.enrichment import ensure_profile_embedded
 
         Lead.objects.create(
-            website="https://www.linkedin.com/in/bob/",
+            linkedin_url="https://www.linkedin.com/in/bob/",
+            public_identifier="bob",
             pk=45,
         )
 

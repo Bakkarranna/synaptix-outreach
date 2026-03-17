@@ -55,7 +55,7 @@ The Lead model has the following PII fields. After the transition, only populate
 |-------|-------|-----------|
 | `first_name` | Yes — needed for connection request and follow-up message personalization |
 | `last_name` | Yes — same as above |
-| `website` | Yes — LinkedIn URL is the primary key for deduplication |
+| `linkedin_url` | Yes — LinkedIn URL is the primary key for deduplication |
 | `company_name` | Yes — used for Deal creation validation |
 | `description` | **No** — must not store full profile JSON |
 
@@ -75,11 +75,11 @@ Fields that are populated but not needed should be left blank. Fields needed for
   - The GP model still has usable signal for qualification ranking (utility)
   - Individual profiles cannot be re-identified by nearest-neighbor search against a known embedding database (privacy)
   - Recommended starting point: `epsilon` between 1.0 and 10.0, with empirical evaluation on qualification accuracy
-- **`linkedin/models.py`** — Store a `noise_epsilon` field on `ProfileEmbedding` to track the privacy budget used, enabling future re-noising if standards tighten.
+- **`crm/models/lead.py`** — Store a `noise_epsilon` field on `Lead` to track the privacy budget used, enabling future re-noising if standards tighten.
 
 ### A.4 Remove `llm_reason` from Persistent Storage
 
-- **`linkedin/models.py`** — The `ProfileEmbedding.llm_reason` field stores free-text LLM reasoning about why a profile was qualified/disqualified. This text often contains personal data (e.g. "Senior engineer at Google with 10 years of ML experience in San Francisco"). Either:
+- **`crm/models/lead.py`** — The `Deal.reason` field stores free-text LLM reasoning about why a profile was qualified/disqualified. This text often contains personal data (e.g. "Senior engineer at Google with 10 years of ML experience in San Francisco"). Either:
   - Remove the field entirely and log reasons transiently, or
   - Anonymize the reason text before storage (strip names, companies, locations)
 
@@ -135,9 +135,9 @@ Enforce maximum retention periods to satisfy Article 5(1)(e) storage limitation.
 | Diagnostic dumps | **7 days** | Delete folders in `assets/diagnostics/` by timestamp prefix |
 | Completed/failed tasks | **6 months** | `Task.objects.filter(status__in=[COMPLETED, FAILED], completed_at__lt=cutoff).delete()` |
 | Action logs | **6 months** | `ActionLog.objects.filter(created_at__lt=cutoff).delete()` |
-| Disqualified leads | **6 months** | Delete Lead + ProfileEmbedding for `disqualified=True` older than cutoff |
-| Completed deals (COMPLETED/FAILED state) | **6 months** | Delete Deal, Lead, ProfileEmbedding for finished outreach sequences |
-| Noisy embeddings (unlabeled, stale) | **6 months** | `ProfileEmbedding.objects.filter(label__isnull=True, created_at__lt=cutoff).delete()` |
+| Disqualified leads | **6 months** | Delete Lead (with embedded data) for `disqualified=True` older than cutoff |
+| Completed deals (COMPLETED/FAILED state) | **6 months** | Delete Deal and Lead (with embedded data) for finished outreach sequences |
+| Stale embedded leads (no Deal, old) | **6 months** | `Lead.objects.filter(embedding__isnull=False, deals__isnull=True, creation_date__lt=cutoff).delete()` |
 
 ---
 
@@ -147,9 +147,8 @@ Implement individual data subject erasure to satisfy Article 17. Addresses repor
 
 1. Create `linkedin/management/commands/delete_profile.py` — accepts `public_id` as argument
 2. Cascade deletion across all tables holding data for that profile:
-   - `Lead` (lookup via `website=public_id_to_url(public_id)`)
-   - `ProfileEmbedding` (lookup via `public_identifier=public_id`)
-   - `Deal` (lookup via `lead__website=public_id_to_url(public_id)`)
+   - `Lead` (lookup via `linkedin_url=public_id_to_url(public_id)`) — includes embedded data stored on the Lead
+   - `Deal` (lookup via `lead__linkedin_url=public_id_to_url(public_id)`)
    - `Task` entries with `public_id` in `payload` JSON
    - `ActionLog` entries are not directly linked to a profile public_id — no action needed (they reference `LinkedInProfile`, i.e. the operator's account, not the target)
 3. Delete any diagnostic folders whose saved HTML contains the `public_id` (best-effort grep over `assets/diagnostics/*/page.html`)
@@ -168,14 +167,13 @@ Currently these fields are used in:
 
 These can be replaced by **transient fetching from LinkedIn at the point of use**:
 
-1. Stop populating `first_name`, `last_name` in `_update_lead_fields()` — only store `website` (for dedup)
+1. Stop populating `first_name`, `last_name` in `_update_lead_fields()` — only store `linkedin_url` (for dedup)
 2. Update `renderer.py` / follow-up message flow to fetch profile name transiently from LinkedIn at send time via Voyager API. At this point the user is already connected with the target, so the data is accessible. The fetched data is used in-memory for template rendering and discarded.
-3. Update Django Admin display — show `public_identifier` (from `ProfileEmbedding` or derived from `Lead.website`) instead of name columns where Lead names were shown
+3. Update Django Admin display — show `public_identifier` (derived from `Lead.linkedin_url`) instead of name columns where Lead names were shown
 4. Write a data migration to clear `first_name`, `last_name` on existing Lead records
 
 After this workstream, the only identifiers in the DB are:
-- `Lead.website` — LinkedIn URL (pseudonymous, publicly accessible)
-- `ProfileEmbedding.public_identifier` — LinkedIn slug (pseudonymous)
+- `Lead.linkedin_url` — LinkedIn URL (pseudonymous, publicly accessible)
 
 These are pseudonymous under GDPR Recital 26 but still personal data (trivially re-identifiable). They are the minimum required for dedup and operational navigation.
 
@@ -187,8 +185,7 @@ Implement data subject export to satisfy Article 20 (Right to Data Portability).
 
 1. Create `linkedin/management/commands/export_profile.py` — accepts `public_id` as argument, outputs a JSON file
 2. Collect all data held for that profile:
-   - `Lead` fields (website, disqualified status, creation date)
-   - `ProfileEmbedding` metadata (label, labeled_at, created_at — not the raw embedding vector, which is meaningless to the subject)
+   - `Lead` fields (linkedin_url, disqualified status, creation date)
    - `Deal` fields (state, closing_reason, reason, creation/update dates)
    - `Task` entries referencing the profile (task_type, status, scheduled_at, created_at)
 3. Output as structured JSON to stdout or a file, with a schema that could be provided to the data subject
