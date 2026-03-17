@@ -36,12 +36,12 @@ testpaths = tests
 DJANGO_SETTINGS_MODULE = linkedin.django_settings
 ```
 
-The `DJANGO_SETTINGS_MODULE` setting ensures Django and DjangoCRM models are available in all tests.
+The `DJANGO_SETTINGS_MODULE` setting ensures Django models are available in all tests.
 
 ## CRM Setup Fixture
 
 An autouse fixture in `tests/conftest.py` runs `setup_crm()` before each test to bootstrap the CRM database
-(Deal Stages, Closing Reasons, Department, etc.). This ensures every test has a clean, consistent CRM state.
+(default Site, etc.). This ensures every test has a clean, consistent CRM state.
 
 ```python
 @pytest.fixture(autouse=True)

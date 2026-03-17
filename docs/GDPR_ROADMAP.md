@@ -13,7 +13,7 @@ The application will transition to a **privacy-by-design** data model where:
 1. Profile text is fetched from LinkedIn's Voyager API **transiently** for embedding and LLM qualification
 2. A 384-dimensional embedding vector is computed (FastEmbed, BAAI/bge-small-en-v1.5)
 3. **Calibrated noise is added** to the embedding before storage, providing differential privacy guarantees
-4. The raw profile text, full profile JSON (`Lead.description`), and raw API responses (`TheFile`) are **not persisted**
+4. The raw profile text and full profile JSON (`Lead.description`) are **not persisted**
 5. Only the noisy embedding, a qualification label, and minimal operational metadata are stored long-term
 
 ### What This Solves
@@ -44,25 +44,20 @@ Replace raw profile storage with noisy embedding vectors. Addresses report findi
 
 - **`linkedin/db/leads.py`** — Modify `create_enriched_lead()` to NOT store the full profile dict in `Lead.description`. Store only a processing timestamp or empty string.
 - **`linkedin/db/leads.py`** — Modify `_update_lead_fields()` to populate only the minimum required fields (see A.2).
-- **`linkedin/api/client.py`** — Stop saving raw Voyager API JSON as `TheFile` attachments. Profile data should be processed in-memory and discarded.
+- Raw Voyager API JSON is no longer persisted (TheFile model removed).
 - **`linkedin/db/enrichment.py`** — Update `ensure_lead_enriched()` to compute embedding immediately during enrichment, then discard the profile dict. The enrichment and embedding steps must be atomic.
 
 ### A.2 Minimize Lead Model Fields
 
-The Lead model (inherited from DjangoCRM) has many PII fields. After the transition, only populate:
+The Lead model has the following PII fields. After the transition, only populate:
 
 | Field | Keep? | Rationale |
 |-------|-------|-----------|
 | `first_name` | Yes — needed for connection request and follow-up message personalization |
 | `last_name` | Yes — same as above |
-| `title` | Optional — only if used in message templates |
 | `website` | Yes — LinkedIn URL is the primary key for deduplication |
-| `company_name` | No — not needed post-qualification |
-| `email` | No — not collected or used |
-| `phone` | No — not collected or used |
-| `city_name` | No — not needed post-qualification |
+| `company_name` | Yes — used for Deal creation validation |
 | `description` | **No** — must not store full profile JSON |
-| `address`, `region`, `district` | No — not collected or used |
 
 Fields that are populated but not needed should be left blank. Fields needed for follow-up messaging (`first_name`, `last_name`) should have a documented retention period.
 
@@ -140,8 +135,8 @@ Enforce maximum retention periods to satisfy Article 5(1)(e) storage limitation.
 | Diagnostic dumps | **7 days** | Delete folders in `assets/diagnostics/` by timestamp prefix |
 | Completed/failed tasks | **6 months** | `Task.objects.filter(status__in=[COMPLETED, FAILED], completed_at__lt=cutoff).delete()` |
 | Action logs | **6 months** | `ActionLog.objects.filter(created_at__lt=cutoff).delete()` |
-| Disqualified leads (no Contact) | **6 months** | Delete Lead + ProfileEmbedding for `disqualified=True, contact__isnull=True` older than cutoff |
-| Completed deals (COMPLETED/FAILED stage) | **6 months** | Delete Deal, Contact, Lead, ProfileEmbedding for finished outreach sequences |
+| Disqualified leads | **6 months** | Delete Lead + ProfileEmbedding for `disqualified=True` older than cutoff |
+| Completed deals (COMPLETED/FAILED state) | **6 months** | Delete Deal, Lead, ProfileEmbedding for finished outreach sequences |
 | Noisy embeddings (unlabeled, stale) | **6 months** | `ProfileEmbedding.objects.filter(label__isnull=True, created_at__lt=cutoff).delete()` |
 
 ---
@@ -152,10 +147,9 @@ Implement individual data subject erasure to satisfy Article 17. Addresses repor
 
 1. Create `linkedin/management/commands/delete_profile.py` — accepts `public_id` as argument
 2. Cascade deletion across all tables holding data for that profile:
-   - `Lead` (lookup via `website=public_id_to_url(public_id)`) + any associated `TheFile` (GenericForeignKey)
+   - `Lead` (lookup via `website=public_id_to_url(public_id)`)
    - `ProfileEmbedding` (lookup via `public_identifier=public_id`)
-   - `Deal` (lookup via `name__contains=public_id`)
-   - `Contact` (via `lead.contact`) + `Company` (if no other contacts reference it)
+   - `Deal` (lookup via `lead__website=public_id_to_url(public_id)`)
    - `Task` entries with `public_id` in `payload` JSON
    - `ActionLog` entries are not directly linked to a profile public_id — no action needed (they reference `LinkedInProfile`, i.e. the operator's account, not the target)
 3. Delete any diagnostic folders whose saved HTML contains the `public_id` (best-effort grep over `assets/diagnostics/*/page.html`)
@@ -164,26 +158,24 @@ Implement individual data subject erasure to satisfy Article 17. Addresses repor
 
 ---
 
-## Workstream F — Remove Stored Names from Lead/Contact Records
+## Workstream F — Remove Stored Names from Lead Records
 
-Eliminate the last remaining third-party personal data from the database by removing `first_name`, `last_name`, and `title` from persistent storage. Addresses report finding 1.7 and completes the data minimisation goal of Article 5(1)(c). After this workstream, no third-party personal data remains in the DB — only pseudonymous identifiers and noisy embeddings.
+Eliminate the last remaining third-party personal data from the database by removing `first_name` and `last_name` from persistent storage. Addresses report finding 1.7 and completes the data minimisation goal of Article 5(1)(c). After this workstream, no third-party personal data remains in the DB — only pseudonymous identifiers and noisy embeddings.
 
-Currently these fields are used in two places:
-- **Follow-up message personalization** (`renderer.py`) — needs name and headline to generate a message
-- **Contact creation** (`promote_lead_to_contact` in `db/leads.py`) — copies name/title to Contact record
+Currently these fields are used in:
+- **Follow-up message personalization** (`renderer.py`) — needs name to generate a message
+- **Deal creation** (`promote_lead_to_deal` in `db/leads.py`) — requires `company_name` for validation
 
-Both can be replaced by **transient fetching from LinkedIn at the point of use**:
+These can be replaced by **transient fetching from LinkedIn at the point of use**:
 
-1. Stop populating `first_name`, `last_name`, `title` in `_update_lead_fields()` — only store `website` (for dedup)
+1. Stop populating `first_name`, `last_name` in `_update_lead_fields()` — only store `website` (for dedup)
 2. Update `renderer.py` / follow-up message flow to fetch profile name transiently from LinkedIn at send time via Voyager API. At this point the user is already connected with the target, so the data is accessible. The fetched data is used in-memory for template rendering and discarded.
-3. Update `promote_lead_to_contact()` — fetch name transiently from LinkedIn when creating the Contact record, instead of copying from Lead fields
-4. Update Django Admin display — show `public_identifier` (from `ProfileEmbedding` or derived from `Lead.website`) instead of name columns where Lead/Contact names were shown
-5. Write a data migration to clear `first_name`, `last_name`, `title` on existing Lead and Contact records
+3. Update Django Admin display — show `public_identifier` (from `ProfileEmbedding` or derived from `Lead.website`) instead of name columns where Lead names were shown
+4. Write a data migration to clear `first_name`, `last_name` on existing Lead records
 
 After this workstream, the only identifiers in the DB are:
 - `Lead.website` — LinkedIn URL (pseudonymous, publicly accessible)
 - `ProfileEmbedding.public_identifier` — LinkedIn slug (pseudonymous)
-- `Deal.name` — `"LinkedIn: {public_id}"` (pseudonymous)
 
 These are pseudonymous under GDPR Recital 26 but still personal data (trivially re-identifiable). They are the minimum required for dedup and operational navigation.
 
@@ -197,8 +189,7 @@ Implement data subject export to satisfy Article 20 (Right to Data Portability).
 2. Collect all data held for that profile:
    - `Lead` fields (website, disqualified status, creation date)
    - `ProfileEmbedding` metadata (label, labeled_at, created_at — not the raw embedding vector, which is meaningless to the subject)
-   - `Deal` fields (stage, next_step, creation/closing dates)
-   - `Contact` fields (if exists — company name, creation date)
+   - `Deal` fields (state, closing_reason, reason, creation/update dates)
    - `Task` entries referencing the profile (task_type, status, scheduled_at, created_at)
 3. Output as structured JSON to stdout or a file, with a schema that could be provided to the data subject
 4. Also expose as a Django Admin action on the Lead model

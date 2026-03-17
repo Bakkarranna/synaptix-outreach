@@ -31,10 +31,9 @@ For each new URL discovered:
 
 1. **Voyager API** fetches structured profile data (name, headline, positions, education, etc.)
 2. **Lead** is created with the full profile JSON in `description`
-3. **Company** is created/linked from the first position
-4. **ProfileEmbedding** is computed (384-dim BAAI/bge-small-en-v1.5 via fastembed) and stored with `label=null`
+3. **ProfileEmbedding** is computed (384-dim BAAI/bge-small-en-v1.5 via fastembed) and stored with `label=null`
 
-All three steps happen atomically at discovery time. Rate-limited by
+All steps happen atomically at discovery time. Rate-limited by
 `enrich_min_interval` (default 1s per profile).
 
 > **Robustness fallback:** Lazy helpers (`ensure_lead_enriched`,
@@ -64,14 +63,14 @@ The first candidate is selected in order and qualified via LLM.
 
 ### Result
 
-- Accepted: Lead promoted → Contact + Company + Deal (stage=QUALIFIED). LLM reason stored in Deal.next_step JSON.
-- Rejected: FAILED Deal with "Disqualified" closing reason (campaign-scoped, not `Lead.disqualified`). Reason in Deal.next_step JSON.
+- Accepted: Lead promoted → Deal (state=QUALIFIED). LLM reason stored in `Deal.reason`.
+- Rejected: FAILED Deal with "Disqualified" closing reason (campaign-scoped, not `Lead.disqualified`). Reason in `Deal.reason`.
 
 ## 4. Ready to Connect (QUALIFIED → READY_TO_CONNECT)
 
 **Where:** `pipeline/ready_pool.py:promote_to_ready()`
 
-After qualification, profiles sit at the QUALIFIED stage. Before connecting, they
+After qualification, profiles sit at the QUALIFIED state. Before connecting, they
 must pass a GP confidence gate:
 
 - `promote_to_ready()` loads all QUALIFIED profiles, computes P(f > 0.5) via the GP model
@@ -93,7 +92,7 @@ If the pool is empty, the **backfill chain** runs via composable generators:
 Each generator pulls from the next when empty. Each `qualify_source` iteration
 produces exactly one label, preventing infinite-search-without-qualifying.
 
-Connection request is sent without a note. Deal moves to PENDING stage.
+Connection request is sent without a note. Deal moves to PENDING state.
 Rate-limited by `LinkedInProfile.can_execute()` / `record_action()`.
 
 **Unreachable profile detection**: when `send_connection_request` returns
@@ -110,7 +109,7 @@ Uses **exponential backoff** with multiplicative jitter per profile:
 
 - Initial interval: `check_pending_recheck_after_hours` (default 24h)
 - Doubles each time the profile is still pending
-- Stored in `deal.next_step` as `{"backoff_hours": N}`
+- Stored in `deal.backoff_hours`
 
 On acceptance → enqueues `follow_up` task.
 
@@ -131,7 +130,7 @@ in 72h if the agent didn't schedule or complete.
 ## 8. Terminal States
 
 - **COMPLETED** — conversation completed by the agent (booked, declined, or went cold)
-- **FAILED** — unrecoverable error at any stage, or LLM rejection (campaign-scoped "Disqualified" closing reason)
+- **FAILED** — unrecoverable error at any state, or LLM rejection (campaign-scoped "Disqualified" closing reason)
 
 ---
 
@@ -150,7 +149,7 @@ in 72h if the agent didn't schedule or complete.
               rejected │       │ accepted
                        │       │
             ┌──────────▼┐  ┌───▼────────┐
-            │  FAILED    │  │  QUALIFIED │  Contact + Deal created
+            │  FAILED    │  │  QUALIFIED │  Deal created
             │(Disqualif.)│  └────┬───────┘
             └────────────┘       │
                                  │ GP confidence gate (P(f>0.5) > threshold)
@@ -171,7 +170,7 @@ in 72h if the agent didn't schedule or complete.
                           └─────────────┘
 
                           ┌─────────────┐
-                          │   FAILED    │  Error at any stage
+                          │   FAILED    │  Error at any state
                           └─────────────┘
 ```
 
@@ -179,6 +178,6 @@ in 72h if the agent didn't schedule or complete.
 
 Freemium campaigns skip qualification, READY_TO_CONNECT, and search entirely.
 They query `ProfileEmbedding` for any embedded lead without a Deal in their
-department (excluding permanently disqualified leads), ranked by `KitQualifier`.
+campaign (excluding permanently disqualified leads), ranked by `KitQualifier`.
 Profiles go straight to connect, with delay scaled by `action_fraction` to
 maintain a target ratio of freemium vs regular connections.
