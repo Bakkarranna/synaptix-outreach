@@ -67,9 +67,10 @@ class TestProfileEmbeddingModel:
         assert y.shape == (0,)
 
     def test_get_labeled_arrays_from_deals(self, fake_session):
-        """Labels are derived from Deal stage + closing_reason, not ProfileEmbedding fields."""
-        from crm.models import Deal, Lead, Stage, ClosingReason
+        """Labels are derived from Deal state + closing_reason, not ProfileEmbedding fields."""
+        from crm.models import Deal, Lead, ClosingReason
         from linkedin.db._helpers import _make_ticket
+        from linkedin.enums import ProfileState
         from linkedin.models import ProfileEmbedding
 
         dept = fake_session.campaign.department
@@ -79,9 +80,8 @@ class TestProfileEmbeddingModel:
         lead = Lead.objects.create(website="https://linkedin.com/in/alice", owner=user, department=dept)
         emb = np.random.randn(384).astype(np.float32)
         ProfileEmbedding.objects.create(lead_id=lead.pk, public_identifier="alice", embedding=emb.tobytes())
-        qualified_stage = Stage.objects.get(name="Qualified", department=dept)
         Deal.objects.create(
-            name="test", lead=lead, stage=qualified_stage,
+            name="test", lead=lead, state=ProfileState.QUALIFIED,
             owner=user, department=dept, next_step_date=date.today(),
             ticket=_make_ticket(),
         )
@@ -90,12 +90,10 @@ class TestProfileEmbeddingModel:
         lead2 = Lead.objects.create(website="https://linkedin.com/in/bob", owner=user, department=dept)
         emb2 = np.random.randn(384).astype(np.float32)
         ProfileEmbedding.objects.create(lead_id=lead2.pk, public_identifier="bob", embedding=emb2.tobytes())
-        failed_stage = Stage.objects.get(name="Failed", department=dept)
-        closing = ClosingReason.objects.get(name="Disqualified", department=dept)
         Deal.objects.create(
-            name="test2", lead=lead2, stage=failed_stage,
-            owner=user, department=dept, closing_reason=closing, active=False,
-            next_step_date=date.today(), ticket=_make_ticket(),
+            name="test2", lead=lead2, state=ProfileState.FAILED,
+            owner=user, department=dept, closing_reason=ClosingReason.DISQUALIFIED,
+            active=False, next_step_date=date.today(), ticket=_make_ticket(),
         )
 
         X, y = ProfileEmbedding.get_labeled_arrays(dept)
@@ -104,8 +102,9 @@ class TestProfileEmbeddingModel:
 
     def test_get_labeled_arrays_skips_operational_failures(self, fake_session):
         """FAILED deals with non-Disqualified closing reason are not training data."""
-        from crm.models import Deal, Lead, Stage, ClosingReason
+        from crm.models import Deal, Lead, ClosingReason
         from linkedin.db._helpers import _make_ticket
+        from linkedin.enums import ProfileState
         from linkedin.models import ProfileEmbedding
 
         dept = fake_session.campaign.department
@@ -114,12 +113,10 @@ class TestProfileEmbeddingModel:
         lead = Lead.objects.create(website="https://linkedin.com/in/charlie", owner=user, department=dept)
         emb = np.random.randn(384).astype(np.float32)
         ProfileEmbedding.objects.create(lead_id=lead.pk, public_identifier="charlie", embedding=emb.tobytes())
-        failed_stage = Stage.objects.get(name="Failed", department=dept)
-        closing = ClosingReason.objects.get(name="Failed", department=dept)
         Deal.objects.create(
-            name="test", lead=lead, stage=failed_stage,
-            owner=user, department=dept, closing_reason=closing, active=False,
-            next_step_date=date.today(), ticket=_make_ticket(),
+            name="test", lead=lead, state=ProfileState.FAILED,
+            owner=user, department=dept, closing_reason=ClosingReason.FAILED,
+            active=False, next_step_date=date.today(), ticket=_make_ticket(),
         )
 
         X, y = ProfileEmbedding.get_labeled_arrays(dept)

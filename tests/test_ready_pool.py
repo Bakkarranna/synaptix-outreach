@@ -5,7 +5,7 @@ from unittest.mock import patch
 import numpy as np
 
 from linkedin.db.deals import set_profile_state
-from linkedin.db.leads import create_enriched_lead, promote_lead_to_contact
+from linkedin.db.leads import create_enriched_lead, promote_lead_to_deal
 from linkedin.ml.qualifier import BayesianQualifier
 from linkedin.enums import ProfileState
 from linkedin.pipeline.ready_pool import promote_to_ready, find_ready_candidate
@@ -22,7 +22,7 @@ SAMPLE_PROFILE = {
 def _make_qualified(session, public_id="alice"):
     url = f"https://www.linkedin.com/in/{public_id}/"
     create_enriched_lead(session, url, SAMPLE_PROFILE)
-    promote_lead_to_contact(session, public_id)
+    promote_lead_to_deal(session, public_id)
 
 
 @pytest.mark.django_db
@@ -50,8 +50,8 @@ class TestPromoteToReady:
         from crm.models import Deal
         alice_deal = Deal.objects.get(lead__website="https://www.linkedin.com/in/alice/")
         bob_deal = Deal.objects.get(lead__website="https://www.linkedin.com/in/bob/")
-        assert alice_deal.stage.name == ProfileState.READY_TO_CONNECT.value
-        assert bob_deal.stage.name == ProfileState.QUALIFIED.value
+        assert alice_deal.state == ProfileState.READY_TO_CONNECT
+        assert bob_deal.state == ProfileState.QUALIFIED
 
     def test_returns_zero_on_cold_start(self, fake_session):
         _make_qualified(fake_session)

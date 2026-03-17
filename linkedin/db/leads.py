@@ -6,7 +6,7 @@ from django.core.files.base import ContentFile
 from django.db import transaction
 from termcolor import colored
 
-from linkedin.db._helpers import _make_ticket, _get_stage, _get_lead_source
+from linkedin.db._helpers import _make_ticket
 from linkedin.db.urls import url_to_public_id, public_id_to_url
 from linkedin.enums import ProfileState
 
@@ -79,14 +79,12 @@ def create_enriched_lead(session, url: str, profile: Dict[str, Any], data: Optio
     """Create Lead with full profile data, Company, and embedding.
 
     Returns lead PK or None if exists.
-    Does NOT create Contact or Deal — those come at qualification.
+    Does NOT create Deal — that comes at qualification.
     """
     from crm.models import Lead
     from linkedin.ml.embeddings import embed_profile
 
     # Use canonical public_identifier from Voyager response when available.
-    # The same person can appear under both an opaque URN URL and a vanity slug;
-    # storing by canonical ID deduplicates naturally.
     canonical_pid = profile.get("public_identifier")
     public_id = canonical_pid or url_to_public_id(url)
     clean_url = public_id_to_url(public_id)
@@ -98,7 +96,6 @@ def create_enriched_lead(session, url: str, profile: Dict[str, Any], data: Optio
         website=clean_url,
         owner=session.django_user,
         department=session.campaign.department,
-        lead_source=_get_lead_source(session.campaign),
     )
 
     _update_lead_fields(lead, profile)
@@ -113,14 +110,13 @@ def create_enriched_lead(session, url: str, profile: Dict[str, Any], data: Optio
     return lead.pk
 
 
-
 @transaction.atomic
-def promote_lead_to_contact(session, public_id: str, reason: str = ""):
-    """Create Contact from Lead + Deal at 'Qualified' stage.
+def promote_lead_to_deal(session, public_id: str, reason: str = ""):
+    """Create a QUALIFIED Deal for a Lead.
 
-    Returns (contact, deal). Raises ValueError if Lead has no Company.
+    Returns the Deal. Raises ValueError if Lead has no Company.
     """
-    from crm.models import Lead, Contact, Deal
+    from crm.models import Lead, Deal
     from datetime import date
 
     clean_url = public_id_to_url(public_id)
@@ -130,47 +126,25 @@ def promote_lead_to_contact(session, public_id: str, reason: str = ""):
 
     company = lead.company
     if not company:
-        raise ValueError(f"Lead {public_id} has no Company — cannot create Contact")
-
-    # Create or get Contact
-    contact = Contact.objects.filter(
-        first_name=lead.first_name or "",
-        last_name=lead.last_name or "",
-        company=company,
-    ).first()
-
-    if contact is None:
-        contact = Contact.objects.create(
-            first_name=lead.first_name or "",
-            last_name=lead.last_name or "",
-            company=company,
-            title=lead.title or "",
-            owner=lead.owner,
-            department=lead.department,
-        )
-
-    lead.contact = contact
-    lead.save()
+        raise ValueError(f"Lead {public_id} has no Company — cannot create Deal")
 
     dept = session.campaign.department
 
-    # Create Deal at "Qualified" stage
-    ns = {"reason": reason} if reason else {}
+    meta = {"reason": reason} if reason else {}
     deal = Deal.objects.create(
         name=f"LinkedIn: {public_id}",
         lead=lead,
-        contact=contact,
         company=company,
-        stage=_get_stage(ProfileState.QUALIFIED, session.campaign),
+        state=ProfileState.QUALIFIED,
         owner=session.django_user,
         department=dept,
-        next_step=json.dumps(ns) if ns else "",
+        metadata=meta,
         next_step_date=date.today(),
         ticket=_make_ticket(),
     )
 
     logger.info("%s %s", public_id, colored("QUALIFIED", "green", attrs=["bold"]))
-    return contact, deal
+    return deal
 
 
 def get_leads_for_qualification(session) -> list:
@@ -185,9 +159,9 @@ def get_leads_for_qualification(session) -> list:
     dept = session.campaign.department
     leads = Lead.objects.filter(
         owner=session.django_user,
-        disqualified=False,  # excludes permanently disqualified leads (account-level)
+        disqualified=False,
     ).exclude(
-        deal__department=dept,  # excludes leads already evaluated in this campaign
+        deal__department=dept,
     )
 
     result = []
@@ -196,7 +170,6 @@ def get_leads_for_qualification(session) -> list:
         if d:
             result.append(d)
     return result
-
 
 
 def disqualify_lead(public_id: str):

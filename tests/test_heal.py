@@ -5,7 +5,7 @@ from django.utils import timezone
 
 from linkedin.daemon import heal_tasks
 from linkedin.db.deals import set_profile_state
-from linkedin.db.leads import create_enriched_lead, promote_lead_to_contact
+from linkedin.db.leads import create_enriched_lead, promote_lead_to_deal
 from linkedin.models import Task
 from linkedin.enums import ProfileState
 
@@ -21,14 +21,14 @@ SAMPLE_PROFILE = {
 def _make_pending(session, public_id="alice"):
     url = f"https://www.linkedin.com/in/{public_id}/"
     create_enriched_lead(session, url, SAMPLE_PROFILE)
-    promote_lead_to_contact(session, public_id)
+    promote_lead_to_deal(session, public_id)
     set_profile_state(session, public_id, ProfileState.PENDING.value)
 
 
 def _make_connected(session, public_id="alice"):
     url = f"https://www.linkedin.com/in/{public_id}/"
     create_enriched_lead(session, url, SAMPLE_PROFILE)
-    promote_lead_to_contact(session, public_id)
+    promote_lead_to_deal(session, public_id)
     set_profile_state(session, public_id, ProfileState.CONNECTED.value)
 
 
@@ -75,7 +75,7 @@ class TestHealTasks:
         from linkedin.db.urls import public_id_to_url
         Deal.objects.filter(
             lead__website=public_id_to_url("alice"),
-        ).update(next_step=json.dumps({"backoff_hours": 96}))
+        ).update(metadata={"backoff_hours": 96})
 
         heal_tasks(fake_session)
         task = Task.objects.get(

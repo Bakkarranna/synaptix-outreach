@@ -1,6 +1,5 @@
 # tests/conftest.py
 import pytest
-from django.contrib.auth.models import Group
 
 from linkedin.management.setup_crm import setup_crm
 from tests.factories import UserFactory
@@ -13,8 +12,6 @@ def _ensure_crm_data(db):
     Uses `db` fixture (not transactional_db) for compatibility.
     Since transaction=True tests rollback, we re-create data each time.
     """
-    # DjangoCRM's user creation signal expects "co-workers" group
-    Group.objects.get_or_create(name="co-workers")
     setup_crm()
 
 

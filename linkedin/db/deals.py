@@ -6,7 +6,7 @@ from django.db import transaction
 from django.utils import timezone
 from termcolor import colored
 
-from linkedin.db._helpers import _make_ticket, _get_stage
+from linkedin.db._helpers import _make_ticket
 from linkedin.db.urls import url_to_public_id, public_id_to_url
 from linkedin.enums import ProfileState
 
@@ -21,18 +21,20 @@ _STATE_LOG_STYLE = {
     ProfileState.FAILED: ("FAILED", "red", ["bold"]),
 }
 
-def parse_next_step(deal) -> dict:
-    """Parse deal.next_step as JSON, return empty dict on failure or empty string."""
-    if not deal.next_step:
+def parse_metadata(deal) -> dict:
+    """Parse deal.metadata as dict, return empty dict on failure."""
+    if not deal.metadata:
         return {}
+    if isinstance(deal.metadata, dict):
+        return deal.metadata
     try:
-        return json.loads(deal.next_step)
+        return json.loads(deal.metadata)
     except (json.JSONDecodeError, TypeError):
         return {}
 
 
 def increment_connect_attempts(session, public_id: str) -> int:
-    """Increment connect_attempts in deal.next_step and return the new count."""
+    """Increment connect_attempts in deal.metadata and return the new count."""
     from crm.models import Deal
 
     clean_url = public_id_to_url(public_id)
@@ -43,11 +45,11 @@ def increment_connect_attempts(session, public_id: str) -> int:
     if not deal:
         return 1
 
-    meta = parse_next_step(deal)
+    meta = parse_metadata(deal)
     attempts = meta.get("connect_attempts", 0) + 1
     meta["connect_attempts"] = attempts
-    deal.next_step = json.dumps(meta)
-    deal.save(update_fields=["next_step"])
+    deal.metadata = meta
+    deal.save(update_fields=["metadata"])
     return attempts
 
 
@@ -56,17 +58,16 @@ def _deal_to_profile_dict(deal) -> dict:
     from linkedin.db.leads import lead_to_profile_dict
 
     base = lead_to_profile_dict(deal.lead)
-    base["meta"] = parse_next_step(deal)
+    base["meta"] = parse_metadata(deal)
     return base
 
 
-def _deals_at_stage(session, state: ProfileState) -> list:
-    """Return profile dicts for all Deals at the given stage in this campaign's department."""
+def _deals_at_state(session, state: ProfileState) -> list:
+    """Return profile dicts for all Deals at the given state in this campaign's department."""
     from crm.models import Deal
 
-    stage = _get_stage(state, session.campaign)
     qs = Deal.objects.filter(
-        stage=stage,
+        state=state,
         department=session.campaign.department,
     ).select_related("lead")
     return [_deal_to_profile_dict(d) for d in qs]
@@ -92,7 +93,7 @@ def _existing_deal_or_lead(public_id: str, dept):
 
 
 def set_profile_state(session, public_identifier: str, new_state: str, reason: str = ""):
-    """Move the Deal linked to this Lead to the corresponding Stage.
+    """Move the Deal to the corresponding state.
 
     Department-scoped: only finds Deals in the current campaign's department.
     Raises ValueError if no Deal exists.
@@ -106,27 +107,20 @@ def set_profile_state(session, public_identifier: str, new_state: str, reason: s
         raise ValueError(f"No Deal for {public_identifier} — cannot set state {new_state}")
 
     ps = ProfileState(new_state)
-    old_stage_name = deal.stage.name if deal.stage else None
-    new_stage = _get_stage(ps, session.campaign)
-    state_changed = (old_stage_name != new_stage.name)
+    state_changed = (deal.state != ps)
 
-    deal.stage = new_stage
-    deal.change_stage_data(date.today())
+    deal.state = ps
     deal.next_step_date = date.today()
 
     if reason:
         deal.description = reason
 
     if ps == ProfileState.FAILED:
-        closing = ClosingReason.objects.filter(name="Failed", department=dept).first()
-        if closing:
-            deal.closing_reason = closing
+        deal.closing_reason = ClosingReason.FAILED
         deal.active = False
 
     if ps == ProfileState.COMPLETED:
-        closing = ClosingReason.objects.filter(name="Completed", department=dept).first()
-        if closing:
-            deal.closing_reason = closing
+        deal.closing_reason = ClosingReason.COMPLETED
         deal.win_closing_date = timezone.now()
 
     deal.save()
@@ -139,18 +133,15 @@ def set_profile_state(session, public_identifier: str, new_state: str, reason: s
         logger.debug("%s %s (unchanged)%s", public_identifier, label, suffix)
 
 
-# ── Stage queries ──
-# No lead__disqualified filter needed: Deal existence at a stage implies
-# the lead passed qualification for this campaign. disqualified=True (self-profile)
-# never gets a Deal.
+# ── State queries ──
 
 
 def get_qualified_profiles(session) -> list:
-    return _deals_at_stage(session, ProfileState.QUALIFIED)
+    return _deals_at_state(session, ProfileState.QUALIFIED)
 
 
 def get_ready_to_connect_profiles(session) -> list:
-    return _deals_at_stage(session, ProfileState.READY_TO_CONNECT)
+    return _deals_at_state(session, ProfileState.READY_TO_CONNECT)
 
 
 def get_profile_dict_for_public_id(session, public_id: str) -> dict | None:
@@ -178,7 +169,6 @@ def create_disqualified_deal(session, public_id: str, reason: str = ""):
 
     LLM qualification rejections are tracked as FAILED Deals (campaign-scoped),
     NOT as Lead.disqualified (which is for permanent account-level exclusion).
-    A lead can be rejected in one campaign but still be eligible for other campaigns.
     """
     from crm.models import ClosingReason
 
@@ -190,17 +180,16 @@ def create_disqualified_deal(session, public_id: str, reason: str = ""):
         logger.warning("create_disqualified_deal: no Lead for %s", public_id)
         return None
 
-    closing = ClosingReason.objects.filter(name="Disqualified", department=dept).first()
-    ns = {"reason": reason} if reason else {}
+    meta = {"reason": reason} if reason else {}
     deal = _create_deal(
         name=f"LinkedIn: {public_id}",
         lead=lead,
-        stage=_get_stage(ProfileState.FAILED, session.campaign),
+        state=ProfileState.FAILED,
         session=session,
-        closing_reason=closing,
+        closing_reason=ClosingReason.DISQUALIFIED,
         description=reason,
         active=False,
-        next_step=json.dumps(ns) if ns else "",
+        metadata=meta,
     )
 
     suffix = f" ({reason})" if reason else ""
@@ -210,11 +199,7 @@ def create_disqualified_deal(session, public_id: str, reason: str = ""):
 
 @transaction.atomic
 def create_freemium_deal(session, public_id: str):
-    """Create a Deal in the freemium campaign's department for a candidate lead.
-
-    Called just-in-time when a freemium candidate is selected for connection.
-    Returns the created Deal, or the existing Deal if one already exists.
-    """
+    """Create a Deal in the freemium campaign's department for a candidate lead."""
     dept = session.campaign.department
     lead, existing = _existing_deal_or_lead(public_id, dept)
     if existing:
@@ -225,9 +210,8 @@ def create_freemium_deal(session, public_id: str):
     deal = _create_deal(
         name=f"Freemium: {public_id}",
         lead=lead,
-        stage=_get_stage(ProfileState.QUALIFIED, session.campaign),
+        state=ProfileState.QUALIFIED,
         session=session,
-        contact=lead.contact,
         company=lead.company,
     )
 
@@ -236,9 +220,9 @@ def create_freemium_deal(session, public_id: str):
 
 
 def _create_deal(
-    *, name, lead, stage, session,
-    contact=None, company=None, closing_reason=None,
-    description="", active=True, next_step="", next_step_date=None,
+    *, name, lead, state, session,
+    company=None, closing_reason="",
+    description="", active=True, metadata=None, next_step_date=None,
 ):
     """Shared Deal creation with common defaults."""
     from crm.models import Deal
@@ -246,15 +230,14 @@ def _create_deal(
     return Deal.objects.create(
         name=name,
         lead=lead,
-        stage=stage,
+        state=state,
         owner=session.django_user,
         department=session.campaign.department,
-        contact=contact,
         company=company,
         closing_reason=closing_reason,
         description=description,
         active=active,
-        next_step=next_step,
+        metadata=metadata or {},
         next_step_date=next_step_date or date.today(),
         ticket=_make_ticket(),
     )

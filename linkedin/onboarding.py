@@ -135,9 +135,6 @@ def _onboard_campaign():
 
     dept, _ = Department.objects.get_or_create(name=campaign_name)
 
-    from linkedin.management.setup_crm import ensure_campaign_pipeline
-    ensure_campaign_pipeline(dept)
-
     campaign = Campaign.objects.create(
         department=dept,
         product_docs=product_docs,

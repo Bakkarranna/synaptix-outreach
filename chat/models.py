@@ -1,7 +1,6 @@
 from django.conf import settings
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.contenttypes.fields import GenericForeignKey
-from django.contrib.contenttypes.fields import GenericRelation
 from django.db import models
 from django.template.defaultfilters import truncatechars
 from django.utils import timezone
@@ -51,8 +50,6 @@ class ChatMessage(models.Model):
         default=timezone.now,
         verbose_name=_("Creation date")
     )
-    files = GenericRelation('common.TheFile', related_query_name='chat_message')
-
     def __str__(self):
         return f'{truncatechars(self.content, 70)}'
 

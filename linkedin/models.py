@@ -184,26 +184,22 @@ class ProfileEmbedding(models.Model):
     def get_labeled_arrays(cls, department) -> tuple[np.ndarray, np.ndarray]:
         """Labeled embeddings for a department as (X, y) numpy arrays for warm start.
 
-        Labels are derived from Deal stage and closing_reason:
-        - label=1: Deals at any non-FAILED stage (QUALIFIED and beyond)
+        Labels are derived from Deal state and closing_reason:
+        - label=1: Deals at any non-FAILED state (QUALIFIED and beyond)
         - label=0: FAILED Deals with closing_reason "Disqualified" (LLM rejection)
         - Skipped: FAILED Deals with other closing reasons (operational failures)
         """
-        from crm.models import Deal, Stage
-
-        # Single query: each lead_id → label (1=qualified+, 0=disqualified)
-        failed_stage = Stage.objects.filter(
-            name="Failed", department=department,
-        ).first()
+        from crm.models import Deal, ClosingReason
+        from linkedin.enums import ProfileState
 
         deals = Deal.objects.filter(
             department=department, lead_id__isnull=False,
-        ).values_list("lead_id", "stage_id", "closing_reason__name")
+        ).values_list("lead_id", "state", "closing_reason")
 
         label_by_lead: dict[int, int] = {}
-        for lid, stage_id, cr_name in deals:
-            if failed_stage and stage_id == failed_stage.pk:
-                if cr_name == "Disqualified":
+        for lid, state, cr in deals:
+            if state == ProfileState.FAILED:
+                if cr == ClosingReason.DISQUALIFIED:
                     label_by_lead[lid] = 0
                 # other closing reasons → skip (operational failure)
             else:

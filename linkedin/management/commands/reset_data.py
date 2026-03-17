@@ -3,9 +3,9 @@ from django.core.management.base import BaseCommand
 
 class Command(BaseCommand):
     help = (
-        "Delete all Leads, Contacts, Companies, Deals, ProfileEmbeddings, "
+        "Delete all Leads, Companies, Deals, ProfileEmbeddings, "
         "TheFiles, ActionLogs, reset SearchKeywords, and remove GP model files. "
-        "Keeps Campaigns, Departments, LinkedInProfiles, pipeline stages."
+        "Keeps Campaigns, Departments, LinkedInProfiles."
     )
 
     def add_arguments(self, parser):
@@ -17,14 +17,13 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         from common.models import TheFile
-        from crm.models import Company, Contact, Deal, Lead
+        from crm.models import Company, Deal, Lead
 
         from linkedin.conf import MODELS_DIR
         from linkedin.models import ActionLog, ProfileEmbedding, SearchKeyword
 
         counts = {
             "Leads": Lead.objects.count(),
-            "Contacts": Contact.objects.count(),
             "Companies": Company.objects.count(),
             "Deals": Deal.objects.count(),
             "ProfileEmbeddings": ProfileEmbedding.objects.count(),
@@ -50,7 +49,6 @@ class Command(BaseCommand):
 
         # Order matters: delete dependents first
         Deal.objects.all().delete()
-        Contact.objects.all().delete()
         TheFile.objects.all().delete()
         ProfileEmbedding.objects.all().delete()
         ActionLog.objects.all().delete()

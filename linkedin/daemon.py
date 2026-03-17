@@ -48,12 +48,7 @@ class _FreemiumRotator:
 
 
 def _build_qualifiers(campaigns, cfg, kit_model=None):
-    """Create a qualifier for every campaign, keyed by campaign PK.
-
-    Regular campaigns get a ``BayesianQualifier`` (persisted per-campaign).
-    Freemium campaigns get a ``KitQualifier`` backed by the pre-trained kit
-    model directly — no inner BayesianQualifier needed.
-    """
+    """Create a qualifier for every campaign, keyed by campaign PK."""
     from linkedin.models import ProfileEmbedding
 
     qualifiers: dict[int, BayesianQualifier | KitQualifier] = {}
@@ -92,7 +87,6 @@ def _build_qualifiers(campaigns, cfg, kit_model=None):
 def _pop_next_task() -> Task | None:
     """Claim the oldest due pending task. Returns None if queue is empty."""
     now = timezone.now()
-    # Future PostgreSQL: add .select_for_update(skip_locked=True) before .first()
     return (
         Task.objects.filter(status=Task.Status.PENDING, scheduled_at__lte=now)
         .order_by("scheduled_at")
@@ -108,8 +102,8 @@ def heal_tasks(session):
     3. Create 'check_pending' tasks for PENDING profiles without tasks
     4. Create 'follow_up' tasks for CONNECTED profiles without tasks
     """
-    from crm.models import Deal, Stage
-    from linkedin.db.deals import parse_next_step
+    from crm.models import Deal
+    from linkedin.db.deals import parse_metadata
     from linkedin.db.urls import url_to_public_id
     from linkedin.enums import ProfileState
 
@@ -130,15 +124,8 @@ def heal_tasks(session):
     # 3. Check_pending tasks for PENDING profiles
     for campaign in session.campaigns:
         session.campaign = campaign
-        stage = Stage.objects.filter(
-            name=ProfileState.PENDING.value,
-            department=campaign.department,
-        ).first()
-        if not stage:
-            continue
-
         pending_deals = Deal.objects.filter(
-            stage=stage,
+            state=ProfileState.PENDING,
             department=campaign.department,
         ).select_related("lead")
 
@@ -146,22 +133,15 @@ def heal_tasks(session):
             public_id = url_to_public_id(deal.lead.website) if deal.lead.website else None
             if not public_id:
                 continue
-            meta = parse_next_step(deal)
+            meta = parse_metadata(deal)
             backoff = meta.get("backoff_hours", cfg["check_pending_recheck_after_hours"])
             enqueue_check_pending(campaign.pk, public_id, backoff_hours=backoff)
 
     # 4. Follow_up tasks for CONNECTED profiles
     for campaign in session.campaigns:
         session.campaign = campaign
-        stage = Stage.objects.filter(
-            name=ProfileState.CONNECTED.value,
-            department=campaign.department,
-        ).first()
-        if not stage:
-            continue
-
         connected_deals = Deal.objects.filter(
-            stage=stage,
+            state=ProfileState.CONNECTED,
             department=campaign.department,
         ).select_related("lead")
 
@@ -176,7 +156,6 @@ def heal_tasks(session):
 
 
 def run_daemon(session):
-    from linkedin.management.setup_crm import ensure_campaign_pipeline
     from linkedin.ml.hub import fetch_kit
     from linkedin.setup.freemium import import_freemium_campaign
     from linkedin.models import Campaign
@@ -197,11 +176,6 @@ def run_daemon(session):
     qualifiers = _build_qualifiers(
         session.campaigns, cfg, kit_model=kit["model"] if kit else None,
     )
-
-    # Ensure pipeline stages exist for all campaigns
-    for campaign in session.campaigns:
-        session.campaign = campaign
-        ensure_campaign_pipeline(campaign.department)
 
     # Startup healing
     heal_tasks(session)

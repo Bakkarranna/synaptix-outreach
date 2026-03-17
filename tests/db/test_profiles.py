@@ -8,7 +8,7 @@ from linkedin.db.deals import (
 )
 from linkedin.db.leads import (
     create_enriched_lead,
-    promote_lead_to_contact,
+    promote_lead_to_deal,
     get_leads_for_qualification,
     lead_exists,
 )
@@ -153,19 +153,17 @@ class TestCreateEnrichedLead:
 
 
 @pytest.mark.django_db
-class TestPromoteLeadToContact:
-    def test_creates_contact_and_deal(self, fake_session):
-        from crm.models import Contact, Deal
+class TestPromoteLeadToDeal:
+    def test_creates_deal(self, fake_session):
+        from crm.models import Deal
         create_enriched_lead(
             fake_session,
             "https://www.linkedin.com/in/alice/",
             SAMPLE_PROFILE,
         )
-        contact, deal = promote_lead_to_contact(fake_session, "alice")
-        assert contact is not None
+        deal = promote_lead_to_deal(fake_session, "alice")
         assert deal is not None
-        assert deal.stage.name == "Qualified"
-        assert Contact.objects.count() == 1
+        assert deal.state == ProfileState.QUALIFIED
         assert Deal.objects.count() == 1
 
     def test_raises_without_company(self, fake_session):
@@ -176,18 +174,7 @@ class TestPromoteLeadToContact:
             profile,
         )
         with pytest.raises(ValueError, match="no Company"):
-            promote_lead_to_contact(fake_session, "bob")
-
-    def test_promotes_lead_contact_fk(self, fake_session):
-        from crm.models import Lead
-        create_enriched_lead(
-            fake_session,
-            "https://www.linkedin.com/in/alice/",
-            SAMPLE_PROFILE,
-        )
-        promote_lead_to_contact(fake_session, "alice")
-        lead = Lead.objects.get(website="https://www.linkedin.com/in/alice/")
-        assert lead.contact is not None
+            promote_lead_to_deal(fake_session, "bob")
 
 
 @pytest.mark.django_db
@@ -221,7 +208,7 @@ class TestGetLeadsForQualification:
             "https://www.linkedin.com/in/alice/",
             SAMPLE_PROFILE,
         )
-        promote_lead_to_contact(fake_session, "alice")
+        promote_lead_to_deal(fake_session, "alice")
         leads = get_leads_for_qualification(fake_session)
         assert len(leads) == 0
 
@@ -248,10 +235,10 @@ class TestSetProfileState:
             "https://www.linkedin.com/in/alice/",
             SAMPLE_PROFILE,
         )
-        promote_lead_to_contact(fake_session, "alice")
+        promote_lead_to_deal(fake_session, "alice")
         set_profile_state(fake_session, "alice", ProfileState.PENDING.value)
         deal = Deal.objects.get(lead__website="https://www.linkedin.com/in/alice/")
-        assert deal.stage.name == "Pending"
+        assert deal.state == ProfileState.PENDING
 
     def test_set_state_requires_deal(self, fake_session):
         create_enriched_lead(
@@ -263,14 +250,14 @@ class TestSetProfileState:
             set_profile_state(fake_session, "alice", ProfileState.QUALIFIED.value)
 
 
-# ── get_qualified_profiles (Deals at "Qualified" stage) ──
+# ── get_qualified_profiles (Deals at "Qualified" state) ──
 
 @pytest.mark.django_db
 class TestGetQualifiedProfiles:
     def _promote(self, session, public_id="alice"):
         url = f"https://www.linkedin.com/in/{public_id}/"
         create_enriched_lead(session, url, SAMPLE_PROFILE)
-        promote_lead_to_contact(session, public_id)
+        promote_lead_to_deal(session, public_id)
 
     def test_returns_qualified(self, fake_session):
         self._promote(fake_session)
@@ -278,7 +265,7 @@ class TestGetQualifiedProfiles:
         assert len(profiles) == 1
         assert profiles[0]["public_identifier"] == "alice"
 
-    def test_excludes_other_stages(self, fake_session):
+    def test_excludes_other_states(self, fake_session):
         self._promote(fake_session)
         set_profile_state(fake_session, "alice", ProfileState.PENDING.value)
         profiles = get_qualified_profiles(fake_session)
@@ -290,7 +277,7 @@ class TestGetQualifiedProfiles:
 @pytest.mark.django_db
 class TestCreateDisqualifiedDeal:
     def test_creates_failed_deal(self, fake_session):
-        from crm.models import Deal
+        from crm.models import Deal, ClosingReason
         create_enriched_lead(
             fake_session,
             "https://www.linkedin.com/in/alice/",
@@ -298,8 +285,8 @@ class TestCreateDisqualifiedDeal:
         )
         deal = create_disqualified_deal(fake_session, "alice", reason="Bad fit")
         assert deal is not None
-        assert deal.stage.name == "Failed"
-        assert deal.closing_reason.name == "Disqualified"
+        assert deal.state == ProfileState.FAILED
+        assert deal.closing_reason == ClosingReason.DISQUALIFIED
         assert deal.active is False
         assert deal.description == "Bad fit"
 
@@ -333,11 +320,9 @@ class TestMultiCampaignQualification:
         """Create a second campaign/session in a different department."""
         from common.models import Department
         from linkedin.models import Campaign
-        from linkedin.management.setup_crm import ensure_campaign_pipeline
         from tests.conftest import FakeAccountSession
 
         dept2 = Department.objects.create(name="Other Campaign")
-        ensure_campaign_pipeline(dept2)
         fake_session.django_user.groups.add(dept2)
         campaign2 = Campaign.objects.create(department=dept2)
         return FakeAccountSession(
@@ -367,7 +352,7 @@ class TestMultiCampaignQualification:
             "https://www.linkedin.com/in/alice/",
             SAMPLE_PROFILE,
         )
-        promote_lead_to_contact(fake_session, "alice")
+        promote_lead_to_deal(fake_session, "alice")
 
         other_session = self._make_other_session(fake_session)
         leads = get_leads_for_qualification(other_session)

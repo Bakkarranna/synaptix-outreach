@@ -111,13 +111,13 @@ def _save_qualification_result(session, qualifier: BayesianQualifier, lead_id: i
     # LLM rejections are tracked as FAILED Deals with "Disqualified" closing reason
     # (campaign-scoped), not as Lead.disqualified (permanent account-level exclusion).
     from linkedin.db.deals import create_disqualified_deal
-    from linkedin.db.leads import promote_lead_to_contact
+    from linkedin.db.leads import promote_lead_to_deal
 
     qualifier.update(embedding, label)
 
     if label == 1:
         try:
-            promote_lead_to_contact(session, public_id, reason=reason)
+            promote_lead_to_deal(session, public_id, reason=reason)
         except ValueError as e:
             logger.warning("Cannot promote %s: %s \u2014 disqualifying", public_id, e)
             create_disqualified_deal(session, public_id, reason=str(e))

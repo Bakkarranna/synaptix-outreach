@@ -68,10 +68,6 @@ def _run_daemon():
         sys.exit(1)
     session.campaign = first_campaign
 
-    # Ensure pipeline exists for this campaign's department (may differ from default)
-    from linkedin.management.setup_crm import ensure_campaign_pipeline
-    ensure_campaign_pipeline(first_campaign.department)
-
     session.ensure_browser()
     profile = ensure_self_profile(session)
 

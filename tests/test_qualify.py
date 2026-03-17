@@ -46,7 +46,7 @@ class TestQualifyAutoDecisions:
             patch("linkedin.pipeline.qualify._fetch_profile_text", return_value="engineer at acme"),
             patch("linkedin.ml.qualifier.qualify_with_llm", return_value=(1, "Good fit")) as mock_llm,
             patch.object(qualifier, "update"),
-            patch("linkedin.db.leads.promote_lead_to_contact"),
+            patch("linkedin.db.leads.promote_lead_to_deal"),
         ):
             run_qualification(session, qualifier)
             mock_llm.assert_called_once()
@@ -76,7 +76,7 @@ class TestQualifyAutoDecisions:
             patch("linkedin.pipeline.qualify._fetch_profile_text", return_value="engineer at acme"),
             patch("linkedin.ml.qualifier.qualify_with_llm", return_value=(1, "Good fit")),
             patch.object(qualifier, "update"),
-            patch("linkedin.db.leads.promote_lead_to_contact",
+            patch("linkedin.db.leads.promote_lead_to_deal",
                   side_effect=ValueError("no Company")),
             patch("linkedin.db.deals.create_disqualified_deal") as mock_disqualify,
         ):

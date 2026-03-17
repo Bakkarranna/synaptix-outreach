@@ -2,14 +2,13 @@
 """Check pending task — checks one PENDING profile, self-reschedules with backoff."""
 from __future__ import annotations
 
-import json
 import logging
 
 from termcolor import colored
 
 from django.db import transaction
 
-from linkedin.db.deals import get_profile_dict_for_public_id, parse_next_step, set_profile_state
+from linkedin.db.deals import get_profile_dict_for_public_id, parse_metadata, set_profile_state
 from linkedin.db.urls import public_id_to_url
 from linkedin.enums import ProfileState
 from linkedin.exceptions import SkipProfile
@@ -59,10 +58,10 @@ def handle_check_pending(task, session, qualifiers):
                 department=session.campaign.department,
             ).first()
             if deal:
-                meta = parse_next_step(deal)
+                meta = parse_metadata(deal)
                 meta["backoff_hours"] = new_backoff
-                deal.next_step = json.dumps(meta)
-                deal.save(update_fields=["next_step"])
+                deal.metadata = meta
+                deal.save(update_fields=["metadata"])
         logger.debug(
             "%s still pending — backoff %.1fh → %.1fh",
             public_id, backoff_hours, new_backoff,

@@ -6,7 +6,7 @@ from unittest.mock import patch, MagicMock
 from django.utils import timezone
 
 from linkedin.db.deals import set_profile_state
-from linkedin.db.leads import create_enriched_lead, promote_lead_to_contact
+from linkedin.db.leads import create_enriched_lead, promote_lead_to_deal
 from linkedin.models import ActionLog, Task
 from linkedin.ml.qualifier import BayesianQualifier
 from linkedin.enums import ProfileState
@@ -41,13 +41,13 @@ def _assert_deal_state(session, public_id, expected_state: ProfileState):
         lead__website=f"https://www.linkedin.com/in/{public_id}/",
         owner=session.django_user,
     )
-    assert deal.stage.name == expected_state.value
+    assert deal.state == expected_state
 
 
 def _make_qualified(session, public_id="alice"):
     url = f"https://www.linkedin.com/in/{public_id}/"
     create_enriched_lead(session, url, SAMPLE_PROFILE)
-    promote_lead_to_contact(session, public_id)
+    promote_lead_to_deal(session, public_id)
 
 
 def _make_pending(session, public_id="alice"):
@@ -266,7 +266,7 @@ class TestHandleCheckPending:
         from crm.models import Deal
         from linkedin.db.urls import public_id_to_url
         deal = Deal.objects.get(lead__website=public_id_to_url("alice"))
-        assert json.loads(deal.next_step)["backoff_hours"] == 144
+        assert deal.metadata["backoff_hours"] == 144
 
         # Should have re-enqueued check_pending with new backoff
         next_task = Task.objects.filter(

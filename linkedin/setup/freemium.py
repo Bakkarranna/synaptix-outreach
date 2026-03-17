@@ -10,17 +10,14 @@ logger = logging.getLogger(__name__)
 def import_freemium_campaign(kit_config: dict):
     """Create or update a freemium Campaign from kit config.
 
-    Creates the department, pipeline, and adds all active users to the group.
+    Creates the department and adds all active users to the group.
     Returns the Campaign instance or None.
     """
     from common.models import Department
-    from linkedin.management.setup_crm import ensure_campaign_pipeline
     from linkedin.models import Campaign, LinkedInProfile
 
     dept_name = kit_config.get("campaign_name", "Freemium Outreach")
     dept, _ = Department.objects.get_or_create(name=dept_name)
-
-    ensure_campaign_pipeline(dept)
 
     campaign, _ = Campaign.objects.update_or_create(
         department=dept,
@@ -44,15 +41,9 @@ def import_freemium_campaign(kit_config: dict):
 
 
 def seed_profiles(session, kit_config: dict):
-    """Seed Lead + ProfileEmbedding + QUALIFIED Deal for profiles listed in kit config.
-
-    Reads ``seed_profiles`` (list of public IDs) from the kit config.
-    Leads are get-or-created; embeddings are lazily computed via Voyager API.
-    A QUALIFIED Deal is created so seeds are prioritised in the candidate pool.
-    """
+    """Seed Lead + ProfileEmbedding + QUALIFIED Deal for profiles listed in kit config."""
     from crm.models import Lead
 
-    from linkedin.db._helpers import _get_lead_source
     from linkedin.db.deals import create_freemium_deal
     from linkedin.db.enrichment import ensure_profile_embedded
     from linkedin.db.urls import public_id_to_url
@@ -69,7 +60,6 @@ def seed_profiles(session, kit_config: dict):
             defaults={
                 "owner": session.django_user,
                 "department": session.campaign.department,
-                "lead_source": _get_lead_source(session.campaign),
             },
         )
 

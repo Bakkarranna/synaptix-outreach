@@ -1,129 +1,46 @@
-from django.conf import settings
 from django.db import models
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
-from common.models import Base1
-from common.utils.helpers import token_default
+from common.models import BaseModel
 
 
-class Lead(Base1):
+class Lead(BaseModel):
     class Meta:
         verbose_name = _("Lead")
         verbose_name_plural = _("Leads")
 
-    # -- Contact info (ex-BaseContact) --
-    first_name = models.CharField(
-        max_length=100, null=False, blank=False,
-        help_text=_("The name of the contact person (one word)."),
-        verbose_name=_("First name"),
-    )
-    middle_name = models.CharField(
-        max_length=100, blank=True, default='',
-        verbose_name=_("Middle name"),
-        help_text=_("The middle name of the contact person.")
-    )
-    last_name = models.CharField(
-        max_length=100, blank=True, default='',
-        help_text=_("The last name of the contact person (one word)."),
-        verbose_name=_("Last name"),
-    )
+    first_name = models.CharField(max_length=100, blank=True, default="")
+    last_name = models.CharField(max_length=100, blank=True, default="")
     title = models.CharField(
-        max_length=100, null=True, blank=True,
-        help_text=_("The title (position) of the contact person."),
+        max_length=100, blank=True, default="",
         verbose_name=_("Title / Position"),
     )
-    sex = models.CharField(
-        null=True, blank=True,
-        max_length=1, choices=[('M', 'Male'), ('F', 'Female'), ('O', 'Other')], default='M',
-        verbose_name=_("Sex"),
-    )
-    birth_date = models.DateField(
-        blank=True, null=True,
-        verbose_name=_("Date of Birth")
-    )
-    secondary_email = models.EmailField(
-        blank=True, default='',
-        verbose_name=_("Secondary email")
-    )
-    phone = models.CharField(
-        max_length=100, blank=True, default='',
-        verbose_name=_("Phone")
-    )
-    other_phone = models.CharField(max_length=100, blank=True, default='')
-    mobile = models.CharField(
-        max_length=100, blank=True, default='',
-        verbose_name=_("Mobile phone")
-    )
-    city_name = models.CharField(
-        max_length=50, blank=True, default='',
-        verbose_name=_("City")
-    )
-
-    # -- Counterparty info (ex-BaseCounterparty) --
-    address = models.TextField(blank=True, default='', verbose_name=_("Address"))
-    region = models.CharField(max_length=100, blank=True, default='', verbose_name=_("Region/State"))
-    district = models.CharField(max_length=100, blank=True, default='', verbose_name=_("District/County"))
-    description = models.TextField(blank=True, default='', verbose_name=_("Description"))
-    disqualified = models.BooleanField(default=False, verbose_name=_("Disqualified"))
-    email = models.CharField(
-        max_length=200, null=False, blank=False,
-        verbose_name="Email",
-        help_text=_("Use comma to separate Emails.")
-    )
-    lead_source = models.ForeignKey(
-        'LeadSource', blank=True, null=True, on_delete=models.SET_NULL,
-        verbose_name=_("Lead Source")
-    )
-    token = models.CharField(max_length=11, default=token_default, unique=True)
-    was_in_touch = models.DateField(blank=True, null=True, verbose_name=_("Last contact date"))
-    owner = models.ForeignKey(
-        settings.AUTH_USER_MODEL, blank=True, null=True, on_delete=models.CASCADE,
-        verbose_name=_("Assigned to"),
-        related_name="%(app_label)s_%(class)s_owner_related",
-    )
-
-    # -- Lead-specific fields --
-    company_name = models.CharField(
-        max_length=200, blank=True, default='',
-        verbose_name=_("Company name"),
-    )
-    website = models.URLField(max_length=200, blank=True, default='')
-    company_phone = models.CharField(
-        max_length=20, blank=True, default='',
-        verbose_name=_("Company phone"),
-    )
-    company_address = models.TextField(
-        blank=True, default='',
-        verbose_name=_("Company address"),
-    )
-    company_email = models.EmailField(
-        blank=True, default='',
-        verbose_name=_("Company email"),
-    )
-    contact = models.ForeignKey(
-        'Contact', blank=True, null=True, on_delete=models.CASCADE,
-        verbose_name=_("Contact")
-    )
+    email = models.CharField(max_length=200, blank=True, default="")
+    phone = models.CharField(max_length=100, blank=True, default="")
+    city_name = models.CharField(max_length=50, blank=True, default="")
+    company_name = models.CharField(max_length=200, blank=True, default="")
+    website = models.URLField(max_length=200, blank=True, default="", unique=True)
+    description = models.TextField(blank=True, default="")
+    disqualified = models.BooleanField(default=False)
     company = models.ForeignKey(
-        'Company', blank=True, null=True, on_delete=models.CASCADE,
-        verbose_name=_("Company of contact")
+        "Company", blank=True, null=True, on_delete=models.CASCADE,
     )
 
     def __str__(self):
+        name = f"{self.first_name} {self.last_name}".strip()
+        if self.disqualified:
+            name = f"({_('Disqualified')}) {name}"
         if self.company_name:
-            return f"{self.full_name}, {self.company_name}"
-        return self.full_name
-
-    def get_absolute_url(self):
-        return reverse('admin:crm_lead_change', args=(self.id,))
+            return f"{name}, {self.company_name}"
+        return name or self.website
 
     @property
     def full_name(self):
-        full_name = ' '.join(filter(
-            None,
-            (self.first_name, self.middle_name, self.last_name)
-        ))
+        name = f"{self.first_name} {self.last_name}".strip()
         if self.disqualified:
-            full_name = f"({_('Disqualified')}) {full_name}"
-        return full_name
+            name = f"({_('Disqualified')}) {name}"
+        return name
+
+    def get_absolute_url(self):
+        return reverse("admin:crm_lead_change", args=(self.id,))

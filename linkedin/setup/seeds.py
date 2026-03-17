@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from linkedin.db._helpers import _get_lead_source, _get_stage, _make_ticket
+from linkedin.db._helpers import _make_ticket
 from linkedin.db.urls import public_id_to_url, url_to_public_id
 from linkedin.enums import ProfileState
 
@@ -40,8 +40,6 @@ def create_seed_leads(campaign, public_ids: list[str]) -> int:
     from crm.models import Deal, Lead
 
     dept = campaign.department
-    stage = _get_stage(ProfileState.QUALIFIED, campaign)
-    lead_source = _get_lead_source(campaign)
     user = dept.user_set.first()
     if not user:
         logger.error("No users in department %s — cannot create seed leads", dept.name)
@@ -57,7 +55,6 @@ def create_seed_leads(campaign, public_ids: list[str]) -> int:
             defaults={
                 "owner": user,
                 "department": dept,
-                "lead_source": lead_source,
             },
         )
 
@@ -69,11 +66,9 @@ def create_seed_leads(campaign, public_ids: list[str]) -> int:
         Deal.objects.create(
             name=f"Seed: {public_id}",
             lead=lead,
-            stage=stage,
+            state=ProfileState.QUALIFIED,
             owner=user,
             department=dept,
-            next_step="",
-            next_step_date=None,
             ticket=_make_ticket(),
         )
         existing_seeds.add(public_id)
