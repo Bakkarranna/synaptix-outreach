@@ -1,12 +1,8 @@
-import json
 import logging
-from datetime import date
 
 from django.db import transaction
-from django.utils import timezone
 from termcolor import colored
 
-from linkedin.db._helpers import _make_ticket
 from linkedin.db.urls import url_to_public_id, public_id_to_url
 from linkedin.enums import ProfileState
 
@@ -21,20 +17,9 @@ _STATE_LOG_STYLE = {
     ProfileState.FAILED: ("FAILED", "red", ["bold"]),
 }
 
-def parse_metadata(deal) -> dict:
-    """Parse deal.metadata as dict, return empty dict on failure."""
-    if not deal.metadata:
-        return {}
-    if isinstance(deal.metadata, dict):
-        return deal.metadata
-    try:
-        return json.loads(deal.metadata)
-    except (json.JSONDecodeError, TypeError):
-        return {}
-
 
 def increment_connect_attempts(session, public_id: str) -> int:
-    """Increment connect_attempts in deal.metadata and return the new count."""
+    """Increment connect_attempts on the Deal and return the new count."""
     from crm.models import Deal
 
     clean_url = public_id_to_url(public_id)
@@ -45,12 +30,9 @@ def increment_connect_attempts(session, public_id: str) -> int:
     if not deal:
         return 1
 
-    meta = parse_metadata(deal)
-    attempts = meta.get("connect_attempts", 0) + 1
-    meta["connect_attempts"] = attempts
-    deal.metadata = meta
-    deal.save(update_fields=["metadata"])
-    return attempts
+    deal.connect_attempts += 1
+    deal.save(update_fields=["connect_attempts"])
+    return deal.connect_attempts
 
 
 def _deal_to_profile_dict(deal) -> dict:
@@ -58,7 +40,11 @@ def _deal_to_profile_dict(deal) -> dict:
     from linkedin.db.leads import lead_to_profile_dict
 
     base = lead_to_profile_dict(deal.lead)
-    base["meta"] = parse_metadata(deal)
+    base["meta"] = {
+        "connect_attempts": deal.connect_attempts,
+        "backoff_hours": deal.backoff_hours,
+        "reason": deal.reason,
+    }
     return base
 
 
@@ -110,18 +96,15 @@ def set_profile_state(session, public_identifier: str, new_state: str, reason: s
     state_changed = (deal.state != ps)
 
     deal.state = ps
-    deal.next_step_date = date.today()
 
     if reason:
-        deal.description = reason
+        deal.reason = reason
 
     if ps == ProfileState.FAILED:
         deal.closing_reason = ClosingReason.FAILED
-        deal.active = False
 
     if ps == ProfileState.COMPLETED:
         deal.closing_reason = ClosingReason.COMPLETED
-        deal.win_closing_date = timezone.now()
 
     deal.save()
 
@@ -180,16 +163,13 @@ def create_disqualified_deal(session, public_id: str, reason: str = ""):
         logger.warning("create_disqualified_deal: no Lead for %s", public_id)
         return None
 
-    meta = {"reason": reason} if reason else {}
     deal = _create_deal(
         name=f"LinkedIn: {public_id}",
         lead=lead,
         state=ProfileState.FAILED,
         session=session,
         closing_reason=ClosingReason.DISQUALIFIED,
-        description=reason,
-        active=False,
-        metadata=meta,
+        reason=reason,
     )
 
     suffix = f" ({reason})" if reason else ""
@@ -212,7 +192,6 @@ def create_freemium_deal(session, public_id: str):
         lead=lead,
         state=ProfileState.QUALIFIED,
         session=session,
-        company=lead.company,
     )
 
     logger.info("%s %s", public_id, colored("FREEMIUM DEAL", "cyan", attrs=["bold"]))
@@ -221,8 +200,7 @@ def create_freemium_deal(session, public_id: str):
 
 def _create_deal(
     *, name, lead, state, session,
-    company=None, closing_reason="",
-    description="", active=True, metadata=None, next_step_date=None,
+    closing_reason="", reason="",
 ):
     """Shared Deal creation with common defaults."""
     from crm.models import Deal
@@ -233,11 +211,6 @@ def _create_deal(
         state=state,
         owner=session.django_user,
         department=session.campaign.department,
-        company=company,
         closing_reason=closing_reason,
-        description=description,
-        active=active,
-        metadata=metadata or {},
-        next_step_date=next_step_date or date.today(),
-        ticket=_make_ticket(),
+        reason=reason,
     )

@@ -21,10 +21,6 @@ class Deal(BaseModel):
     lead = models.ForeignKey(
         "Lead", blank=True, null=True, on_delete=models.CASCADE,
     )
-    company = models.ForeignKey(
-        "Company", blank=True, null=True, on_delete=models.CASCADE,
-        related_name="deals",
-    )
     state = models.CharField(
         max_length=20,
         choices=ProfileState.choices,
@@ -36,12 +32,9 @@ class Deal(BaseModel):
         blank=True,
         default="",
     )
-    metadata = models.JSONField(default=dict, blank=True)
-    next_step_date = models.DateField(blank=True, null=True)
-    description = models.TextField(blank=True, default="")
-    active = models.BooleanField(default=True)
-    ticket = models.CharField(max_length=16, default="", unique=True)
-    win_closing_date = models.DateTimeField(blank=True, null=True)
+    reason = models.TextField(blank=True, default="")
+    connect_attempts = models.IntegerField(default=0)
+    backoff_hours = models.IntegerField(default=0)
 
     def __str__(self):
         return self.name

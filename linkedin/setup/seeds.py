@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 
-from linkedin.db._helpers import _make_ticket
 from linkedin.db.urls import public_id_to_url, url_to_public_id
 from linkedin.enums import ProfileState
 
@@ -69,7 +68,6 @@ def create_seed_leads(campaign, public_ids: list[str]) -> int:
             state=ProfileState.QUALIFIED,
             owner=user,
             department=dept,
-            ticket=_make_ticket(),
         )
         existing_seeds.add(public_id)
         created += 1

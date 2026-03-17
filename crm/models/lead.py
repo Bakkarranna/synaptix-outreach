@@ -23,9 +23,6 @@ class Lead(BaseModel):
     website = models.URLField(max_length=200, blank=True, default="", unique=True)
     description = models.TextField(blank=True, default="")
     disqualified = models.BooleanField(default=False)
-    company = models.ForeignKey(
-        "Company", blank=True, null=True, on_delete=models.CASCADE,
-    )
 
     def __str__(self):
         name = f"{self.first_name} {self.last_name}".strip()

@@ -6,7 +6,6 @@ from django.core.files.base import ContentFile
 from django.db import transaction
 from termcolor import colored
 
-from linkedin.db._helpers import _make_ticket
 from linkedin.db.urls import url_to_public_id, public_id_to_url
 from linkedin.enums import ProfileState
 
@@ -76,7 +75,7 @@ def lead_exists(url: str) -> bool:
 
 @transaction.atomic
 def create_enriched_lead(session, url: str, profile: Dict[str, Any], data: Optional[Dict[str, Any]] = None) -> Optional[int]:
-    """Create Lead with full profile data, Company, and embedding.
+    """Create Lead with full profile data and embedding.
 
     Returns lead PK or None if exists.
     Does NOT create Deal — that comes at qualification.
@@ -99,7 +98,6 @@ def create_enriched_lead(session, url: str, profile: Dict[str, Any], data: Optio
     )
 
     _update_lead_fields(lead, profile)
-    _ensure_company(lead, profile)
 
     if data:
         _attach_raw_data(lead, public_id, data)
@@ -114,33 +112,27 @@ def create_enriched_lead(session, url: str, profile: Dict[str, Any], data: Optio
 def promote_lead_to_deal(session, public_id: str, reason: str = ""):
     """Create a QUALIFIED Deal for a Lead.
 
-    Returns the Deal. Raises ValueError if Lead has no Company.
+    Returns the Deal.
     """
     from crm.models import Lead, Deal
-    from datetime import date
 
     clean_url = public_id_to_url(public_id)
     lead = Lead.objects.filter(website=clean_url).first()
     if not lead:
         raise ValueError(f"No Lead for {public_id}")
 
-    company = lead.company
-    if not company:
-        raise ValueError(f"Lead {public_id} has no Company — cannot create Deal")
+    if not lead.company_name:
+        raise ValueError(f"Lead {public_id} has no company_name — cannot create Deal")
 
     dept = session.campaign.department
 
-    meta = {"reason": reason} if reason else {}
     deal = Deal.objects.create(
         name=f"LinkedIn: {public_id}",
         lead=lead,
-        company=company,
         state=ProfileState.QUALIFIED,
         owner=session.django_user,
         department=dept,
-        metadata=meta,
-        next_step_date=date.today(),
-        ticket=_make_ticket(),
+        reason=reason,
     )
 
     logger.info("%s %s", public_id, colored("QUALIFIED", "green", attrs=["bold"]))
@@ -213,23 +205,6 @@ def _update_lead_fields(lead, profile: Dict[str, Any]):
 
     lead.description = json.dumps(profile, ensure_ascii=False, default=str)
     lead.save()
-
-
-def _ensure_company(lead, profile: Dict[str, Any]):
-    """Create or get Company from first position. Returns Company or None."""
-    from crm.models import Company
-
-    positions = profile.get("positions", [])
-    if not positions or not positions[0].get("company_name"):
-        return None
-
-    company, _ = Company.objects.get_or_create(
-        full_name=positions[0]["company_name"],
-        defaults={"owner": lead.owner, "department": lead.department},
-    )
-    lead.company = company
-    lead.save()
-    return company
 
 
 def _attach_raw_data(lead, public_id: str, data: Dict[str, Any]):

@@ -266,7 +266,7 @@ class TestHandleCheckPending:
         from crm.models import Deal
         from linkedin.db.urls import public_id_to_url
         deal = Deal.objects.get(lead__website=public_id_to_url("alice"))
-        assert deal.metadata["backoff_hours"] == 144
+        assert deal.backoff_hours == 144
 
         # Should have re-enqueued check_pending with new backoff
         next_task = Task.objects.filter(

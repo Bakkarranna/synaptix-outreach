@@ -69,7 +69,6 @@ class TestProfileEmbeddingModel:
     def test_get_labeled_arrays_from_deals(self, fake_session):
         """Labels are derived from Deal state + closing_reason, not ProfileEmbedding fields."""
         from crm.models import Deal, Lead, ClosingReason
-        from linkedin.db._helpers import _make_ticket
         from linkedin.enums import ProfileState
         from linkedin.models import ProfileEmbedding
 
@@ -82,8 +81,7 @@ class TestProfileEmbeddingModel:
         ProfileEmbedding.objects.create(lead_id=lead.pk, public_identifier="alice", embedding=emb.tobytes())
         Deal.objects.create(
             name="test", lead=lead, state=ProfileState.QUALIFIED,
-            owner=user, department=dept, next_step_date=date.today(),
-            ticket=_make_ticket(),
+            owner=user, department=dept,
         )
 
         # Create a lead + embedding + FAILED/Disqualified deal → label=0
@@ -93,7 +91,6 @@ class TestProfileEmbeddingModel:
         Deal.objects.create(
             name="test2", lead=lead2, state=ProfileState.FAILED,
             owner=user, department=dept, closing_reason=ClosingReason.DISQUALIFIED,
-            active=False, next_step_date=date.today(), ticket=_make_ticket(),
         )
 
         X, y = ProfileEmbedding.get_labeled_arrays(dept)
@@ -103,7 +100,6 @@ class TestProfileEmbeddingModel:
     def test_get_labeled_arrays_skips_operational_failures(self, fake_session):
         """FAILED deals with non-Disqualified closing reason are not training data."""
         from crm.models import Deal, Lead, ClosingReason
-        from linkedin.db._helpers import _make_ticket
         from linkedin.enums import ProfileState
         from linkedin.models import ProfileEmbedding
 
@@ -116,7 +112,6 @@ class TestProfileEmbeddingModel:
         Deal.objects.create(
             name="test", lead=lead, state=ProfileState.FAILED,
             owner=user, department=dept, closing_reason=ClosingReason.FAILED,
-            active=False, next_step_date=date.today(), ticket=_make_ticket(),
         )
 
         X, y = ProfileEmbedding.get_labeled_arrays(dept)

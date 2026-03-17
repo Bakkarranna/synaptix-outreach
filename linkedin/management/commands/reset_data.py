@@ -3,7 +3,7 @@ from django.core.management.base import BaseCommand
 
 class Command(BaseCommand):
     help = (
-        "Delete all Leads, Companies, Deals, ProfileEmbeddings, "
+        "Delete all Leads, Deals, ProfileEmbeddings, "
         "TheFiles, ActionLogs, reset SearchKeywords, and remove GP model files. "
         "Keeps Campaigns, Departments, LinkedInProfiles."
     )
@@ -17,14 +17,13 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         from common.models import TheFile
-        from crm.models import Company, Deal, Lead
+        from crm.models import Deal, Lead
 
         from linkedin.conf import MODELS_DIR
         from linkedin.models import ActionLog, ProfileEmbedding, SearchKeyword
 
         counts = {
             "Leads": Lead.objects.count(),
-            "Companies": Company.objects.count(),
             "Deals": Deal.objects.count(),
             "ProfileEmbeddings": ProfileEmbedding.objects.count(),
             "TheFiles": TheFile.objects.count(),
@@ -52,7 +51,6 @@ class Command(BaseCommand):
         TheFile.objects.all().delete()
         ProfileEmbedding.objects.all().delete()
         ActionLog.objects.all().delete()
-        Company.objects.all().delete()
         Lead.objects.all().delete()
 
         # Reset search keywords to unused

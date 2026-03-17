@@ -110,7 +110,6 @@ def handle_connect(task, session, qualifiers):
     if strategy.pre_connect:
         strategy.pre_connect(session, public_id)
 
-    from linkedin.db.deals import parse_metadata
     from linkedin.db.urls import public_id_to_url
     from crm.models import Deal
 
@@ -118,7 +117,7 @@ def handle_connect(task, session, qualifiers):
         lead__website=public_id_to_url(public_id),
         department=session.campaign.department,
     ).first()
-    reason = parse_metadata(deal).get("reason", "") if deal else ""
+    reason = deal.reason if deal else ""
     stats = strategy.qualifier.explain(candidate, session) if strategy.qualifier else ""
     logger.info("[%s] %s", campaign, colored("\u25b6 connect", "cyan", attrs=["bold"]))
     logger.info("[%s] %s (%s) — %s", campaign, public_id, stats, reason or "")

@@ -103,7 +103,6 @@ def heal_tasks(session):
     4. Create 'follow_up' tasks for CONNECTED profiles without tasks
     """
     from crm.models import Deal
-    from linkedin.db.deals import parse_metadata
     from linkedin.db.urls import url_to_public_id
     from linkedin.enums import ProfileState
 
@@ -133,8 +132,7 @@ def heal_tasks(session):
             public_id = url_to_public_id(deal.lead.website) if deal.lead.website else None
             if not public_id:
                 continue
-            meta = parse_metadata(deal)
-            backoff = meta.get("backoff_hours", cfg["check_pending_recheck_after_hours"])
+            backoff = deal.backoff_hours or cfg["check_pending_recheck_after_hours"]
             enqueue_check_pending(campaign.pk, public_id, backoff_hours=backoff)
 
     # 4. Follow_up tasks for CONNECTED profiles

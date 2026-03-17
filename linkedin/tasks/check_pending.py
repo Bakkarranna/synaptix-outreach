@@ -8,7 +8,7 @@ from termcolor import colored
 
 from django.db import transaction
 
-from linkedin.db.deals import get_profile_dict_for_public_id, parse_metadata, set_profile_state
+from linkedin.db.deals import get_profile_dict_for_public_id, set_profile_state
 from linkedin.db.urls import public_id_to_url
 from linkedin.enums import ProfileState
 from linkedin.exceptions import SkipProfile
@@ -58,10 +58,8 @@ def handle_check_pending(task, session, qualifiers):
                 department=session.campaign.department,
             ).first()
             if deal:
-                meta = parse_metadata(deal)
-                meta["backoff_hours"] = new_backoff
-                deal.metadata = meta
-                deal.save(update_fields=["metadata"])
+                deal.backoff_hours = new_backoff
+                deal.save(update_fields=["backoff_hours"])
         logger.debug(
             "%s still pending — backoff %.1fh → %.1fh",
             public_id, backoff_hours, new_backoff,

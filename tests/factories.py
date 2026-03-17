@@ -1,6 +1,4 @@
 # tests/factories.py
-import uuid
-
 import factory
 from django.contrib.auth.models import User
 from faker import Faker
@@ -15,13 +13,6 @@ class UserFactory(factory.django.DjangoModelFactory):
     username = factory.LazyFunction(fake.user_name)
     is_staff = True
     is_active = True
-
-
-class CompanyFactory(factory.django.DjangoModelFactory):
-    class Meta:
-        model = "crm.Company"
-
-    full_name = factory.LazyFunction(fake.company)
 
 
 class LeadFactory(factory.django.DjangoModelFactory):
@@ -41,4 +32,3 @@ class DealFactory(factory.django.DjangoModelFactory):
 
     name = factory.LazyFunction(lambda: f"LinkedIn: {fake.user_name()}")
     lead = factory.SubFactory(LeadFactory)
-    ticket = factory.LazyFunction(lambda: uuid.uuid4().hex[:16])

@@ -17,7 +17,7 @@ def ensure_lead_enriched(session, lead_id: int, public_id: str, *, quiet: bool =
     or missing lead).
     """
     from crm.models import Lead
-    from linkedin.db.leads import _update_lead_fields, _ensure_company, _attach_raw_data
+    from linkedin.db.leads import _update_lead_fields, _attach_raw_data
 
     lead = Lead.objects.filter(pk=lead_id).first()
     if not lead:
@@ -30,7 +30,6 @@ def ensure_lead_enriched(session, lead_id: int, public_id: str, *, quiet: bool =
         return False
 
     _update_lead_fields(lead, profile)
-    _ensure_company(lead, profile)
     if data:
         _attach_raw_data(lead, public_id, data)
 

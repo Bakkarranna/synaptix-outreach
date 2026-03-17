@@ -77,7 +77,7 @@ class TestQualifyAutoDecisions:
             patch("linkedin.ml.qualifier.qualify_with_llm", return_value=(1, "Good fit")),
             patch.object(qualifier, "update"),
             patch("linkedin.db.leads.promote_lead_to_deal",
-                  side_effect=ValueError("no Company")),
+                  side_effect=ValueError("no company_name")),
             patch("linkedin.db.deals.create_disqualified_deal") as mock_disqualify,
         ):
             run_qualification(session, qualifier)

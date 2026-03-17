@@ -97,7 +97,7 @@ class TestCreateEnrichedLead:
         lead = Lead.objects.get(website="https://www.linkedin.com/in/alice/")
         assert lead.first_name == "Alice"
 
-    def test_creates_company(self, fake_session):
+    def test_sets_company_name(self, fake_session):
         from crm.models import Lead
         create_enriched_lead(
             fake_session,
@@ -105,8 +105,7 @@ class TestCreateEnrichedLead:
             SAMPLE_PROFILE,
         )
         lead = Lead.objects.get(website="https://www.linkedin.com/in/alice/")
-        assert lead.company is not None
-        assert lead.company.full_name == "Acme"
+        assert lead.company_name == "Acme"
 
     def test_returns_none_for_duplicate(self, fake_session):
         create_enriched_lead(
@@ -140,7 +139,7 @@ class TestCreateEnrichedLead:
         )
         assert TheFile.objects.count() == 1
 
-    def test_no_company_when_no_positions(self, fake_session):
+    def test_no_company_name_when_no_positions(self, fake_session):
         from crm.models import Lead
         profile = {"first_name": "Bob", "headline": "Freelancer", "positions": []}
         create_enriched_lead(
@@ -149,7 +148,7 @@ class TestCreateEnrichedLead:
             profile,
         )
         lead = Lead.objects.get(website="https://www.linkedin.com/in/bob/")
-        assert lead.company is None
+        assert lead.company_name == ""
 
 
 @pytest.mark.django_db
@@ -166,14 +165,14 @@ class TestPromoteLeadToDeal:
         assert deal.state == ProfileState.QUALIFIED
         assert Deal.objects.count() == 1
 
-    def test_raises_without_company(self, fake_session):
+    def test_raises_without_company_name(self, fake_session):
         profile = {"first_name": "Bob", "headline": "Freelancer", "positions": []}
         create_enriched_lead(
             fake_session,
             "https://www.linkedin.com/in/bob/",
             profile,
         )
-        with pytest.raises(ValueError, match="no Company"):
+        with pytest.raises(ValueError, match="no company_name"):
             promote_lead_to_deal(fake_session, "bob")
 
 
@@ -287,8 +286,7 @@ class TestCreateDisqualifiedDeal:
         assert deal is not None
         assert deal.state == ProfileState.FAILED
         assert deal.closing_reason == ClosingReason.DISQUALIFIED
-        assert deal.active is False
-        assert deal.description == "Bad fit"
+        assert deal.reason == "Bad fit"
 
     def test_excludes_from_qualification(self, fake_session):
         """A lead with a disqualified Deal in this department is excluded."""

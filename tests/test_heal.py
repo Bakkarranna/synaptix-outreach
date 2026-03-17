@@ -75,7 +75,7 @@ class TestHealTasks:
         from linkedin.db.urls import public_id_to_url
         Deal.objects.filter(
             lead__website=public_id_to_url("alice"),
-        ).update(metadata={"backoff_hours": 96})
+        ).update(backoff_hours=96)
 
         heal_tasks(fake_session)
         task = Task.objects.get(
