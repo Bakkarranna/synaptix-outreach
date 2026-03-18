@@ -5,7 +5,8 @@
 - **Python env**: Always use `.venv/bin/python` (not system `python3`).
 - **Commits**: No `Co-Authored-By` lines. Single-line messages (no body).
 - **Dependencies**: Managed in `requirements/*.txt` (used by local dev and Docker).
-- **Docs sync**: When modifying code, update CLAUDE.md and MEMORY.md to reflect changes.
+- **Docs sync**: When modifying code, update CLAUDE.md and ARCHITECTURE.md to reflect changes.
+- **No memory**: Never use the auto-memory system (no MEMORY.md, no memory files). All persistent context belongs in CLAUDE.md or ARCHITECTURE.md.
 - **Error handling**: App should crash on unexpected errors. `try/except` only for expected, recoverable errors. Custom exceptions in `exceptions.py`.
 - **No backward compat**: CRM models are owned by this project — no need for backward compatibility shims, legacy migration code, or re-export modules. Simplify freely.
 
