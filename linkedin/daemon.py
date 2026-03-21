@@ -12,7 +12,14 @@ from django.utils import timezone
 
 from termcolor import colored
 
-from linkedin.conf import ACTIVE_END_HOUR, ACTIVE_START_HOUR, ACTIVE_TIMEZONE, CAMPAIGN_CONFIG, REST_DAYS
+from linkedin.conf import (
+    ACTIVE_END_HOUR,
+    ACTIVE_START_HOUR,
+    ACTIVE_TIMEZONE,
+    CAMPAIGN_CONFIG,
+    ENABLE_ACTIVE_HOURS,
+    REST_DAYS,
+)
 from linkedin.diagnostics import failure_diagnostics
 from linkedin.ml.qualifier import BayesianQualifier, KitQualifier
 from linkedin.models import Task
@@ -89,6 +96,8 @@ def _build_qualifiers(campaigns, cfg, kit_model=None):
 
 def seconds_until_active() -> float:
     """Return seconds to wait before the next active window, or 0 if active now."""
+    if not ENABLE_ACTIVE_HOURS:
+        return 0.0
     tz = ZoneInfo(ACTIVE_TIMEZONE)
     now = timezone.localtime(timezone=tz)
 

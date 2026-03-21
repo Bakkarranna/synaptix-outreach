@@ -103,3 +103,9 @@ class TestSecondsUntilActive:
             result = seconds_until_active()
             # Should be outside (end is exclusive), next day 9am = 16h
             assert result == pytest.approx(16 * 3600, abs=1)
+
+    @patch("linkedin.daemon.ENABLE_ACTIVE_HOURS", False)
+    def test_disabled_always_active(self):
+        # Outside hours on a rest day — should still return 0 when disabled
+        with patch("linkedin.daemon.timezone.localtime", return_value=_mock_now(2026, 3, 21, 23)):
+            assert seconds_until_active() == 0.0
