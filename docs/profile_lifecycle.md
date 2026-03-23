@@ -25,7 +25,7 @@ additional discovery when the candidate pool runs dry.
 
 ## 2. Enrichment + Embedding (eager, at discovery time)
 
-**Where:** `browser/nav.py:_discover_and_enrich()` → `db/leads.py:create_enriched_lead()` → `ml/embeddings.py:embed_profile()`
+**Where:** `browser/nav.py:_discover_and_enrich()` → `db/leads.py:create_enriched_lead()` → `Lead.get_embedding()`
 
 For each new URL discovered:
 

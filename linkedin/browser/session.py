@@ -65,7 +65,7 @@ class AccountSession:
         Reads from the ``/in/me/`` marker Lead if it exists, otherwise
         discovers the profile via Voyager API and persists it.
         """
-        if self._self_profile:
+        if self._self_profile is not None:
             return self._self_profile
 
         from crm.models import Lead

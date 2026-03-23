@@ -154,7 +154,7 @@ Profile CRUD backed by Django models:
 ### `embeddings.py`
 
 - Uses `fastembed` for embedding generation (model configurable, default BAAI/bge-small-en-v1.5).
-- Functions: `embed_text()`, `embed_texts()`, `embed_profile()` (builds text + embeds + stores directly on the `Lead` model's `embedding` BinaryField).
+- Functions: `embed_text()`, `embed_texts()`. Embedding storage is handled by `Lead.get_embedding()`.
 - Storage and querying handled by the `Lead` model's `embedding` field (with `embedding_array` numpy property accessor).
 
 ### `profile_text.py`

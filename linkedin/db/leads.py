@@ -21,7 +21,6 @@ def lead_exists(url: str) -> bool:
     return Lead.objects.filter(linkedin_url=clean_url).exists()
 
 
-@transaction.atomic
 def create_enriched_lead(session, url: str, profile: Dict[str, Any]) -> Optional[int]:
     """Create Lead with full profile data and embedding.
 
@@ -29,21 +28,19 @@ def create_enriched_lead(session, url: str, profile: Dict[str, Any]) -> Optional
     Does NOT create Deal — that comes at qualification.
     """
     from crm.models import Lead
-    from linkedin.ml.embeddings import embed_profile
 
     # Use canonical public_identifier from Voyager response when available.
     canonical_pid = profile.get("public_identifier")
     public_id = canonical_pid or url_to_public_id(url)
     clean_url = public_id_to_url(public_id)
 
-    if Lead.objects.filter(linkedin_url=clean_url).exists():
-        return None
+    with transaction.atomic():
+        if Lead.objects.filter(linkedin_url=clean_url).exists():
+            return None
+        lead = Lead.objects.create(linkedin_url=clean_url, public_identifier=public_id)
+        _update_lead_fields(lead, profile)
 
-    lead = Lead.objects.create(linkedin_url=clean_url, public_identifier=public_id)
-
-    _update_lead_fields(lead, profile)
-
-    embed_profile(lead.pk, public_id, profile)
+    lead.get_embedding(session)
 
     logger.debug("Created enriched lead for %s (pk=%d)", public_id, lead.pk)
     return lead.pk

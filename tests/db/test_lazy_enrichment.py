@@ -29,9 +29,9 @@ class TestGetProfile:
             description=json.dumps(FAKE_PROFILE),
         )
 
-        with patch.object(lead, "_enrich") as mock:
+        with patch("linkedin.api.client.PlaywrightLinkedinAPI") as MockAPI:
             result = lead.get_profile(fake_session)
-            mock.assert_not_called()
+            MockAPI.assert_not_called()
 
         assert result["first_name"] == "Alice"
 
@@ -99,7 +99,7 @@ class TestGetEmbedding:
             embedding=emb.tobytes(),
         )
 
-        with patch.object(lead, "_embed") as mock:
+        with patch("linkedin.ml.embeddings.embed_text") as mock:
             result = lead.get_embedding(fake_session)
             mock.assert_not_called()
 

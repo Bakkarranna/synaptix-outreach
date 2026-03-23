@@ -78,7 +78,7 @@ Three apps in `INSTALLED_APPS`:
 - **`pipeline/pools.py`** — Composable generators: `search_source` → `qualify_source` → `ready_source`.
 - **`pipeline/freemium_pool.py`** — Seed priority + undiscovered pool, ranked by qualifier.
 - **`ml/qualifier.py`** — `Qualifier` protocol, `BayesianQualifier`, `KitQualifier`, `qualify_with_llm()`.
-- **`ml/embeddings.py`** — FastEmbed utilities, `embed_profile()`.
+- **`ml/embeddings.py`** — FastEmbed utilities, `embed_text()`, `embed_texts()`.
 - **`ml/profile_text.py`** — `build_profile_text()`.
 - **`ml/hub.py`** — HuggingFace kit loader (`fetch_kit()`).
 - **`browser/session.py`** — `AccountSession`: handle, linkedin_profile, page, context, browser, playwright. `campaigns` cached_property (list, via Campaign.users M2M). `ensure_browser()` launches/recovers browser. `get_self_profile()` returns authenticated user's profile dict (instance-cached, discovers via API on first run). Cookie expiry check via `_maybe_refresh_cookies()`.

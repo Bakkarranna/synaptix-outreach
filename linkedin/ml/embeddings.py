@@ -39,15 +39,3 @@ def embed_texts(texts: list[str]) -> np.ndarray:
     return np.array(embeddings, dtype=np.float32)
 
 
-def embed_profile(lead_id: int, public_id: str, profile_data: dict) -> bool:
-    """Build text, compute embedding, and store on Lead.
-
-    Returns True if embedding was stored, False on failure.
-    """
-    from crm.models import Lead
-    from linkedin.ml.profile_text import build_profile_text
-
-    text = build_profile_text({"profile": profile_data})
-    emb = embed_text(text)
-    Lead.objects.filter(pk=lead_id).update(embedding=emb.tobytes())
-    return True
