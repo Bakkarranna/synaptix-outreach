@@ -161,7 +161,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     session = get_or_create_session(handle=handle)
-    session.campaign = session.campaigns.first()
+    session.campaign = session.campaigns[0]
 
     print(f"Fetching conversation as @{handle} → {args.profile}")
     messages = get_conversation(session, args.profile)

@@ -110,6 +110,6 @@ if __name__ == "__main__":
     print(f"Checking connection status as @{handle} → {args.profile}")
 
     session = get_or_create_session(handle=handle)
-    session.campaign = session.campaigns.first()
+    session.campaign = session.campaigns[0]
     status = get_connection_status(session, test_profile)
     print(f"Connection status → {status.value}")

@@ -1,7 +1,6 @@
 # linkedin/api/messaging/__init__.py
 """Voyager Messaging API — send & retrieve messages."""
 from linkedin.api.messaging.utils import (  # noqa: F401
-    get_self_urn,
     encode_urn,
     check_response,
 )

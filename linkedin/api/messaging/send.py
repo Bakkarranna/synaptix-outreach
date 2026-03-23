@@ -9,7 +9,7 @@ from typing import Optional
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from linkedin.api.client import PlaywrightLinkedinAPI
-from linkedin.api.messaging.utils import get_self_urn, check_response
+from linkedin.api.messaging.utils import check_response
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,7 @@ def send_message(
         API response dict with delivery confirmation.
     """
     if not mailbox_urn:
-        mailbox_urn = get_self_urn(api)
+        mailbox_urn = api.session.get_self_urn()
 
     origin_token = str(uuid.uuid4())
     tracking_id = os.urandom(16).hex()
@@ -107,7 +107,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     session = get_or_create_session(handle=handle)
-    session.campaign = session.campaigns.first()
+    session.campaign = session.campaigns[0]
     session.ensure_browser()
 
     api = PlaywrightLinkedinAPI(session=session)

@@ -62,7 +62,7 @@ def _run_daemon():
     session = get_or_create_session(handle=handle)
 
     # Set default campaign (first non-freemium, or first available) for startup tasks
-    first_campaign = session.campaigns.filter(is_freemium=False).first() or session.campaigns.first()
+    first_campaign = next((c for c in session.campaigns if not c.is_freemium), None) or session.campaigns[0]
     if first_campaign is None:
         logger.error("No campaigns found for this user.")
         sys.exit(1)

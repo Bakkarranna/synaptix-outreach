@@ -42,7 +42,6 @@ def _sync_from_api(session, public_identifier: str, lead, ct):
     )
     from linkedin.api.client import PlaywrightLinkedinAPI
     from linkedin.api.messaging import fetch_messages
-    from linkedin.api.messaging.utils import get_self_urn
 
     session.ensure_browser()
     api = PlaywrightLinkedinAPI(session=session)
@@ -64,7 +63,7 @@ def _sync_from_api(session, public_identifier: str, lead, ct):
     raw = fetch_messages(api, conversation_urn)
     elements = raw.get("data", {}).get("messengerMessagesBySyncToken", {}).get("elements", [])
 
-    self_urn = get_self_urn(api)
+    self_urn = session.get_self_urn()
 
     for msg in elements:
         parsed = parse_message_element(msg)

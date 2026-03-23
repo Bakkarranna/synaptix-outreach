@@ -205,7 +205,7 @@ def run_daemon(session):
     # Startup healing
     heal_tasks(session)
 
-    campaigns = list(session.campaigns)
+    campaigns = session.campaigns
     if not campaigns:
         logger.error("No campaigns found — cannot start daemon")
         return

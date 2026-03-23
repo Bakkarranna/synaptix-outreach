@@ -5,7 +5,7 @@ import logging
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from linkedin.api.client import PlaywrightLinkedinAPI
-from linkedin.api.messaging.utils import get_self_urn, encode_urn, check_response
+from linkedin.api.messaging.utils import encode_urn, check_response
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ def _graphql_headers(api: PlaywrightLinkedinAPI) -> dict:
 )
 def fetch_conversations(api: PlaywrightLinkedinAPI) -> dict:
     """Fetch recent conversations list. Returns raw API response."""
-    mailbox_urn = get_self_urn(api)
+    mailbox_urn = api.session.get_self_urn()
     url = (
         f"{_GRAPHQL_BASE}"
         f"?queryId={_CONVERSATIONS_QUERY_ID}"
@@ -84,7 +84,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     session = get_or_create_session(handle=handle)
-    session.campaign = session.campaigns.first()
+    session.campaign = session.campaigns[0]
     session.ensure_browser()
 
     api = PlaywrightLinkedinAPI(session=session)

@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import random
 import time
+from functools import cached_property
 
 from linkedin.conf import MIN_DELAY, MAX_DELAY
 
@@ -39,11 +40,14 @@ class AccountSession:
         self.browser = None
         self.playwright = None
 
-    @property
+        # Cached after first API lookup (never changes during a session)
+        self._self_urn = None
+
+    @cached_property
     def campaigns(self):
-        """All campaigns this user belongs to."""
+        """All campaigns this user belongs to (cached)."""
         from linkedin.models import Campaign
-        return Campaign.objects.filter(users=self.django_user)
+        return list(Campaign.objects.filter(users=self.django_user))
 
     def ensure_browser(self):
         """Launch or recover browser + login if needed. Call before using .page"""
@@ -54,6 +58,30 @@ class AccountSession:
             start_browser_session(session=self, handle=self.handle)
         else:
             self._maybe_refresh_cookies()
+
+    def get_self_urn(self):
+        """Lazy accessor: return the authenticated user's fsd_profile URN (cached)."""
+        if self._self_urn:
+            return self._self_urn
+
+        from crm.models import Lead
+        from linkedin.api.client import PlaywrightLinkedinAPI
+        from linkedin.exceptions import AuthenticationError
+        from linkedin.setup.self_profile import ME_URL
+
+        sentinel = Lead.objects.filter(linkedin_url=ME_URL).only("description", "public_identifier").first()
+        if sentinel:
+            urn = sentinel.get_urn(self)
+            if urn:
+                self._self_urn = urn
+                return urn
+
+        api = PlaywrightLinkedinAPI(session=self)
+        profile, _ = api.get_profile(public_identifier="me")
+        if not profile:
+            raise AuthenticationError("Cannot fetch own profile via Voyager API")
+        self._self_urn = profile["urn"]
+        return self._self_urn
 
     def wait(self, min_delay=MIN_DELAY, max_delay=MAX_DELAY):
         random_sleep(min_delay, max_delay)
