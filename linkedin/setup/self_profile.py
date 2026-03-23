@@ -41,18 +41,19 @@ def ensure_self_profile(session):
     real_url = public_id_to_url(real_id)
 
     # Disqualified lead for the real profile URL (no embedding).
+    import json
     Lead.objects.update_or_create(
         linkedin_url=real_url,
         defaults={
             "first_name": profile.get("first_name", ""),
             "last_name": profile.get("last_name", ""),
             "disqualified": True,
+            "description": json.dumps(profile, ensure_ascii=False, default=str),
         },
     )
     logger.info("Self-profile discovered: %s", real_url)
 
     # /in/me/ sentinel — disqualified, used for subsequent-run detection.
-    import json
     Lead.objects.update_or_create(
         linkedin_url=ME_URL,
         defaults={

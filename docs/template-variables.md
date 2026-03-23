@@ -17,7 +17,7 @@ The follow-up agent template receives these named variables (not a spread profil
 | `headline` | string or null | Lead's profile headline | `"VP of Engineering at Acme"` |
 | `current_company` | string or null | Company from first position | `"Acme Corp"` |
 | `location` | string or null | Location as displayed on profile | `"San Francisco, California"` |
-| `past_messages_count` | integer | Number of previous outgoing messages to this lead | `2` |
+| `messages_exchanged` | integer | Total number of messages exchanged with this lead (inbound + outbound) | `5` |
 
 ## Voyager API Profile Structure
 

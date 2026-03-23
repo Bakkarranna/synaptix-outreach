@@ -24,9 +24,7 @@ SELECTORS = {
 
 
 def send_raw_message(session, profile: Dict[str, Any], message: str) -> bool:
-    """Send an arbitrary message to a profile and persist it. Returns True if sent."""
-    from linkedin.db.chat import save_chat_message
-
+    """Send an arbitrary message to a profile. Returns True if sent."""
     public_identifier = profile.get("public_identifier")
 
     sent = (
@@ -38,7 +36,6 @@ def send_raw_message(session, profile: Dict[str, Any], message: str) -> bool:
         logger.error("All send methods failed for %s", public_identifier)
         return False
 
-    save_chat_message(session, public_identifier, message)
     logger.info("Message sent to %s: %s", public_identifier, message)
     return True
 

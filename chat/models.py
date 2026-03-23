@@ -50,6 +50,16 @@ class ChatMessage(models.Model):
         default=timezone.now,
         verbose_name=_("Creation date")
     )
+    linkedin_urn = models.CharField(
+        max_length=300, unique=True,
+        verbose_name=_("LinkedIn message URN"),
+        help_text=_("entityUrn from Voyager API, used for dedup"),
+    )
+    is_outgoing = models.BooleanField(
+        default=True,
+        verbose_name=_("Outgoing"),
+        help_text=_("True if sent by us, False if received"),
+    )
     def __str__(self):
         return f'{truncatechars(self.content, 70)}'
 

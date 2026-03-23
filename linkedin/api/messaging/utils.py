@@ -10,7 +10,24 @@ logger = logging.getLogger(__name__)
 
 
 def get_self_urn(api: PlaywrightLinkedinAPI) -> str:
-    """Return the authenticated user's fsd_profile URN."""
+    """Return the authenticated user's fsd_profile URN via the /in/me/ sentinel lead."""
+    import json
+    from crm.models import Lead
+    from linkedin.db.leads import resolve_urn
+    from linkedin.setup.self_profile import ME_URL
+
+    sentinel = Lead.objects.filter(linkedin_url=ME_URL).only("description").first()
+    if sentinel and sentinel.description:
+        try:
+            public_id = json.loads(sentinel.description)["public_identifier"]
+        except (ValueError, TypeError, KeyError):
+            public_id = None
+        if public_id:
+            urn = resolve_urn(public_id, session=api.session)
+            if urn:
+                return urn
+
+    # Fallback: fetch directly
     profile, _ = api.get_profile(public_identifier="me")
     if not profile:
         raise AuthenticationError("Cannot fetch own profile via Voyager API")

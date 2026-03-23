@@ -26,15 +26,16 @@ def _build_tools(session, public_id: str, profile: dict, campaign_id: int):
     @tool
     def read_conversation() -> str:
         """Read the conversation history with this lead. Returns formatted messages or 'No conversation yet.'"""
-        from linkedin.actions.conversations import get_conversation
+        from linkedin.db.chat import sync_conversation
 
-        messages = get_conversation(session, public_id)
+        messages = sync_conversation(session, public_id)
         if not messages:
             return "No conversation yet."
 
         lines = []
         for msg in messages:
-            lines.append(f"[{msg['timestamp']}] {msg['sender']}: {msg['text']}")
+            direction = "→" if msg["is_outgoing"] else "←"
+            lines.append(f"[{msg['timestamp']}] {direction} {msg['sender']}: {msg['text']}")
         return "\n".join(lines)
 
     @tool
@@ -70,8 +71,8 @@ def _build_tools(session, public_id: str, profile: dict, campaign_id: int):
     return [read_conversation, send_message, mark_completed, schedule_follow_up]
 
 
-def _count_past_messages(session, public_id: str) -> int:
-    """Count saved outgoing ChatMessages for this lead."""
+def _count_messages_exchanged(session, public_id: str) -> int:
+    """Count all ChatMessages for a lead under this account."""
     from chat.models import ChatMessage
     from django.contrib.contenttypes.models import ContentType
     from crm.models import Lead
@@ -112,7 +113,7 @@ def _get_self_name(session) -> str:
     return full or session.handle
 
 
-def _render_system_prompt(session, profile: dict, past_messages_count: int) -> str:
+def _render_system_prompt(session, profile: dict, messages_exchanged: int) -> str:
     """Render the agent system prompt from the Jinja2 template."""
     env = jinja2.Environment(loader=jinja2.FileSystemLoader(str(PROMPTS_DIR)))
     template = env.get_template("follow_up_agent.j2")
@@ -130,7 +131,7 @@ def _render_system_prompt(session, profile: dict, past_messages_count: int) -> s
         current_company=profile.get("current_company", ""),
         location=profile.get("location", ""),
         supported_locales=profile.get("supported_locales", []),
-        past_messages_count=past_messages_count,
+        messages_exchanged=messages_exchanged,
     )
 
 
@@ -159,8 +160,12 @@ def run_follow_up_agent(
     tools_by_name = {t.name: t for t in tools}
     llm_with_tools = llm.bind_tools(tools, parallel_tool_calls=False)
 
-    past_messages_count = _count_past_messages(session, public_id)
-    system_prompt = _render_system_prompt(session, profile, past_messages_count)
+    # Sync conversation from API so the DB count is up-to-date.
+    from linkedin.db.chat import sync_conversation
+    sync_conversation(session, public_id)
+
+    messages_exchanged = _count_messages_exchanged(session, public_id)
+    system_prompt = _render_system_prompt(session, profile, messages_exchanged)
 
     messages: list = [SystemMessage(content=system_prompt), HumanMessage(content="Begin.")]
     actions_taken: list[dict] = []

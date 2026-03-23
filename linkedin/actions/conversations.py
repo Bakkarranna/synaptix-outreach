@@ -1,7 +1,7 @@
 # linkedin/actions/conversations.py
 """Retrieve past LinkedIn conversations for a given profile."""
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from linkedin.api.client import PlaywrightLinkedinAPI
 from linkedin.api.messaging import fetch_conversations, fetch_messages, encode_urn
@@ -54,26 +54,54 @@ def find_conversation_urn_via_navigation(session, target_urn: str) -> str | None
     return captured_urn[0]
 
 
+def parse_message_element(msg: dict) -> dict | None:
+    """Parse a single Voyager message element into a dict.
+
+    Returns {entityUrn, text, sender_name, sender_host_urn, delivered_at, is_outgoing (unset)}
+    or None if the element should be skipped.
+    """
+    body = msg.get("body", {})
+    text = body.get("text", "") if isinstance(body, dict) else str(body)
+    if not text:
+        return None
+
+    sender = msg.get("sender", {})
+    participant = sender.get("participantType", {}).get("member", {})
+    first = (participant.get("firstName") or {}).get("text", "")
+    last = (participant.get("lastName") or {}).get("text", "")
+    sender_name = f"{first} {last}".strip() or "unknown"
+
+    delivered_at = msg.get("deliveredAt")
+    ts = (
+        datetime.fromtimestamp(delivered_at / 1000, tz=timezone.utc)
+        if delivered_at
+        else None
+    )
+
+    return {
+        "entityUrn": msg.get("entityUrn"),
+        "text": text,
+        "sender_name": sender_name,
+        "sender_host_urn": sender.get("hostIdentityUrn", ""),
+        "delivered_at": ts,
+    }
+
+
 def parse_messages(raw: dict) -> list[dict]:
     """Parse raw messages response into a list of {sender, text, timestamp} dicts."""
     elements = raw.get("data", {}).get("messengerMessagesBySyncToken", {}).get("elements", [])
 
     messages = []
     for msg in elements:
-        body = msg.get("body", {})
-        text = body.get("text", "") if isinstance(body, dict) else str(body)
-        if not text:
+        parsed = parse_message_element(msg)
+        if not parsed:
             continue
-
-        participant = msg.get("sender", {}).get("participantType", {}).get("member", {})
-        first = (participant.get("firstName") or {}).get("text", "")
-        last = (participant.get("lastName") or {}).get("text", "")
-        sender_name = f"{first} {last}".strip()
-
-        delivered_at = msg.get("deliveredAt")
-        ts = datetime.fromtimestamp(delivered_at / 1000).strftime("%Y-%m-%d %H:%M") if delivered_at else ""
-
-        messages.append({"sender": sender_name or "unknown", "text": text, "timestamp": ts})
+        ts = parsed["delivered_at"]
+        messages.append({
+            "sender": parsed["sender_name"],
+            "text": parsed["text"],
+            "timestamp": ts.strftime("%Y-%m-%d %H:%M") if ts else "",
+        })
 
     messages.sort(key=lambda m: m["timestamp"])
     return messages
