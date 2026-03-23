@@ -30,9 +30,9 @@ def send_raw_message(session, profile: Dict[str, Any], message: str) -> bool:
     public_identifier = profile.get("public_identifier")
 
     sent = (
-        _send_msg_pop_up(session, profile, message)
+        _send_message_via_api(session, profile, message)
+        or _send_msg_pop_up(session, profile, message)
         or _send_message(session, profile, message)
-        or _send_message_via_api(session, profile, message)
     )
     if not sent:
         logger.error("All send methods failed for %s", public_identifier)
@@ -95,6 +95,9 @@ def _send_msg_pop_up(session: "AccountSession", profile: Dict[str, Any], message
 def _send_message(session: "AccountSession", profile: Dict[str, Any], message: str) -> bool:
     public_identifier = profile.get("public_identifier")
     full_name = profile.get("full_name")
+    if not full_name:
+        logger.error("Cannot send via direct thread: no full_name for %s", public_identifier)
+        return False
     try:
         goto_page(
             session,
@@ -103,12 +106,26 @@ def _send_message(session: "AccountSession", profile: Dict[str, Any], message: s
             timeout=30_000,
             error_message="Error opening messaging",
         )
-        # Search person
-        human_type(session.page.locator(SELECTORS["connections_input"]), full_name, min_delay=10, max_delay=50)
+
+        conn_input = session.page.locator(SELECTORS["connections_input"])
+        # Clear any pre-existing text in the search field
+        conn_input.fill("")
         session.wait(0.5, 1)
 
+        # Type the name and wait for search results to update
+        human_type(conn_input, full_name, min_delay=10, max_delay=50)
+        session.wait(2, 3)
+
+        # Verify the first search result matches the target name exactly
         item = session.page.locator(SELECTORS["search_result_row"]).first
-        session.wait(0.5, 1)
+        dt = item.locator("dt").first
+        name_in_result = dt.inner_text(timeout=5_000).split("•")[0].strip()
+        if name_in_result.lower() != full_name.lower():
+            logger.error(
+                "Recipient mismatch for %s: expected '%s' but got '%s' — aborting",
+                public_identifier, full_name, name_in_result,
+            )
+            return False
 
         # Scroll into view + click (very reliable on LinkedIn)
         item.scroll_into_view_if_needed()
@@ -171,10 +188,9 @@ if __name__ == "__main__":
 
     logging.basicConfig(level=logging.DEBUG, format="[%(levelname)s] %(message)s")
 
-    parser = argparse.ArgumentParser(description="Send a LinkedIn message")
+    parser = argparse.ArgumentParser(description="Debug LinkedIn messaging search results")
     parser.add_argument("--handle", default=None, help="LinkedIn handle (default: first active profile)")
-    parser.add_argument("--profile", required=True, help="Public identifier of the target profile")
-    parser.add_argument("--message", required=True, help="Message text to send")
+    parser.add_argument("--name", required=True, help="Full name to search for")
     args = parser.parse_args()
 
     handle = args.handle or get_first_active_profile_handle()
@@ -182,15 +198,34 @@ if __name__ == "__main__":
         print("No active LinkedInProfile found and no --handle provided.")
         raise SystemExit(1)
 
-    test_profile = {
-        "url": f"https://www.linkedin.com/in/{args.profile}/",
-        "public_identifier": args.profile,
-    }
-
     session = get_or_create_session(handle=handle)
     session.campaign = session.campaigns.first()
     session.ensure_browser()
-    print(f"Sending message as @{handle} → {args.profile}")
 
-    send_raw_message(session=session, profile=test_profile, message=args.message)
+    print(f"Searching for '{args.name}' ...")
+
+    goto_page(
+        session,
+        action=lambda: session.page.goto(LINKEDIN_MESSAGING_URL),
+        expected_url_pattern="/messaging",
+        timeout=30_000,
+        error_message="Error opening messaging",
+    )
+
+    conn_input = session.page.locator(SELECTORS["connections_input"])
+    conn_input.fill("")
+    session.wait(0.5, 1)
+    human_type(conn_input, args.name, min_delay=10, max_delay=50)
+    session.wait(3, 4)
+
+    rows = session.page.locator(SELECTORS["search_result_row"])
+    count = rows.count()
+    print(f"\n=== Found {count} result rows ===\n")
+    for i in range(min(count, 3)):
+        row = rows.nth(i)
+        print(f"--- Row {i} inner_text ---")
+        print(row.inner_text(timeout=5_000))
+        print(f"\n--- Row {i} outer_html ---")
+        print(row.evaluate("el => el.outerHTML"))
+        print()
 
