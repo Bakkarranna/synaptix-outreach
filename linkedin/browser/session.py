@@ -40,8 +40,8 @@ class AccountSession:
         self.browser = None
         self.playwright = None
 
-        # Cached after first API lookup (never changes during a session)
-        self._self_urn = None
+        # Cached after first lookup (never changes during a session)
+        self._self_profile = None
 
     @cached_property
     def campaigns(self):
@@ -59,29 +59,28 @@ class AccountSession:
         else:
             self._maybe_refresh_cookies()
 
-    def get_self_urn(self):
-        """Lazy accessor: return the authenticated user's fsd_profile URN (cached)."""
-        if self._self_urn:
-            return self._self_urn
+    def get_self_profile(self) -> dict:
+        """Lazy accessor: return the authenticated user's profile dict (cached).
+
+        Reads from the ``/in/me/`` marker Lead if it exists, otherwise
+        discovers the profile via Voyager API and persists it.
+        """
+        if self._self_profile:
+            return self._self_profile
 
         from crm.models import Lead
-        from linkedin.api.client import PlaywrightLinkedinAPI
-        from linkedin.exceptions import AuthenticationError
-        from linkedin.setup.self_profile import ME_URL
+        from linkedin.setup.self_profile import ME_URL, discover_self_profile
 
-        sentinel = Lead.objects.filter(linkedin_url=ME_URL).only("description", "public_identifier").first()
-        if sentinel:
-            urn = sentinel.get_urn(self)
-            if urn:
-                self._self_urn = urn
-                return urn
+        me = Lead.objects.filter(linkedin_url=ME_URL).first()
+        if me:
+            profile = me.get_profile(self)
+            if profile:
+                self._self_profile = profile
+                return profile
 
-        api = PlaywrightLinkedinAPI(session=self)
-        profile, _ = api.get_profile(public_identifier="me")
-        if not profile:
-            raise AuthenticationError("Cannot fetch own profile via Voyager API")
-        self._self_urn = profile["urn"]
-        return self._self_urn
+        self.ensure_browser()
+        self._self_profile = discover_self_profile(self)
+        return self._self_profile
 
     def wait(self, min_delay=MIN_DELAY, max_delay=MAX_DELAY):
         random_sleep(min_delay, max_delay)

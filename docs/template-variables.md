@@ -9,7 +9,7 @@ The follow-up agent template receives these named variables (not a spread profil
 
 | Variable | Type | Description | Example |
 |:---------|:-----|:------------|:--------|
-| `self_name` | string | The logged-in user's name (from `/in/me/` sentinel) | `"Jane Doe"` |
+| `self_name` | string | The logged-in user's name (from `/in/me/` marker) | `"Jane Doe"` |
 | `product_docs` | string | Product/service description from Campaign | |
 | `campaign_objective` | string | Campaign goal from Campaign | |
 | `booking_link` | string | Calendar link from Campaign | `"https://calendly.com/your-link"` |

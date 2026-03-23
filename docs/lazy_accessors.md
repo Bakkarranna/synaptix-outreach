@@ -15,7 +15,7 @@
 | Accessor         | Storage            | Triggers                                          |
 |------------------|--------------------|---------------------------------------------------|
 | `campaigns`      | `@cached_property` | DB query on first access, cached for session life  |
-| `get_self_urn()` | `_self_urn`        | sentinel Lead lookup → Voyager API fallback        |
+| `get_self_profile()` | `_self_profile` | `/in/me/` marker Lead → discover via API fallback |
 
 ## Candidates
 

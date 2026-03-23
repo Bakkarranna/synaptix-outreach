@@ -58,7 +58,7 @@ Australia, Japan, South Korea, New Zealand).
 - **GDPR-protected location**: the existing value is preserved (no override).
 - **Unknown/empty location**: defaults to GDPR-protected (errs on the side of caution).
 
-This check runs once per account (a database sentinel record prevents re-runs).
+This check runs once per account (a database marker record prevents re-runs).
 
 ## Hardcoded Defaults (`conf.py:CAMPAIGN_CONFIG`)
 

@@ -41,7 +41,6 @@ def _run_daemon():
     from linkedin.api.newsletter import ensure_newsletter_subscription
     from linkedin.daemon import run_daemon
     from linkedin.db.urls import public_id_to_url
-    from linkedin.setup.self_profile import ensure_self_profile
     from linkedin.setup.gdpr import apply_gdpr_newsletter_override
     from linkedin.onboarding import ensure_onboarding
     from linkedin.browser.registry import get_or_create_session
@@ -68,13 +67,12 @@ def _run_daemon():
         sys.exit(1)
     session.campaign = first_campaign
 
-    session.ensure_browser()
-    profile = ensure_self_profile(session)
+    profile = session.get_self_profile()
 
     if not session.linkedin_profile.newsletter_processed:
-        country_code = profile.get("country_code") if profile else None
+        country_code = profile.get("country_code")
         apply_gdpr_newsletter_override(session, country_code)
-        linkedin_url = public_id_to_url(profile["public_identifier"]) if profile else None
+        linkedin_url = public_id_to_url(profile["public_identifier"])
         ensure_newsletter_subscription(session, linkedin_url=linkedin_url)
         session.linkedin_profile.newsletter_processed = True
         session.linkedin_profile.save(update_fields=["newsletter_processed"])

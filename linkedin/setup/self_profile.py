@@ -9,39 +9,33 @@ logger = logging.getLogger(__name__)
 ME_URL = "https://www.linkedin.com/in/me/"
 
 
-def ensure_self_profile(session):
-    """Discover the logged-in user's own profile via Voyager API and mark it disqualified.
+def discover_self_profile(session) -> dict:
+    """Fetch the logged-in user's profile via Voyager API and persist as disqualified Leads.
 
     Creates two disqualified leads: one for the real profile URL (so auto-discovery
-    won't re-enrich it) and a ``/in/me/`` sentinel for subsequent-run detection.
-    Neither lead gets an embedding, so the self-profile is never eligible for
-    freemium deals.
+    won't re-enrich it) and a ``/in/me/`` marker that caches the full profile for
+    lazy accessors.  Neither lead gets an embedding.
 
-    Returns the parsed profile dict on first run, or ``None`` on subsequent
-    runs (the GDPR check is guarded by its own marker file).
+    Returns the parsed profile dict.
+    Raises ``AuthenticationError`` if the API call fails.
     """
-    from crm.models import Lead
+    import json
 
+    from crm.models import Lead
     from linkedin.api.client import PlaywrightLinkedinAPI
     from linkedin.db.urls import public_id_to_url
-
-    # Sentinel check — already ran once
-    if Lead.objects.filter(linkedin_url=ME_URL).exists():
-        logger.debug("Self-profile already discovered (sentinel exists)")
-        return None
+    from linkedin.exceptions import AuthenticationError
 
     api = PlaywrightLinkedinAPI(session=session)
-    profile, data = api.get_profile(public_identifier="me")
+    profile, _raw = api.get_profile(public_identifier="me")
 
     if not profile:
-        logger.warning("Could not fetch own profile via Voyager API")
-        return None
+        raise AuthenticationError("Could not fetch own profile via Voyager API")
 
     real_id = profile["public_identifier"]
     real_url = public_id_to_url(real_id)
 
     # Disqualified lead for the real profile URL (no embedding).
-    import json
     Lead.objects.update_or_create(
         linkedin_url=real_url,
         defaults={
@@ -53,12 +47,13 @@ def ensure_self_profile(session):
     )
     logger.info("Self-profile discovered: %s", real_url)
 
-    # /in/me/ sentinel — disqualified, used for subsequent-run detection.
+    # /in/me/ marker — disqualified, carries the full profile.
     Lead.objects.update_or_create(
         linkedin_url=ME_URL,
         defaults={
             "disqualified": True,
-            "description": json.dumps({"public_identifier": real_id}),
+            "public_identifier": real_id,
+            "description": json.dumps(profile, ensure_ascii=False, default=str),
         },
     )
 

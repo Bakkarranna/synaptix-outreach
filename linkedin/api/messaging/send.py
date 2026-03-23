@@ -38,7 +38,7 @@ def send_message(
         API response dict with delivery confirmation.
     """
     if not mailbox_urn:
-        mailbox_urn = api.session.get_self_urn()
+        mailbox_urn = api.session.get_self_profile()["urn"]
 
     origin_token = str(uuid.uuid4())
     tracking_id = os.urandom(16).hex()

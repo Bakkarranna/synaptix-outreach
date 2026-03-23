@@ -101,7 +101,7 @@ class Lead(models.Model):
         if positions:
             self.company_name = positions[0].get("company_name", "") or ""
         self.description = json.dumps(profile, ensure_ascii=False, default=str)
-        self.save()
+        self.save(update_fields=["first_name", "last_name", "company_name", "description"])
 
     def _embed(self, profile: dict):
         """Compute embedding from profile and save to DB."""

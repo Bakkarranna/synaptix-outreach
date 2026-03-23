@@ -28,7 +28,7 @@ def _graphql_headers(api: PlaywrightLinkedinAPI) -> dict:
 )
 def fetch_conversations(api: PlaywrightLinkedinAPI) -> dict:
     """Fetch recent conversations list. Returns raw API response."""
-    mailbox_urn = api.session.get_self_urn()
+    mailbox_urn = api.session.get_self_profile()["urn"]
     url = (
         f"{_GRAPHQL_BASE}"
         f"?queryId={_CONVERSATIONS_QUERY_ID}"

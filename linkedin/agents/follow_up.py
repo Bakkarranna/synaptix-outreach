@@ -90,36 +90,14 @@ def _count_messages_exchanged(session, public_id: str) -> int:
     ).count()
 
 
-def _get_self_name(session) -> str:
-    """Get the logged-in user's name from the /in/me/ sentinel → real profile Lead."""
-    from crm.models import Lead
-    from linkedin.db.urls import public_id_to_url
-    from linkedin.setup.self_profile import ME_URL
-
-    sentinel = Lead.objects.filter(linkedin_url=ME_URL).first()
-    if not sentinel:
-        return session.handle
-    data = sentinel.get_profile(session)
-    if not data:
-        return session.handle
-    real_id = data.get("public_identifier")
-    if not real_id:
-        return session.handle
-    real_url = public_id_to_url(real_id)
-    lead = Lead.objects.filter(linkedin_url=real_url).first()
-    if not lead:
-        return session.handle
-    full = f"{lead.first_name or ''} {lead.last_name or ''}".strip()
-    return full or session.handle
-
-
 def _render_system_prompt(session, profile: dict, messages_exchanged: int) -> str:
     """Render the agent system prompt from the Jinja2 template."""
     env = jinja2.Environment(loader=jinja2.FileSystemLoader(str(PROMPTS_DIR)))
     template = env.get_template("follow_up_agent.j2")
 
     campaign = session.campaign
-    self_name = _get_self_name(session)
+    self_prof = session.get_self_profile()
+    self_name = f"{self_prof.get('first_name', '')} {self_prof.get('last_name', '')}".strip() or session.handle
 
     return template.render(
         self_name=self_name,
