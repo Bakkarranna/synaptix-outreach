@@ -2,7 +2,7 @@
 FROM mcr.microsoft.com/playwright/python:v1.55.0-noble
 
 # Install Xvfb and x11vnc for virtual display and VNC access
-RUN apt-get update && apt-get install -y xvfb x11vnc && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y xvfb x11vnc novnc && rm -rf /var/lib/apt/lists/*
 
 # Define the application directory
 ARG APP_HOME=/app

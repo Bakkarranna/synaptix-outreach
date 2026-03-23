@@ -20,6 +20,9 @@ export DISPLAY=:99
 # Start x11vnc attached to the Xvfb display (no password for simplicity; add -passwd 'yourpass' if needed)
 x11vnc -display :99 -forever -shared -nopw &
 
+# Start noVNC web client (browser access on port 6080)
+novnc_server --vnc localhost:5900 --listen 6080 &
+
 # Run Django migrations and bootstrap CRM data
 python manage.py migrate --no-input
 python manage.py setup_crm
