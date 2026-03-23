@@ -19,8 +19,6 @@ def discover_self_profile(session) -> dict:
     Returns the parsed profile dict.
     Raises ``AuthenticationError`` if the API call fails.
     """
-    import json
-
     from crm.models import Lead
     from linkedin.api.client import PlaywrightLinkedinAPI
     from linkedin.db.urls import public_id_to_url
@@ -42,7 +40,7 @@ def discover_self_profile(session) -> dict:
             "first_name": profile.get("first_name", ""),
             "last_name": profile.get("last_name", ""),
             "disqualified": True,
-            "description": json.dumps(profile, ensure_ascii=False, default=str),
+            "profile_data": profile,
         },
     )
     logger.info("Self-profile discovered: %s", real_url)
@@ -53,7 +51,7 @@ def discover_self_profile(session) -> dict:
         defaults={
             "disqualified": True,
             "public_identifier": real_id,
-            "description": json.dumps(profile, ensure_ascii=False, default=str),
+            "profile_data": profile,
         },
     )
 

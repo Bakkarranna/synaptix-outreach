@@ -2,7 +2,6 @@
 """Tests for Lead lazy accessors (get_profile, get_embedding)."""
 from __future__ import annotations
 
-import json
 from unittest.mock import patch, MagicMock
 
 import numpy as np
@@ -26,7 +25,7 @@ class TestGetProfile:
         lead = Lead.objects.create(
             linkedin_url="https://www.linkedin.com/in/alice/",
             public_identifier="alice",
-            description=json.dumps(FAKE_PROFILE),
+            profile_data=FAKE_PROFILE,
         )
 
         with patch("linkedin.api.client.PlaywrightLinkedinAPI") as MockAPI:
@@ -54,7 +53,7 @@ class TestGetProfile:
         assert result["first_name"] == "Alice"
         lead.refresh_from_db()
         assert lead.first_name == "Alice"
-        assert lead.description
+        assert lead.profile_data
 
     def test_crashes_on_api_failure(self, fake_session):
         """Lets API errors propagate (get_profile has its own retry)."""
@@ -81,7 +80,7 @@ class TestGetUrn:
         lead = Lead.objects.create(
             linkedin_url="https://www.linkedin.com/in/alice/",
             public_identifier="alice",
-            description=json.dumps(FAKE_PROFILE),
+            profile_data=FAKE_PROFILE,
         )
 
         assert lead.get_urn(fake_session) == "urn:li:fsd_profile:ABC123"

@@ -13,7 +13,7 @@ The application will transition to a **privacy-by-design** data model where:
 1. Profile text is fetched from LinkedIn's Voyager API **transiently** for embedding and LLM qualification
 2. A 384-dimensional embedding vector is computed (FastEmbed, BAAI/bge-small-en-v1.5)
 3. **Calibrated noise is added** to the embedding before storage, providing differential privacy guarantees
-4. The raw profile text and full profile JSON (`Lead.description`) are **not persisted**
+4. The raw profile text and full profile JSON (`Lead.profile_data`) are **not persisted**
 5. Only the noisy embedding, a qualification label, and minimal operational metadata are stored long-term
 
 ### What This Solves
@@ -42,7 +42,7 @@ Replace raw profile storage with noisy embedding vectors. Addresses report findi
 
 ### A.1 Stop Persisting Full Profile Data
 
-- **`linkedin/db/leads.py`** — Modify `create_enriched_lead()` to NOT store the full profile dict in `Lead.description`. Store only a processing timestamp or empty string.
+- **`linkedin/db/leads.py`** — Modify `create_enriched_lead()` to NOT store the full profile dict in `Lead.profile_data`. Store only a processing timestamp or empty string.
 - **`linkedin/db/leads.py`** — Modify `_update_lead_fields()` to populate only the minimum required fields (see A.2).
 - Raw Voyager API JSON is no longer persisted (TheFile model removed).
 - **`linkedin/db/enrichment.py`** — Update `ensure_lead_enriched()` to compute embedding immediately during enrichment, then discard the profile dict. The enrichment and embedding steps must be atomic.
@@ -85,7 +85,7 @@ Fields that are populated but not needed should be left blank. Fields needed for
 
 ### A.5 Handle Profile Text for Follow-Up Messages
 
-Follow-up messages (`renderer.py`) require profile context (name, headline, company). After removing `Lead.description`:
+Follow-up messages (`renderer.py`) require profile context (name, headline, company). After removing `Lead.profile_data`:
 - Pass the minimal Lead fields (`first_name`, `last_name`, `title`) directly to the template
 - For richer context, fetch profile data transiently from LinkedIn at message-send time (already connected, so data is accessible) rather than from stored records
 

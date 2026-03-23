@@ -1,4 +1,3 @@
-import json
 import logging
 from typing import Dict, Any, Optional
 
@@ -113,5 +112,5 @@ def _update_lead_fields(lead, profile: Dict[str, Any]):
     if positions:
         lead.company_name = positions[0].get("company_name", "") or ""
 
-    lead.description = json.dumps(profile, ensure_ascii=False, default=str)
+    lead.profile_data = profile
     lead.save()

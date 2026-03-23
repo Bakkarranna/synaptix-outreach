@@ -1,4 +1,3 @@
-import json
 import logging
 
 import numpy as np
@@ -19,7 +18,7 @@ class Lead(models.Model):
     company_name = models.CharField(max_length=200, blank=True, default="")
     linkedin_url = models.URLField(max_length=200, blank=True, default="", unique=True)
     public_identifier = models.CharField(max_length=200, blank=True, default="")
-    description = models.TextField(blank=True, default="")
+    profile_data = models.JSONField(null=True, blank=True, default=None)
     embedding = models.BinaryField(null=True, blank=True)
     disqualified = models.BooleanField(default=False)
     creation_date = models.DateTimeField(default=timezone.now)
@@ -46,7 +45,7 @@ class Lead(models.Model):
 
     def get_profile(self, session) -> dict | None:
         """Parsed profile dict. Fetches from Voyager API if not yet enriched."""
-        if not self.description:
+        if self.profile_data is None:
             from linkedin.api.client import PlaywrightLinkedinAPI
 
             session.ensure_browser()
@@ -60,10 +59,10 @@ class Lead(models.Model):
             positions = profile.get("positions", [])
             if positions:
                 self.company_name = positions[0].get("company_name", "") or ""
-            self.description = json.dumps(profile, ensure_ascii=False, default=str)
-            self.save(update_fields=["first_name", "last_name", "company_name", "description"])
+            self.profile_data = profile
+            self.save(update_fields=["first_name", "last_name", "company_name", "profile_data"])
 
-        return json.loads(self.description) if self.description else None
+        return self.profile_data
 
     def get_urn(self, session) -> str | None:
         """LinkedIn URN. Chains through get_profile."""
@@ -92,7 +91,7 @@ class Lead(models.Model):
         """
         from linkedin.db.urls import url_to_public_id
 
-        profile = json.loads(self.description) if self.description else {}
+        profile = self.profile_data or {}
         public_id = self.public_identifier
         if not public_id:
             public_id = url_to_public_id(self.linkedin_url) if self.linkedin_url else ""

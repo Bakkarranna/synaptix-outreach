@@ -22,7 +22,7 @@ The follow-up agent template receives these named variables (not a spread profil
 ## Voyager API Profile Structure
 
 The profile data parsed by `linkedin/api/voyager.py` contains the following fields. These are stored
-in `Lead.description` as JSON and used internally for enrichment and qualification, though only a subset
+in `Lead.profile_data` (JSONField) and used internally for enrichment and qualification, though only a subset
 is passed to the agent template.
 
 ### Top-Level Fields
