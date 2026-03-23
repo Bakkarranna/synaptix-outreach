@@ -62,8 +62,8 @@ class AccountSession:
     def get_self_profile(self) -> dict:
         """Lazy accessor: return the authenticated user's profile dict (cached).
 
-        Reads from the ``/in/me/`` marker Lead if it exists, otherwise
-        discovers the profile via Voyager API and persists it.
+        Looks up the ``/in/me/`` marker Lead.  If ``urn`` is missing from
+        ``profile_data``, re-enriches via Voyager API and persists.
         """
         if self._self_profile is not None:
             return self._self_profile
@@ -72,11 +72,9 @@ class AccountSession:
         from linkedin.setup.self_profile import ME_URL, discover_self_profile
 
         me = Lead.objects.filter(linkedin_url=ME_URL).first()
-        if me:
-            profile = me.get_profile(self)
-            if profile:
-                self._self_profile = profile
-                return profile
+        if me and me.profile_data and "urn" in me.profile_data:
+            self._self_profile = me.profile_data
+            return self._self_profile
 
         self.ensure_browser()
         self._self_profile = discover_self_profile(self)

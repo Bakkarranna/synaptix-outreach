@@ -21,13 +21,22 @@ def _public_id_to_url(public_id):
 
 def backfill(apps, schema_editor):
     Lead = apps.get_model("crm", "Lead")
-    for lead in Lead.objects.filter(public_identifier=""):
+
+    # Set public_identifier from URL for all leads (fixes stale /in/me/ markers).
+    for lead in Lead.objects.all():
         pid = _url_to_public_id(lead.linkedin_url)
-        if not pid:
+        if pid and pid != lead.public_identifier:
+            print(f"  Backfill: Lead {lead.pk} public_identifier='{lead.public_identifier}' → '{pid}'")
+            lead.public_identifier = pid
+            lead.save(update_fields=["public_identifier"])
+        elif not pid and not lead.public_identifier:
             pid = f"_unknown_{lead.pk}"
-        print(f"  Backfill: Lead {lead.pk} '{lead.linkedin_url}' → public_identifier='{pid}'")
-        lead.public_identifier = pid
-        lead.save(update_fields=["public_identifier"])
+            print(f"  Backfill: Lead {lead.pk} → public_identifier='{pid}'")
+            lead.public_identifier = pid
+            lead.save(update_fields=["public_identifier"])
+
+    # Clear stale profile_data on /in/me/ marker so get_self_profile re-fetches with urn.
+    Lead.objects.filter(linkedin_url="https://www.linkedin.com/in/me/").update(profile_data=None)
 
     for lead in Lead.objects.filter(linkedin_url=""):
         url = _public_id_to_url(lead.public_identifier)

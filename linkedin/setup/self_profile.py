@@ -33,10 +33,11 @@ def discover_self_profile(session) -> dict:
     real_id = profile["public_identifier"]
     real_url = public_id_to_url(real_id)
 
-    # Disqualified lead for the real profile URL (no embedding).
+    # Real lead — keyed by public_identifier, set url + full profile.
     Lead.objects.update_or_create(
-        linkedin_url=real_url,
+        public_identifier=real_id,
         defaults={
+            "linkedin_url": real_url,
             "first_name": profile.get("first_name", ""),
             "last_name": profile.get("last_name", ""),
             "disqualified": True,
@@ -45,12 +46,11 @@ def discover_self_profile(session) -> dict:
     )
     logger.info("Self-profile discovered: %s", real_url)
 
-    # /in/me/ marker — disqualified, carries the full profile.
+    # /in/me/ marker — caches the full profile (no public_identifier to avoid conflicts).
     Lead.objects.update_or_create(
         linkedin_url=ME_URL,
         defaults={
             "disqualified": True,
-            "public_identifier": real_id,
             "profile_data": profile,
         },
     )
