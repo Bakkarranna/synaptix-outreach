@@ -64,10 +64,16 @@ class Lead(models.Model):
 
         return self.profile_data
 
-    def get_urn(self, session) -> str | None:
-        """LinkedIn URN. Chains through get_profile."""
+    def get_urn(self, session) -> str:
+        """LinkedIn URN. Chains through get_profile; re-fetches if missing."""
         profile = self.get_profile(session)
-        return profile.get("urn") if profile else None
+        if not profile or "urn" not in profile:
+            self.profile_data = None
+            self.save(update_fields=["profile_data"])
+            profile = self.get_profile(session)
+        if not profile or "urn" not in profile:
+            raise ValueError(f"Lead {self.pk}: could not resolve URN after re-fetch")
+        return profile["urn"]
 
     def get_embedding(self, session) -> np.ndarray | None:
         """384-dim embedding. Chains through get_profile → embed."""

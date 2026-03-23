@@ -113,11 +113,8 @@ if __name__ == "__main__":
     api = PlaywrightLinkedinAPI(session=session)
 
     # Resolve target profile URN
-    lead = Lead.objects.filter(linkedin_url=public_id_to_url(args.profile)).first()
-    target_urn = lead.get_urn(session) if lead else None
-    if not target_urn:
-        print(f"Could not resolve URN for {args.profile}")
-        raise SystemExit(1)
+    lead = Lead.objects.get(linkedin_url=public_id_to_url(args.profile))
+    target_urn = lead.get_urn(session)
     print(f"Resolved URN: {target_urn}")
 
     # Find conversation URN

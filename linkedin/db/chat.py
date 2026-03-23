@@ -6,14 +6,12 @@ logger = logging.getLogger(__name__)
 
 
 def _get_lead_and_ct(public_identifier: str):
-    """Return (lead, content_type) or (None, None) for a public identifier."""
+    """Return (lead, content_type) for a public identifier."""
     from django.contrib.contenttypes.models import ContentType
     from crm.models import Lead
 
     clean_url = public_id_to_url(public_identifier)
-    lead = Lead.objects.filter(linkedin_url=clean_url).first()
-    if not lead:
-        return None, None
+    lead = Lead.objects.get(linkedin_url=clean_url)
     ct = ContentType.objects.get_for_model(lead)
     return lead, ct
 
@@ -25,10 +23,6 @@ def sync_conversation(session, public_identifier: str) -> list[dict]:
     from the DB (always the source of truth after sync).
     """
     lead, ct = _get_lead_and_ct(public_identifier)
-    if not lead:
-        logger.warning("sync_conversation: no Lead for %s", public_identifier)
-        return _read_from_db(public_identifier)
-
     _sync_from_api(session, public_identifier, lead, ct)
 
     return _read_from_db(public_identifier)
@@ -47,9 +41,6 @@ def _sync_from_api(session, public_identifier: str, lead, ct):
     api = PlaywrightLinkedinAPI(session=session)
 
     target_urn = lead.get_urn(session)
-    if not target_urn:
-        logger.debug("sync: could not resolve URN for %s", public_identifier)
-        return
 
     # Find conversation URN
     conversation_urn = find_conversation_urn(api, target_urn)
@@ -95,9 +86,6 @@ def _read_from_db(public_identifier: str) -> list[dict]:
     from chat.models import ChatMessage
 
     lead, ct = _get_lead_and_ct(public_identifier)
-    if not lead:
-        return []
-
     lead_name = f"{lead.first_name or ''} {lead.last_name or ''}".strip() or "them"
 
     messages = ChatMessage.objects.filter(

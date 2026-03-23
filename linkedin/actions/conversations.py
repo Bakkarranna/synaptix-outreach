@@ -118,11 +118,8 @@ def get_conversation(session, public_identifier: str) -> list[dict] | None:
     session.ensure_browser()
     api = PlaywrightLinkedinAPI(session=session)
 
-    lead = Lead.objects.filter(linkedin_url=public_id_to_url(public_identifier)).first()
-    target_urn = lead.get_urn(session) if lead else None
-    if not target_urn:
-        logger.warning("Could not resolve URN for %s", public_identifier)
-        return None
+    lead = Lead.objects.get(linkedin_url=public_id_to_url(public_identifier))
+    target_urn = lead.get_urn(session)
 
     conversation_urn = find_conversation_urn(api, target_urn)
     if not conversation_urn:

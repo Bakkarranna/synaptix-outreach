@@ -149,10 +149,11 @@ def _send_message_via_api(session: "AccountSession", profile: Dict[str, Any], me
 
     public_identifier = profile.get("public_identifier")
 
-    lead = Lead.objects.filter(linkedin_url=public_id_to_url(public_identifier)).first()
-    target_urn = lead.get_urn(session) if lead else None
-    if not target_urn:
-        logger.error("API send failed for %s → could not resolve URN", public_identifier)
+    try:
+        lead = Lead.objects.get(linkedin_url=public_id_to_url(public_identifier))
+        target_urn = lead.get_urn(session)
+    except (Lead.DoesNotExist, ValueError):
+        logger.error("API send failed for %s → could not resolve lead/URN", public_identifier)
         return False
 
     api = PlaywrightLinkedinAPI(session=session)
