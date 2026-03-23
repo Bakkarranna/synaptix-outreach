@@ -1,6 +1,5 @@
 import logging
 
-from linkedin.db.urls import public_id_to_url
 
 logger = logging.getLogger(__name__)
 
@@ -10,8 +9,7 @@ def _get_lead_and_ct(public_identifier: str):
     from django.contrib.contenttypes.models import ContentType
     from crm.models import Lead
 
-    clean_url = public_id_to_url(public_identifier)
-    lead = Lead.objects.get(linkedin_url=clean_url)
+    lead = Lead.objects.get(public_identifier=public_identifier)
     ct = ContentType.objects.get_for_model(lead)
     return lead, ct
 

@@ -51,7 +51,7 @@ def seed_profiles(session, kit_config: dict):
     for public_id in public_ids:
         url = public_id_to_url(public_id)
 
-        lead, _ = Lead.objects.get_or_create(linkedin_url=url, defaults={"public_identifier": public_id})
+        lead, _ = Lead.objects.get_or_create(public_identifier=public_id, defaults={"linkedin_url": url})
 
         lead.get_embedding(session)
         create_freemium_deal(session, public_id)

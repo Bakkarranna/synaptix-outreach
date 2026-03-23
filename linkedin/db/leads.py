@@ -16,8 +16,7 @@ def lead_exists(url: str) -> bool:
     pid = url_to_public_id(url)
     if not pid:
         return False
-    clean_url = public_id_to_url(pid)
-    return Lead.objects.filter(linkedin_url=clean_url).exists()
+    return Lead.objects.filter(public_identifier=pid).exists()
 
 
 def create_enriched_lead(session, url: str, profile: Dict[str, Any]) -> Optional[int]:
@@ -34,7 +33,7 @@ def create_enriched_lead(session, url: str, profile: Dict[str, Any]) -> Optional
     clean_url = public_id_to_url(public_id)
 
     with transaction.atomic():
-        if Lead.objects.filter(linkedin_url=clean_url).exists():
+        if Lead.objects.filter(public_identifier=public_id).exists():
             return None
         lead = Lead.objects.create(linkedin_url=clean_url, public_identifier=public_id)
         _update_lead_fields(lead, profile)
@@ -53,8 +52,7 @@ def promote_lead_to_deal(session, public_id: str, reason: str = ""):
     """
     from crm.models import Lead, Deal
 
-    clean_url = public_id_to_url(public_id)
-    lead = Lead.objects.filter(linkedin_url=clean_url).first()
+    lead = Lead.objects.filter(public_identifier=public_id).first()
     if not lead:
         raise ValueError(f"No Lead for {public_id}")
 
@@ -87,15 +85,14 @@ def get_leads_for_qualification(session) -> list:
         deal__campaign=session.campaign,
     )
 
-    return [d for lead in leads if (d := lead.to_profile_dict())]
+    return [lead.to_profile_dict() for lead in leads]
 
 
 def disqualify_lead(public_id: str):
     """Set Lead.disqualified = True (account-level, permanent, cross-campaign)."""
     from crm.models import Lead
 
-    clean_url = public_id_to_url(public_id)
-    lead = Lead.objects.filter(linkedin_url=clean_url).first()
+    lead = Lead.objects.filter(public_identifier=public_id).first()
     if not lead:
         logger.warning("disqualify_lead: no Lead for %s", public_id)
         return

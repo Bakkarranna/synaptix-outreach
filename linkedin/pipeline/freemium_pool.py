@@ -54,7 +54,7 @@ def _pick_best(lead_pks: list[int], qualifier, session) -> dict | None:
     from crm.models import Lead
 
     leads = Lead.objects.filter(pk__in=lead_pks, disqualified=False)
-    profiles = [d for lead in leads if (d := lead.to_profile_dict())]
+    profiles = [lead.to_profile_dict() for lead in leads]
 
     if not profiles:
         return None

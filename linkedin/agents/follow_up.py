@@ -77,10 +77,7 @@ def _count_messages_exchanged(session, public_id: str) -> int:
     from django.contrib.contenttypes.models import ContentType
     from crm.models import Lead
 
-    from linkedin.db.urls import public_id_to_url
-
-    clean_url = public_id_to_url(public_id)
-    lead = Lead.objects.filter(linkedin_url=clean_url).first()
+    lead = Lead.objects.filter(public_identifier=public_id).first()
     if not lead:
         return 0
     ct = ContentType.objects.get_for_model(lead)

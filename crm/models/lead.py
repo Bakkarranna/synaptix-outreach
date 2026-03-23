@@ -16,8 +16,8 @@ class Lead(models.Model):
     first_name = models.CharField(max_length=100, blank=True, default="")
     last_name = models.CharField(max_length=100, blank=True, default="")
     company_name = models.CharField(max_length=200, blank=True, default="")
-    linkedin_url = models.URLField(max_length=200, blank=True, default="", unique=True)
-    public_identifier = models.CharField(max_length=200, blank=True, default="")
+    linkedin_url = models.URLField(max_length=200, unique=True)
+    public_identifier = models.CharField(max_length=200, unique=True)
     profile_data = models.JSONField(null=True, blank=True, default=None)
     embedding = models.BinaryField(null=True, blank=True)
     disqualified = models.BooleanField(default=False)
@@ -89,25 +89,16 @@ class Lead(models.Model):
                 self.save(update_fields=["embedding"])
         return self.embedding_array
 
-    def to_profile_dict(self) -> dict | None:
+    def to_profile_dict(self) -> dict:
         """Standard profile dict shape used by qualifiers and pools.
 
         Reads existing data only — does not trigger enrichment.
-        Returns None if the lead has no public_identifier.
         """
-        from linkedin.db.urls import url_to_public_id
-
-        profile = self.profile_data or {}
-        public_id = self.public_identifier
-        if not public_id:
-            public_id = url_to_public_id(self.linkedin_url) if self.linkedin_url else ""
-        if not public_id:
-            return None
         return {
             "lead_id": self.pk,
-            "public_identifier": public_id,
+            "public_identifier": self.public_identifier,
             "url": self.linkedin_url or "",
-            "profile": profile,
+            "profile": self.profile_data or {},
             "meta": {},
         }
 

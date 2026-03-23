@@ -144,13 +144,12 @@ def _send_message_via_api(session: "AccountSession", profile: Dict[str, Any], me
     from crm.models import Lead
     from linkedin.api.client import PlaywrightLinkedinAPI
     from linkedin.api.messaging import send_message
-    from linkedin.db.urls import public_id_to_url
     from linkedin.actions.conversations import find_conversation_urn, find_conversation_urn_via_navigation
 
     public_identifier = profile.get("public_identifier")
 
     try:
-        lead = Lead.objects.get(linkedin_url=public_id_to_url(public_identifier))
+        lead = Lead.objects.get(public_identifier=public_identifier)
         target_urn = lead.get_urn(session)
     except (Lead.DoesNotExist, ValueError):
         logger.error("API send failed for %s → could not resolve lead/URN", public_identifier)

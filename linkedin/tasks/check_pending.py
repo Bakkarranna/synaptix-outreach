@@ -9,7 +9,6 @@ from termcolor import colored
 from django.db import transaction
 
 from linkedin.db.deals import get_profile_dict_for_public_id, set_profile_state
-from linkedin.db.urls import public_id_to_url
 from linkedin.enums import ProfileState
 from linkedin.exceptions import SkipProfile
 
@@ -51,10 +50,9 @@ def handle_check_pending(task, session, qualifiers):
         enqueue_follow_up(campaign_id, public_id)
     elif new_state == ProfileState.PENDING:
         new_backoff = backoff_hours * 2
-        clean_url = public_id_to_url(public_id)
         with transaction.atomic():
             deal = Deal.objects.filter(
-                lead__linkedin_url=clean_url,
+                lead__public_identifier=public_id,
                 campaign=session.campaign,
             ).first()
             if deal:
