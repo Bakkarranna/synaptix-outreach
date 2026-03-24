@@ -111,4 +111,4 @@ class AccountSession:
             pass
 
     def __repr__(self) -> str:
-        return f"<AccountSession {self.linkedin_profile}>"
+        return self.linkedin_profile.linkedin_username
