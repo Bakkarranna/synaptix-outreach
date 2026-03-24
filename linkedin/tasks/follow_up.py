@@ -52,6 +52,3 @@ def handle_follow_up(task, session, qualifiers):
         logger.warning("follow_up agent for %s did not schedule or complete — re-enqueuing in 72h", public_id)
         enqueue_follow_up(campaign_id, public_id, delay_seconds=72 * 3600)
 
-    # Log summary
-    action_names = [a["tool"] for a in result["actions"]]
-    logger.info("follow_up agent for %s: %s", public_id, ", ".join(action_names) or "no actions")

@@ -168,11 +168,9 @@ def run_follow_up_agent(
 
     action_names = [a["tool"] for a in actions_taken]
     logger.info(
-        "Agent finished for %s: %d messages, %d actions %s",
+        "follow_up agent for %s: %s",
         public_id,
-        len(messages),
-        len(actions_taken),
-        action_names,
+        " → ".join(action_names) or "no actions",
     )
 
     return {"messages": messages, "actions": actions_taken}
