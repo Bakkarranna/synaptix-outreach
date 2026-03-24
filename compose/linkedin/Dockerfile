@@ -1,8 +1,12 @@
 # Use the official Playwright Python Docker image as base (pre-includes browsers and deps)
 FROM mcr.microsoft.com/playwright/python:v1.55.0-noble
 
-# Install Xvfb and x11vnc for virtual display and VNC access
-RUN apt-get update && apt-get install -y xvfb x11vnc novnc && rm -rf /var/lib/apt/lists/*
+# Install Xvfb, x11vnc, websockify for virtual display and VNC access
+# noVNC from GitHub (apt package has broken JS modules)
+RUN apt-get update && apt-get install -y xvfb x11vnc python3-websockify && rm -rf /var/lib/apt/lists/* \
+    && curl -fsSL https://github.com/novnc/noVNC/archive/refs/tags/v1.6.0.tar.gz | tar -xz -C /opt \
+    && mv /opt/noVNC-1.6.0 /opt/noVNC \
+    && cp /opt/noVNC/vnc.html /opt/noVNC/index.html
 
 # Define the application directory
 ARG APP_HOME=/app

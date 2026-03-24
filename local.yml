@@ -14,5 +14,4 @@ services:
     volumes:
       - .:/app
     ports:
-      - "5900:5900"
       - "6080:6080"
