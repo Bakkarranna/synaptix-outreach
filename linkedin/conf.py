@@ -36,7 +36,6 @@ BROWSER_LOGIN_TIMEOUT_MS = 40_000
 BROWSER_NAV_TIMEOUT_MS = 10_000
 HUMAN_TYPE_MIN_DELAY_MS = 50
 HUMAN_TYPE_MAX_DELAY_MS = 200
-VOYAGER_REQUEST_TIMEOUT_MS = 30_000
 
 # ----------------------------------------------------------------------
 # Onboarding defaults (shown to user during interactive setup)

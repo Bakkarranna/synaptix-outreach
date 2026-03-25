@@ -4,7 +4,7 @@ from typing import Dict, Any, Optional
 
 from django.db import transaction
 
-from linkedin.db.urls import url_to_public_id, public_id_to_url
+from linkedin.url_utils import url_to_public_id, public_id_to_url
 from linkedin.enums import ProfileState
 
 logger = logging.getLogger(__name__)

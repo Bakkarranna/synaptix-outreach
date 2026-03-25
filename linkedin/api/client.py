@@ -7,8 +7,7 @@ from urllib.parse import urlencode
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from linkedin.api.voyager import parse_linkedin_voyager_response
-from linkedin.conf import VOYAGER_REQUEST_TIMEOUT_MS
-from linkedin.db.urls import url_to_public_id
+from linkedin.url_utils import url_to_public_id
 from linkedin.exceptions import AuthenticationError
 
 logger = logging.getLogger(__name__)
@@ -31,15 +30,20 @@ class _FetchResponse:
         return self._text
 
 
+VOYAGER_REQUEST_TIMEOUT_MS = 30_000
+
+
 class PlaywrightLinkedinAPI:
 
     def __init__(
             self,
             session: "AccountSession",
+            timeout_ms: int = VOYAGER_REQUEST_TIMEOUT_MS,
     ):
         self.session = session
         self.page = session.page
         self.context = session.context
+        self.timeout_ms = timeout_ms
 
         # Extract cookies from the browser context to get JSESSIONID for csrf-token
         cookies = self.context.cookies()
@@ -76,7 +80,7 @@ class PlaywrightLinkedinAPI:
                     return {status: r.status, ok: r.ok, body: await r.text()};
                 });
             }""",
-            [method, url, headers, body, VOYAGER_REQUEST_TIMEOUT_MS],
+            [method, url, headers, body, self.timeout_ms],
         )
         return _FetchResponse(raw)
 

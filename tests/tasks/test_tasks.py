@@ -264,7 +264,7 @@ class TestHandleCheckPending:
 
         # Deal should have doubled backoff
         from crm.models import Deal
-        from linkedin.db.urls import public_id_to_url
+        from linkedin.url_utils import public_id_to_url
         deal = Deal.objects.get(lead__linkedin_url=public_id_to_url("alice"))
         assert deal.backoff_hours == 144
 

@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 def _run_daemon():
     from linkedin.api.newsletter import ensure_newsletter_subscription
     from linkedin.daemon import run_daemon
-    from linkedin.db.urls import public_id_to_url
+    from linkedin.url_utils import public_id_to_url
     from linkedin.setup.gdpr import apply_gdpr_newsletter_override
     from linkedin.onboarding import ensure_onboarding
     from linkedin.browser.registry import get_or_create_session

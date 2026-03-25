@@ -110,7 +110,7 @@ def handle_connect(task, session, qualifiers):
     if strategy.pre_connect:
         strategy.pre_connect(session, public_id)
 
-    from linkedin.db.urls import public_id_to_url
+    from linkedin.url_utils import public_id_to_url
     from crm.models import Deal
 
     deal = Deal.objects.filter(

@@ -130,7 +130,7 @@ def heal_tasks(session):
     4. Create 'follow_up' tasks for CONNECTED profiles without tasks
     """
     from crm.models import Deal
-    from linkedin.db.urls import url_to_public_id
+    from linkedin.url_utils import url_to_public_id
     from linkedin.enums import ProfileState
 
     cfg = CAMPAIGN_CONFIG
