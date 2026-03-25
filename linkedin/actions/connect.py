@@ -26,7 +26,7 @@ def send_connection_request(
     Sends a LinkedIn connection request WITHOUT a note (fastest & safest).
 
     Assumes the profile page is already loaded (caller navigates via
-    ``get_connection_status`` or ``search_profile`` beforehand).
+    ``get_connection_status`` or ``visit_profile`` beforehand).
     """
     public_identifier = profile.get('public_identifier')
 

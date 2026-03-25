@@ -2,7 +2,7 @@
 import logging
 from typing import Dict, Any
 
-from linkedin.actions.search import search_profile
+from linkedin.actions.search import visit_profile
 from linkedin.enums import ProfileState
 from linkedin.browser.nav import find_top_card
 
@@ -24,7 +24,7 @@ def get_connection_status(
     """
     # Ensure browser is ready (safe to call multiple times)
     session.ensure_browser()
-    search_profile(session, profile)
+    visit_profile(session, profile)
     session.wait()
 
     logger.debug("Checking connection status → %s", profile.get("public_identifier"))

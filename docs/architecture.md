@@ -104,7 +104,7 @@ Handles browser automation and session management:
 - **`session.py`** — `AccountSession`: central session object. Loads `LinkedInProfile` from DB, exposes `linkedin_profile`, `campaign`, `campaigns` (via Campaign.users M2M), `django_user`, and Playwright browser objects (`page`, `context`, `browser`, `playwright`). Key methods: `ensure_browser()`, `wait()`, `_maybe_refresh_cookies()`, `close()`. Credentials are accessed via `linkedin_profile` directly (no config dict).
 - **`registry.py`** — `get_or_create_session()`, `get_first_active_profile()`, `resolve_profile()`, `cli_parser()`/`cli_session()` (shared CLI bootstrap for `__main__` scripts).
 - **`login.py`** — `launch_browser()`, `start_browser_session()`, `playwright_login()` with human-like typing.
-- **`nav.py`** — `goto_page()` with auto-discovery of `/in/` URLs via `_extract_in_urls()`. `_discover_and_enrich()` auto-enriches discovered profiles. `human_type()`, `find_top_card()`, `find_first_visible()`, `random_sleep()`.
+- **`nav.py`** — `goto_page()` (pure navigation), `extract_in_urls()`, `human_type()`, `find_top_card()`, `find_first_visible()`.
 
 ## Actions (`linkedin/actions/`)
 
@@ -115,7 +115,7 @@ Low-level, reusable browser actions composed by the task handlers:
 - **`message.py`** — `send_raw_message()`: sends an arbitrary message via popup or direct messaging thread. Persists via `save_chat_message()`.
 - **`conversations.py`** — `get_conversation()`: retrieves past messages with a LinkedIn profile via API scan with navigation fallback.
 - **`profile.py`** — `scrape_profile()`: calls Voyager API.
-- **`search.py`** — `search_profile()`: direct URL navigation. `search_people()`: LinkedIn People search with pagination.
+- **`search.py`** — `visit_profile()`: navigates to profile + discovers/enriches nearby `/in/` URLs. `search_people()`: LinkedIn People search with pagination + discovery.
 
 ## Database Operations (`linkedin/db/`)
 
