@@ -19,6 +19,7 @@ def _default_schedule(settings):
 
 
 class TestSecondsUntilActive:
+    @patch("linkedin.daemon.ENABLE_ACTIVE_HOURS", True)
     @patch("linkedin.daemon.ACTIVE_START_HOUR", 9)
     @patch("linkedin.daemon.ACTIVE_END_HOUR", 17)
     @patch("linkedin.daemon.ACTIVE_TIMEZONE", "UTC")
@@ -27,6 +28,7 @@ class TestSecondsUntilActive:
         with patch("linkedin.daemon.timezone.localtime", return_value=_mock_now(2026, 3, 18, 12)):
             assert seconds_until_active() == 0.0
 
+    @patch("linkedin.daemon.ENABLE_ACTIVE_HOURS", True)
     @patch("linkedin.daemon.ACTIVE_START_HOUR", 9)
     @patch("linkedin.daemon.ACTIVE_END_HOUR", 17)
     @patch("linkedin.daemon.ACTIVE_TIMEZONE", "UTC")
@@ -36,6 +38,7 @@ class TestSecondsUntilActive:
             result = seconds_until_active()
             assert result == pytest.approx(2 * 3600, abs=1)
 
+    @patch("linkedin.daemon.ENABLE_ACTIVE_HOURS", True)
     @patch("linkedin.daemon.ACTIVE_START_HOUR", 9)
     @patch("linkedin.daemon.ACTIVE_END_HOUR", 17)
     @patch("linkedin.daemon.ACTIVE_TIMEZONE", "UTC")
@@ -45,6 +48,7 @@ class TestSecondsUntilActive:
             result = seconds_until_active()
             assert result == pytest.approx(15 * 3600, abs=1)  # 15h to Thu 9am
 
+    @patch("linkedin.daemon.ENABLE_ACTIVE_HOURS", True)
     @patch("linkedin.daemon.ACTIVE_START_HOUR", 9)
     @patch("linkedin.daemon.ACTIVE_END_HOUR", 17)
     @patch("linkedin.daemon.ACTIVE_TIMEZONE", "UTC")
@@ -56,6 +60,7 @@ class TestSecondsUntilActive:
             # Next active: Mon Mar 23 9am = 63h away
             assert result == pytest.approx(63 * 3600, abs=1)
 
+    @patch("linkedin.daemon.ENABLE_ACTIVE_HOURS", True)
     @patch("linkedin.daemon.ACTIVE_START_HOUR", 9)
     @patch("linkedin.daemon.ACTIVE_END_HOUR", 17)
     @patch("linkedin.daemon.ACTIVE_TIMEZONE", "UTC")
@@ -67,6 +72,7 @@ class TestSecondsUntilActive:
             # Next active: Mon Mar 23 9am = 45h away
             assert result == pytest.approx(45 * 3600, abs=1)
 
+    @patch("linkedin.daemon.ENABLE_ACTIVE_HOURS", True)
     @patch("linkedin.daemon.ACTIVE_START_HOUR", 9)
     @patch("linkedin.daemon.ACTIVE_END_HOUR", 17)
     @patch("linkedin.daemon.ACTIVE_TIMEZONE", "Europe/Berlin")
@@ -77,6 +83,7 @@ class TestSecondsUntilActive:
             result = seconds_until_active()
             assert result == pytest.approx(3600, abs=1)
 
+    @patch("linkedin.daemon.ENABLE_ACTIVE_HOURS", True)
     @patch("linkedin.daemon.ACTIVE_START_HOUR", 9)
     @patch("linkedin.daemon.ACTIVE_END_HOUR", 17)
     @patch("linkedin.daemon.ACTIVE_TIMEZONE", "UTC")
@@ -86,6 +93,7 @@ class TestSecondsUntilActive:
         with patch("linkedin.daemon.timezone.localtime", return_value=_mock_now(2026, 3, 21, 12)):
             assert seconds_until_active() == 0.0
 
+    @patch("linkedin.daemon.ENABLE_ACTIVE_HOURS", True)
     @patch("linkedin.daemon.ACTIVE_START_HOUR", 9)
     @patch("linkedin.daemon.ACTIVE_END_HOUR", 17)
     @patch("linkedin.daemon.ACTIVE_TIMEZONE", "UTC")
@@ -94,6 +102,7 @@ class TestSecondsUntilActive:
         with patch("linkedin.daemon.timezone.localtime", return_value=_mock_now(2026, 3, 18, 9)):
             assert seconds_until_active() == 0.0
 
+    @patch("linkedin.daemon.ENABLE_ACTIVE_HOURS", True)
     @patch("linkedin.daemon.ACTIVE_START_HOUR", 9)
     @patch("linkedin.daemon.ACTIVE_END_HOUR", 17)
     @patch("linkedin.daemon.ACTIVE_TIMEZONE", "UTC")
