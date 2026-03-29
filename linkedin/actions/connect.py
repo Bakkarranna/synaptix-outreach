@@ -72,13 +72,15 @@ def _connect_via_more(session):
     session.wait()
     top_card = find_top_card(session)
 
-    # Fallback: More → Connect
-    more = top_card.locator(SELECTORS["more_button"])
-    if more.count() == 0:
-        return False
-    more.first.click()
+    connect_option = top_card.locator(SELECTORS["connect_option"])
 
-    session.wait()
+    # Connect option may already be visible (More dropdown opened by status check)
+    if connect_option.count() == 0:
+        more = top_card.locator(SELECTORS["more_button"])
+        if more.count() == 0:
+            return False
+        more.first.click()
+        session.wait()
 
     connect_option = top_card.locator(SELECTORS["connect_option"])
     if connect_option.count() == 0:

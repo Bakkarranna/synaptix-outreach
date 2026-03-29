@@ -48,7 +48,7 @@ DEFAULT_FOLLOW_UP_DAILY_LIMIT = 100
 # Active-hours schedule (daemon pauses outside this window)
 # Set to False to run 24/7.
 # ----------------------------------------------------------------------
-ENABLE_ACTIVE_HOURS = True
+ENABLE_ACTIVE_HOURS = False
 ACTIVE_START_HOUR = 10   # inclusive, local time
 ACTIVE_END_HOUR = 20    # exclusive, local time
 ACTIVE_TIMEZONE = "UTC"

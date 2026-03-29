@@ -2,6 +2,7 @@
 import logging
 from typing import Dict, Any
 
+from linkedin.actions.connect import SELECTORS as CONNECT_SELECTORS
 from linkedin.actions.search import visit_profile
 from linkedin.enums import ProfileState
 from linkedin.browser.nav import find_top_card
@@ -10,11 +11,10 @@ logger = logging.getLogger(__name__)
 
 SELECTORS = {
     "pending_button": '[aria-label*="Pending"]',
-    "invite_to_connect": (
-        'button[aria-label*="Invite"][aria-label*="to connect"]:visible, '
-        'a:has(span:text-is("Connect")):visible'
-    ),
+    "invite_to_connect": CONNECT_SELECTORS["invite_to_connect"],
     "message_button": 'a[href*="/messaging/compose/"]:visible, button:has-text("Message"):visible',
+    "more_button": CONNECT_SELECTORS["more_button"],
+    "connect_option": CONNECT_SELECTORS["connect_option"],
 }
 
 
@@ -44,41 +44,42 @@ def get_connection_status(
 
     top_card = find_top_card(session)
 
-    # Check pending button in DOM first (most reliable)
-    if top_card.locator(SELECTORS["pending_button"]).count() > 0:
-        logger.debug("Detected 'Pending' button → PENDING")
-        return ProfileState.PENDING
-
-    main_text = top_card.inner_text()
-
-    # Text-based indicators, checked in priority order
-    TEXT_INDICATORS = [
-        (["Pending"], ProfileState.PENDING, "Detected 'Pending' text → PENDING"),
-        (["1st", "1st degree", "1º", "1er"], ProfileState.CONNECTED, "Confirmed 1st degree via text → CONNECTED"),
-    ]
-    for keywords, state, msg in TEXT_INDICATORS:
-        if any(kw in main_text for kw in keywords):
-            logger.debug(msg)
-            return state
-
+    has_pending = top_card.locator(SELECTORS["pending_button"]).count() > 0
     has_connect = top_card.locator(SELECTORS["invite_to_connect"]).count() > 0
     has_message = top_card.locator(SELECTORS["message_button"]).count() > 0
 
-    # Connect button wins over Message (InMail/Open Profile show Message without being connected)
+    if has_pending:
+        logger.debug("Detected 'Pending' button → PENDING")
+        return ProfileState.PENDING
+
     if has_connect:
         logger.debug("Found 'Connect' button → NOT_CONNECTED")
         return ProfileState.QUALIFIED
 
-    if has_message and not has_connect:
-        logger.debug("Detected 'Message' button (no Connect) → CONNECTED")
-        return ProfileState.CONNECTED
-
-    if degree:
-        logger.debug("No UI indicators but degree=%s → NOT_CONNECTED", degree)
+    # Connect might be hidden in the More menu (Open Profiles show Message without being connected)
+    has_connect_in_more = _has_connect_in_more(session, top_card)
+    if has_connect_in_more:
+        logger.debug("Found 'Connect' in More menu → NOT_CONNECTED")
         return ProfileState.QUALIFIED
+
+    if has_message:
+        logger.debug("Detected 'Message' button (no Connect anywhere) → CONNECTED")
+        return ProfileState.CONNECTED
 
     logger.debug("No clear indicators → defaulting to NOT_CONNECTED")
     return ProfileState.QUALIFIED
+
+
+def _has_connect_in_more(session, top_card) -> bool:
+    more = top_card.locator(SELECTORS["more_button"])
+    if more.count() == 0:
+        return False
+    more.first.click()
+    session.wait()
+    found = top_card.locator(SELECTORS["connect_option"]).count() > 0
+    if not found:
+        session.page.keyboard.press("Escape")
+    return found
 
 
 if __name__ == "__main__":
