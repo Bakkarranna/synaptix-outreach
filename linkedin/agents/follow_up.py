@@ -1,93 +1,65 @@
 # linkedin/agents/follow_up.py
-"""ReAct agent for agentic follow-up conversations.
+"""Follow-up agent: reads conversation, returns a structured decision.
 
-Uses a simple tool-calling loop instead of LangGraph's create_agent to avoid
-threading issues with Playwright (greenlet-based, single-thread only).
+Single LLM call with structured output — no tool-calling loop.
+The handler in tasks/follow_up.py executes the decision.
 """
 from __future__ import annotations
 
-import json
 import logging
-from typing import Any
+from typing import Literal
 
 import jinja2
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
-from langchain_core.tools import tool
-from langchain_openai import ChatOpenAI  # OpenAI-compatible client (works with any provider)
+from langchain_openai import ChatOpenAI
+from pydantic import BaseModel, Field, model_validator
 
 from linkedin.conf import AI_MODEL, LLM_API_KEY, LLM_API_BASE, PROMPTS_DIR
 
 logger = logging.getLogger(__name__)
 
 
-def _build_tools(session, public_id: str, profile: dict, campaign_id: int):
-    """Build the tool set for the follow-up agent, closed over session context."""
+class FollowUpDecision(BaseModel):
+    """Structured output from the follow-up agent."""
 
-    @tool
-    def read_conversation() -> str:
-        """Read the conversation history with this lead. Returns formatted messages or 'No conversation yet.'"""
-        from linkedin.db.chat import sync_conversation
+    action: Literal["send_message", "mark_completed", "wait"] = Field(
+        description="What to do next for this lead.",
+    )
+    message: str | None = Field(
+        default=None,
+        description="The message to send. Required when action='send_message'.",
+    )
+    reason: str | None = Field(
+        default=None,
+        description="Why mark completed. Required when action='mark_completed'.",
+    )
+    follow_up_hours: float | None = Field(
+        default=None,
+        description="Hours until next follow-up. Required for 'send_message' and 'wait'. Ignored for 'mark_completed'.",
+    )
 
-        messages = sync_conversation(session, public_id)
-        if not messages:
-            return "No conversation yet."
-
-        lines = []
-        for msg in messages:
-            direction = "→" if msg["is_outgoing"] else "←"
-            lines.append(f"[{msg['timestamp']}] {direction} {msg['sender']}: {msg['text']}")
-        return "\n".join(lines)
-
-    @tool
-    def send_message(message: str) -> str:
-        """Send a short LinkedIn message to the lead. Keep it human — 1-3 sentences max."""
-        from linkedin.actions.message import send_raw_message
-
-        if not send_raw_message(session, profile, message):
-            return "Failed to send message."
-
-        return "Message sent."
-
-    @tool
-    def mark_completed(reason: str) -> str:
-        """Mark this conversation as completed. Use when: they booked, declined, or went cold."""
-        from linkedin.db.deals import set_profile_state
-        from linkedin.enums import ProfileState
-
-        set_profile_state(session, public_id, ProfileState.COMPLETED.value, reason=reason)
-        logger.info("Agent marked %s as COMPLETED: %s", public_id, reason)
-        return f"Marked as completed: {reason}"
-
-    @tool
-    def schedule_follow_up(hours: float) -> str:
-        """Schedule the next follow-up in N hours from now. Use after sending a message."""
-        from linkedin.tasks.connect import enqueue_follow_up
-
-        delay_seconds = hours * 3600
-        enqueue_follow_up(campaign_id, public_id, delay_seconds=delay_seconds)
-        logger.info("Agent scheduled follow-up for %s in %.1f hours", public_id, hours)
-        return f"Follow-up scheduled in {hours} hours."
-
-    return [read_conversation, send_message, mark_completed, schedule_follow_up]
+    @model_validator(mode="after")
+    def _check_required_fields(self):
+        if self.action == "send_message" and not self.message:
+            raise ValueError("message is required when action='send_message'")
+        if self.action == "mark_completed" and not self.reason:
+            raise ValueError("reason is required when action='mark_completed'")
+        if self.action in ("send_message", "wait") and self.follow_up_hours is None:
+            self.follow_up_hours = 72
+        return self
 
 
-def _count_messages_exchanged(session, public_id: str) -> int:
-    """Count all ChatMessages for a lead under this account."""
-    from chat.models import ChatMessage
-    from django.contrib.contenttypes.models import ContentType
-    from crm.models import Lead
-
-    lead = Lead.objects.filter(public_identifier=public_id).first()
-    if not lead:
-        return 0
-    ct = ContentType.objects.get_for_model(lead)
-    return ChatMessage.objects.filter(
-        content_type=ct, object_id=lead.pk,
-        owner=session.django_user,
-    ).count()
+def _format_conversation(messages: list[dict]) -> str:
+    """Format synced conversation messages for the prompt."""
+    if not messages:
+        return "No conversation yet."
+    lines = []
+    for msg in messages:
+        direction = "→" if msg["is_outgoing"] else "←"
+        lines.append(f"[{msg['timestamp']}] {direction} {msg['sender']}: {msg['text']}")
+    return "\n".join(lines)
 
 
-def _render_system_prompt(session, profile: dict, messages_exchanged: int) -> str:
+def _render_system_prompt(session, profile: dict, conversation_text: str) -> str:
     """Render the agent system prompt from the Jinja2 template."""
     env = jinja2.Environment(loader=jinja2.FileSystemLoader(str(PROMPTS_DIR)))
     template = env.get_template("follow_up_agent.j2")
@@ -106,7 +78,7 @@ def _render_system_prompt(session, profile: dict, messages_exchanged: int) -> st
         current_company=profile.get("current_company", ""),
         location=profile.get("location", ""),
         supported_locales=profile.get("supported_locales", []),
-        messages_exchanged=messages_exchanged,
+        conversation=conversation_text,
     )
 
 
@@ -114,15 +86,18 @@ def run_follow_up_agent(
     session,
     public_id: str,
     profile: dict,
-    campaign_id: int,
-    *,
-    max_iterations: int = 10,
-) -> dict[str, Any]:
-    """Run the follow-up agent via a simple tool-calling loop.
+) -> FollowUpDecision:
+    """Read conversation and return a structured follow-up decision.
 
-    Executes tools sequentially in the main thread to stay compatible
-    with Playwright's greenlet-based single-thread model.
+    Single LLM call — conversation is injected into the prompt,
+    and the model returns a FollowUpDecision via structured output.
     """
+    from linkedin.db.chat import sync_conversation
+
+    messages = sync_conversation(session, public_id)
+    conversation_text = _format_conversation(messages)
+    system_prompt = _render_system_prompt(session, profile, conversation_text)
+
     llm = ChatOpenAI(
         model=AI_MODEL,
         temperature=0.7,
@@ -130,50 +105,13 @@ def run_follow_up_agent(
         base_url=LLM_API_BASE,
         timeout=60,
     )
+    structured_llm = llm.with_structured_output(FollowUpDecision)
+    decision = structured_llm.invoke(system_prompt)
+    if decision is None:
+        raise RuntimeError(f"LLM returned unparseable response for follow-up of {public_id}")
 
-    tools = _build_tools(session, public_id, profile, campaign_id)
-    tools_by_name = {t.name: t for t in tools}
-    llm_with_tools = llm.bind_tools(tools, parallel_tool_calls=False)
-
-    # Sync conversation from API so the DB count is up-to-date.
-    from linkedin.db.chat import sync_conversation
-    sync_conversation(session, public_id)
-
-    messages_exchanged = _count_messages_exchanged(session, public_id)
-    system_prompt = _render_system_prompt(session, profile, messages_exchanged)
-
-    messages: list = [SystemMessage(content=system_prompt), HumanMessage(content="Begin.")]
-    actions_taken: list[dict] = []
-
-    for _ in range(max_iterations):
-        response: AIMessage = llm_with_tools.invoke(messages)
-        messages.append(response)
-
-        if not response.tool_calls:
-            break
-
-        for tc in response.tool_calls:
-            tool_name = tc["name"]
-            tool_args = tc["args"]
-            actions_taken.append({"tool": tool_name, "args": tool_args})
-
-            fn = tools_by_name.get(tool_name)
-            if fn is None:
-                result = f"Unknown tool: {tool_name}"
-            else:
-                logger.debug("Agent calling %s(%s)", tool_name, json.dumps(tool_args))
-                result = fn.invoke(tool_args)
-
-            messages.append(ToolMessage(content=str(result), tool_call_id=tc["id"]))
-
-    action_names = [a["tool"] for a in actions_taken]
-    logger.info(
-        "follow_up agent for %s: %s",
-        public_id,
-        " → ".join(action_names) or "no actions",
-    )
-
-    return {"messages": messages, "actions": actions_taken}
+    logger.info("follow_up agent for %s: %s", public_id, decision.action)
+    return decision
 
 
 if __name__ == "__main__":
@@ -193,7 +131,6 @@ if __name__ == "__main__":
         task = Task.objects.get(pk=args.task_id)
         public_id = task.payload["public_id"]
         campaign_id = task.payload["campaign_id"]
-        # Set the correct campaign from the task
         from linkedin.models import Campaign
         campaign = Campaign.objects.get(pk=campaign_id)
         session.campaign = campaign
@@ -213,11 +150,11 @@ if __name__ == "__main__":
     print(f"Campaign: {session.campaign}")
     print()
 
-    result = run_follow_up_agent(session, public_id, profile, campaign_id)
+    decision = run_follow_up_agent(session, public_id, profile)
 
-    print("\n--- Agent Actions ---")
-    for action in result["actions"]:
-        print(f"  {action['tool']}({action['args']})")
-
-    if not result["actions"]:
-        print("  (no actions taken)")
+    print(f"Action: {decision.action}")
+    if decision.message:
+        print(f"Message: {decision.message}")
+    if decision.reason:
+        print(f"Reason: {decision.reason}")
+    print(f"Follow-up in: {decision.follow_up_hours}h")

@@ -5,6 +5,8 @@ from unittest.mock import patch, MagicMock
 
 from django.utils import timezone
 
+from crm.models import Deal
+from linkedin.agents.follow_up import FollowUpDecision
 from linkedin.db.deals import set_profile_state
 from linkedin.db.leads import create_enriched_lead, promote_lead_to_deal
 from linkedin.models import ActionLog, Task
@@ -293,15 +295,12 @@ class TestHandleCheckPending:
 
 @pytest.mark.django_db
 class TestHandleFollowUp:
+    @patch("linkedin.actions.message.send_raw_message", return_value=True)
     @patch("linkedin.agents.follow_up.run_follow_up_agent")
-    def test_agent_sends_message_and_records_action(self, mock_agent, fake_session):
-        mock_agent.return_value = {
-            "messages": [],
-            "actions": [
-                {"tool": "send_message", "args": {"message": "Hello Alice!"}},
-                {"tool": "schedule_follow_up", "args": {"hours": 72}},
-            ],
-        }
+    def test_send_message_records_action_and_enqueues(self, mock_agent, mock_send, fake_session):
+        mock_agent.return_value = FollowUpDecision(
+            action="send_message", message="Hello Alice!", follow_up_hours=72,
+        )
         _make_connected(fake_session)
 
         task = _make_task(
@@ -312,16 +311,16 @@ class TestHandleFollowUp:
         handle_follow_up(task, fake_session, qualifiers)
 
         mock_agent.assert_called_once()
+        mock_send.assert_called_once()
         assert ActionLog.objects.filter(action_type=ActionLog.ActionType.FOLLOW_UP).count() == 1
+        assert Task.objects.filter(task_type=Task.TaskType.FOLLOW_UP, status=Task.Status.PENDING).exists()
 
+    @patch("linkedin.actions.message.send_raw_message", return_value=False)
     @patch("linkedin.agents.follow_up.run_follow_up_agent")
-    def test_agent_no_message_no_action_recorded(self, mock_agent, fake_session):
-        mock_agent.return_value = {
-            "messages": [],
-            "actions": [
-                {"tool": "mark_completed", "args": {"reason": "Lead went cold"}},
-            ],
-        }
+    def test_send_failure_resets_to_connected_and_reenqueues(self, mock_agent, mock_send, fake_session):
+        mock_agent.return_value = FollowUpDecision(
+            action="send_message", message="Hi!",
+        )
         _make_connected(fake_session)
 
         task = _make_task(
@@ -332,6 +331,45 @@ class TestHandleFollowUp:
         handle_follow_up(task, fake_session, qualifiers)
 
         assert ActionLog.objects.filter(action_type=ActionLog.ActionType.FOLLOW_UP).count() == 0
+        deal = Deal.objects.get(lead__public_identifier="alice", campaign=fake_session.campaign)
+        assert deal.state == ProfileState.CONNECTED
+        assert Task.objects.filter(task_type=Task.TaskType.FOLLOW_UP, status=Task.Status.PENDING).exists()
+
+    @patch("linkedin.agents.follow_up.run_follow_up_agent")
+    def test_mark_completed_sets_state(self, mock_agent, fake_session):
+        mock_agent.return_value = FollowUpDecision(
+            action="mark_completed", reason="Lead went cold",
+        )
+        _make_connected(fake_session)
+
+        task = _make_task(
+            Task.TaskType.FOLLOW_UP,
+            {"campaign_id": fake_session.campaign.pk, "public_id": "alice"},
+        )
+        qualifiers = _build_context(fake_session)
+        handle_follow_up(task, fake_session, qualifiers)
+
+        assert ActionLog.objects.filter(action_type=ActionLog.ActionType.FOLLOW_UP).count() == 0
+        deal = Deal.objects.get(lead__public_identifier="alice", campaign=fake_session.campaign)
+        assert deal.state == ProfileState.COMPLETED
+        assert not Task.objects.filter(task_type=Task.TaskType.FOLLOW_UP, status=Task.Status.PENDING).exists()
+
+    @patch("linkedin.agents.follow_up.run_follow_up_agent")
+    def test_wait_enqueues_follow_up(self, mock_agent, fake_session):
+        mock_agent.return_value = FollowUpDecision(
+            action="wait", follow_up_hours=48,
+        )
+        _make_connected(fake_session)
+
+        task = _make_task(
+            Task.TaskType.FOLLOW_UP,
+            {"campaign_id": fake_session.campaign.pk, "public_id": "alice"},
+        )
+        qualifiers = _build_context(fake_session)
+        handle_follow_up(task, fake_session, qualifiers)
+
+        assert ActionLog.objects.filter(action_type=ActionLog.ActionType.FOLLOW_UP).count() == 0
+        assert Task.objects.filter(task_type=Task.TaskType.FOLLOW_UP, status=Task.Status.PENDING).exists()
 
     @patch("linkedin.agents.follow_up.run_follow_up_agent")
     def test_noop_when_deal_missing(self, mock_agent, fake_session):

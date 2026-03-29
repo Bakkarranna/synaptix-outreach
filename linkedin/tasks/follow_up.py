@@ -13,7 +13,10 @@ logger = logging.getLogger(__name__)
 
 
 def handle_follow_up(task, session, qualifiers):
+    from linkedin.actions.message import send_raw_message
     from linkedin.agents.follow_up import run_follow_up_agent
+    from linkedin.db.deals import set_profile_state
+    from linkedin.enums import ProfileState
     from linkedin.tasks.connect import enqueue_follow_up
 
     payload = task.payload
@@ -37,18 +40,22 @@ def handle_follow_up(task, session, qualifiers):
 
     profile = profile_dict.get("profile") or profile_dict
 
-    result = run_follow_up_agent(session, public_id, profile, campaign_id)
+    decision = run_follow_up_agent(session, public_id, profile)
 
-    # Record action if any message was sent
-    sent_messages = [a for a in result["actions"] if a["tool"] == "send_message"]
-    if sent_messages:
+    if decision.action == "send_message":
+        sent = send_raw_message(session, profile, decision.message)
+        if not sent:
+            set_profile_state(session, public_id, ProfileState.CONNECTED.value)
+            logger.warning("follow_up for %s: send failed — reset to CONNECTED, re-enqueuing in 72h", public_id)
+            enqueue_follow_up(campaign_id, public_id, delay_seconds=72 * 3600)
+            return
         session.linkedin_profile.record_action(
             ActionLog.ActionType.FOLLOW_UP, session.campaign,
         )
+        enqueue_follow_up(campaign_id, public_id, delay_seconds=decision.follow_up_hours * 3600)
 
-    # Safety net: if agent didn't schedule or complete, re-enqueue
-    terminal_tools = {"mark_completed", "schedule_follow_up"}
-    if not any(a["tool"] in terminal_tools for a in result["actions"]):
-        logger.warning("follow_up agent for %s did not schedule or complete — re-enqueuing in 72h", public_id)
-        enqueue_follow_up(campaign_id, public_id, delay_seconds=72 * 3600)
+    elif decision.action == "mark_completed":
+        set_profile_state(session, public_id, ProfileState.COMPLETED.value, reason=decision.reason)
 
+    elif decision.action == "wait":
+        enqueue_follow_up(campaign_id, public_id, delay_seconds=decision.follow_up_hours * 3600)
