@@ -3,24 +3,98 @@ import json
 import logging
 from typing import Dict, Any
 
-from playwright.sync_api import Error as PlaywrightError
+from playwright.sync_api import Error as PlaywrightError, Locator
 from linkedin.browser.nav import goto_page, human_type
 
 logger = logging.getLogger(__name__)
 
 LINKEDIN_MESSAGING_URL = "https://www.linkedin.com/messaging/thread/new/"
 
-SELECTORS = {
-    "message_button": 'button[aria-label*="Message"]:visible',
-    "overflow_action": 'button[id$="profile-overflow-action"]:visible',
-    "message_option": 'div[aria-label$="to message"]:visible',
-    "message_input": 'div[class*="msg-form__contenteditable"]:visible',
-    "send_button": 'button[type="submit"][class*="msg-form"]:visible',
-    "connections_input": 'input[class^="msg-connections"]',
-    "search_result_row": 'div[class*="msg-connections-typeahead__search-result-row"]',
-    "compose_input": 'div[class^="msg-form__contenteditable"]',
-    "compose_send": 'button[class^="msg-form__send-button"]',
+# Selector fallback chains: semantic/ARIA first, then class-based.
+# LinkedIn A/B tests UI variants per account and renames classes often.
+# Each key maps to a list tried in order; first with a match wins.
+SELECTOR_CHAINS = {
+    # ── Profile page ──
+    # "Message" link/button (now often an <a> to /messaging/compose/)
+    "message_button": [
+        'a[href*="/messaging/compose/"]:visible',
+        'button[aria-label*="Message"]:visible',
+        'button:has-text("Message"):visible',
+    ],
+    # "More" overflow menu on the profile hero section
+    "overflow_action": [
+        'button[id$="profile-overflow-action"]:visible',
+        'button[aria-label="More actions"]:visible',
+        'main section button:has-text("More"):visible',
+    ],
+    # "Message" inside the overflow dropdown (role=menu variant)
+    "message_option": [
+        'div[role="menu"] a[href*="/messaging/"]:visible',
+        'div[role="menuitem"]:has-text("Message"):visible',
+        'div[aria-label$="to message"]:visible',
+        'li:has-text("Message"):visible',
+    ],
+    # ── Popup / thread compose ──
+    # Message input area (contenteditable div)
+    "message_input": [
+        'div[role="textbox"][aria-label*="Write a message"]:visible',
+        'div[role="textbox"][aria-label*="message"i]:visible',
+        'div[class*="msg-form__contenteditable"]:visible',
+        'div[contenteditable="true"]:visible',
+    ],
+    # Send button (popup variant)
+    "send_button": [
+        'button[type="submit"][class*="msg-form"]:visible',
+        'form button[type="submit"]:visible',
+        'button[type="submit"]:visible',
+    ],
+    # ── New thread: recipient search ──
+    "connections_input": [
+        'input[role="combobox"][placeholder*="name"]',
+        'input[class*="msg-connections"]',
+        'input[placeholder*="Type a name"]',
+        'input[type="text"][aria-owns]',
+    ],
+    # Search result rows
+    "search_result_row": [
+        'ul[role="listbox"] li[role="option"]',
+        'div[class*="msg-connections-typeahead__search-result-row"]',
+        'li[class*="search-result"]',
+    ],
+    # ── Thread: compose area ──
+    "compose_input": [
+        'div[role="textbox"][aria-label*="Write a message"]',
+        'div[role="textbox"][aria-label*="message"i]',
+        'div[class*="msg-form__contenteditable"]',
+        'div[contenteditable="true"]',
+    ],
+    # Send button (both class variants: send-btn and send-button)
+    "compose_send": [
+        'button[type="submit"][class*="msg-form"]',
+        'button[class*="send-btn"]',
+        'button[class*="send-button"]',
+        'form button[type="submit"]',
+        'button[type="submit"]',
+    ],
 }
+
+
+def _find(page, key: str, timeout: int = 5000) -> Locator:
+    """Try each selector in the chain for *key*, return the first with matches.
+
+    Raises PlaywrightError if none match within *timeout* ms.
+    """
+    chain = SELECTOR_CHAINS[key]
+    for sel in chain:
+        loc = page.locator(sel)
+        try:
+            loc.first.wait_for(state="attached", timeout=timeout)
+            logger.debug("Selector hit for %s: %s", key, sel)
+            return loc
+        except (PlaywrightError, TimeoutError):
+            continue
+    tried = ", ".join(chain)
+    raise PlaywrightError(f"No selector matched for '{key}'. Tried: {tried}")
 
 
 def send_raw_message(session, profile: Dict[str, Any], message: str) -> bool:
@@ -40,28 +114,27 @@ def send_raw_message(session, profile: Dict[str, Any], message: str) -> bool:
     return True
 
 
-
 def _send_msg_pop_up(session: "AccountSession", profile: Dict[str, Any], message: str) -> bool:
     session.wait()
     page = session.page
     public_identifier = profile.get("public_identifier")
 
     try:
-        direct = page.locator(SELECTORS["message_button"])
-        if direct.count() > 0:
+        try:
+            direct = _find(page, "message_button", timeout=3000)
             direct.first.click()
-            logger.debug("Opened Message popup (direct button)")
-        else:
-            more = page.locator(SELECTORS["overflow_action"]).first
+            logger.debug("Opened Message popup (direct button/link)")
+        except PlaywrightError:
+            more = _find(page, "overflow_action").first
             more.click()
             session.wait()
-            msg_option = page.locator(SELECTORS["message_option"]).first
+            msg_option = _find(page, "message_option").first
             msg_option.click()
             logger.debug("Opened Message via More → Message")
 
         session.wait()
 
-        input_area = page.locator(SELECTORS["message_input"]).first
+        input_area = _find(page, "message_input").first
 
         try:
             input_area.fill(message, timeout=10000)
@@ -74,7 +147,7 @@ def _send_msg_pop_up(session: "AccountSession", profile: Dict[str, Any], message
             input_area.press("ControlOrMeta+V")
             session.wait()
 
-        send_btn = page.locator(SELECTORS["send_button"]).first
+        send_btn = _find(page, "send_button").first
         send_btn.click(force=True)
         session.wait(4, 5)
 
@@ -104,17 +177,15 @@ def _send_message(session: "AccountSession", profile: Dict[str, Any], message: s
             error_message="Error opening messaging",
         )
 
-        conn_input = session.page.locator(SELECTORS["connections_input"])
-        # Clear any pre-existing text in the search field
+        conn_input = _find(session.page, "connections_input").first
         conn_input.fill("")
         session.wait(0.5, 1)
 
-        # Type the name and wait for search results to update
         human_type(conn_input, full_name, min_delay=10, max_delay=50)
         session.wait(2, 3)
 
         # Verify the first search result matches the target name exactly
-        item = session.page.locator(SELECTORS["search_result_row"]).first
+        item = _find(session.page, "search_result_row").first
         dt = item.locator("dt").first
         name_in_result = dt.inner_text(timeout=5_000).split("•")[0].strip()
         if name_in_result.lower() != full_name.lower():
@@ -124,13 +195,13 @@ def _send_message(session: "AccountSession", profile: Dict[str, Any], message: s
             )
             return False
 
-        # Scroll into view + click (very reliable on LinkedIn)
         item.scroll_into_view_if_needed()
-        item.click(delay=200)  # small delay between mousedown/mouseup = very human
+        item.click(delay=200)
+        session.wait(1, 2)
 
-        human_type(session.page.locator(SELECTORS["compose_input"]), message, min_delay=10, max_delay=50)
+        human_type(_find(session.page, "compose_input").first, message, min_delay=10, max_delay=50)
 
-        session.page.locator(SELECTORS["compose_send"]).click(delay=200)
+        _find(session.page, "compose_send").first.click(delay=200)
         session.wait(0.5, 1)
         logger.info("Message sent to %s (direct thread)", public_identifier)
         return True
@@ -192,13 +263,13 @@ if __name__ == "__main__":
         error_message="Error opening messaging",
     )
 
-    conn_input = session.page.locator(SELECTORS["connections_input"])
+    conn_input = _find(session.page, "connections_input").first
     conn_input.fill("")
     session.wait(0.5, 1)
     human_type(conn_input, args.name, min_delay=10, max_delay=50)
     session.wait(3, 4)
 
-    rows = session.page.locator(SELECTORS["search_result_row"])
+    rows = _find(session.page, "search_result_row")
     count = rows.count()
     print(f"\n=== Found {count} result rows ===\n")
     for i in range(min(count, 3)):
@@ -208,4 +279,3 @@ if __name__ == "__main__":
         print(f"\n--- Row {i} outer_html ---")
         print(row.evaluate("el => el.outerHTML"))
         print()
-
