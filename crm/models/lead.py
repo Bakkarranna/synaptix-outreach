@@ -64,6 +64,18 @@ class Lead(models.Model):
 
         return self.profile_data
 
+    def refresh_profile(self, session, profile_dict: dict | None = None) -> dict | None:
+        """Force re-fetch profile from Voyager API (invalidates cache).
+
+        If profile_dict is passed, updates it in place with the fresh data.
+        """
+        self.profile_data = None
+        self.save(update_fields=["profile_data"])
+        fresh = self.get_profile(session)
+        if fresh and profile_dict is not None:
+            profile_dict.update(fresh)
+        return fresh
+
     def get_urn(self, session) -> str:
         """LinkedIn URN. Chains through get_profile; re-fetches if missing."""
         profile = self.get_profile(session)

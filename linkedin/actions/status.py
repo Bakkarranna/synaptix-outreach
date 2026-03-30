@@ -23,24 +23,37 @@ def get_connection_status(
         profile: Dict[str, Any],
 ) -> ProfileState:
     """
-    Reliably detects connection status using UI inspection.
-    Only trusts degree=1 as CONNECTED. Everything else is verified on the page.
+    Detects connection status.
+
+    Priority:
+      1. API connection_degree — degree 1 = CONNECTED, degree 2/3 = QUALIFIED.
+         Callers should pass a fresh profile (via Lead.refresh_profile) so the
+         degree is up-to-date.
+      2. UI inspection fallback — only when API returns None.
     """
-    # Ensure browser is ready (safe to call multiple times)
+    from crm.models import Lead
+
+    public_identifier = profile.get("public_identifier")
     session.ensure_browser()
+
+    logger.debug("Checking connection status → %s", public_identifier)
+
+    # Fresh API fetch — connection_degree in the passed profile dict may be stale
+    lead = Lead.objects.get(public_identifier=public_identifier)
+    lead.refresh_profile(session, profile_dict=profile)
+    degree = profile.get("connection_degree")
+
+    if degree == 1:
+        logger.debug("API reports 1st degree → CONNECTED")
+        return ProfileState.CONNECTED
+    if degree in (2, 3):
+        logger.debug("API reports degree %d → NOT_CONNECTED", degree)
+        return ProfileState.QUALIFIED
+
+    # --- Fallback: UI inspection (API returned None) ---
+    logger.debug("API degree=None → falling back to UI inspection")
     visit_profile(session, profile)
     session.wait()
-
-    logger.debug("Checking connection status → %s", profile.get("public_identifier"))
-
-    degree = profile.get("connection_degree", None)
-
-    # Fast path: API says 1st degree → trust it
-    if degree == 1:
-        logger.debug("API reports 1st degree → instantly trusted as CONNECTED")
-        return ProfileState.CONNECTED
-
-    logger.debug("connection_degree=%s → falling back to UI inspection", degree or "None")
 
     top_card = find_top_card(session)
 
@@ -56,7 +69,6 @@ def get_connection_status(
         logger.debug("Found 'Connect' button → NOT_CONNECTED")
         return ProfileState.QUALIFIED
 
-    # Connect might be hidden in the More menu (Open Profiles show Message without being connected)
     has_connect_in_more = _has_connect_in_more(session, top_card)
     if has_connect_in_more:
         logger.debug("Found 'Connect' in More menu → NOT_CONNECTED")

@@ -12,7 +12,8 @@ SELECTORS = {
     "weekly_limit": 'div[class*="ip-fuse-limit-alert__warning"]',
     "invite_to_connect": (
         'button[aria-label*="Invite"][aria-label*="to connect"]:visible, '
-        'a:has(span:text-is("Connect")):visible'
+        'a:has(span:text-is("Connect")):visible, '
+        'button:has(span:text-is("Connect")):visible'
     ),
     "error_toast": 'div[data-test-artdeco-toast-item-type="error"]',
     "more_button": 'button[aria-label="More"]:visible, button[id*="overflow"]:visible, button[aria-label*="More actions"]:visible',
