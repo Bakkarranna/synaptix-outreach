@@ -14,3 +14,4 @@ pyyaml
 fastembed
 scikit-learn
 huggingface_hub
+openoutreach @ git+https://github.com/eracle/linkedin-docs.git@master#subdirectory=openoutreach-cli
