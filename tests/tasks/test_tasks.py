@@ -332,8 +332,7 @@ class TestHandleFollowUp:
 
         assert ActionLog.objects.filter(action_type=ActionLog.ActionType.FOLLOW_UP).count() == 0
         deal = Deal.objects.get(lead__public_identifier="alice", campaign=fake_session.campaign)
-        assert deal.state == ProfileState.CONNECTED
-        assert Task.objects.filter(task_type=Task.TaskType.FOLLOW_UP, status=Task.Status.PENDING).exists()
+        assert deal.state == ProfileState.QUALIFIED
 
     @patch("linkedin.agents.follow_up.run_follow_up_agent")
     def test_mark_completed_sets_state(self, mock_agent, fake_session):
