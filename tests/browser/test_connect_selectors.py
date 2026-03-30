@@ -2,14 +2,15 @@
 """
 Regression tests for connect/status selectors against real LinkedIn page snapshots.
 
-Fixtures are sanitized HTML fragments extracted from actual LinkedIn profile pages.
-To add a new regression case: save a snapshot via dump_page_html(), sanitize PII,
-and place it in tests/fixtures/pages/.
+Pages saved by dump_page_html() land in category subdirectories under
+tests/fixtures/pages/ (e.g. pages/connect/).  Parametrized tests auto-discover
+every file in each subdirectory so new dumps are tested without manual setup.
 """
 import pytest
 
 from linkedin.actions.connect import SELECTORS as CONNECT_SELECTORS
 from linkedin.browser.nav import TOP_CARD_SELECTORS
+from linkedin.conf import FIXTURE_PAGES_DIR
 from tests.browser.conftest import load_fixture
 
 
@@ -23,32 +24,21 @@ def find_top_card(page):
     return None
 
 
-# -- fixtures -----------------------------------------------------------------
+# -- hand-crafted fixtures (root level) ---------------------------------------
 
 CONNECTED_FIXTURE = "771_connected_profile.html"
 CONNECT_FIXTURE = "771_connect_profile.html"
-FOLLOW_FIRST_FIXTURE = "adivirsingh13.html"
 
 
 @pytest.fixture
 def connected_page(page):
-    """Profile page where the viewer is already connected (shows 'Message')."""
     return load_fixture(page, CONNECTED_FIXTURE)
 
 
 @pytest.fixture
 def connect_page(page):
-    """Profile page where the viewer is NOT connected (shows 'Connect')."""
     return load_fixture(page, CONNECT_FIXTURE)
 
-
-@pytest.fixture
-def follow_first_page(page):
-    """Follow-first (creator) profile — primary button is Follow, Connect is under More."""
-    return load_fixture(page, FOLLOW_FIRST_FIXTURE)
-
-
-# -- top card detection -------------------------------------------------------
 
 class TestTopCard:
     def test_found_on_connected_page(self, connected_page):
@@ -58,35 +48,36 @@ class TestTopCard:
         assert find_top_card(connect_page) is not None
 
 
-
-# -- connect profile: button detection ----------------------------------------
-
 class TestConnectButton:
     """A profile showing 'Connect' should be actionable by the connect flow."""
 
     def test_connect_text_in_top_card(self, connect_page):
         top_card = find_top_card(connect_page)
-        text = top_card.inner_text()
-        assert "Connect" in text
+        assert "Connect" in top_card.inner_text()
 
     def test_more_button_found(self, connect_page):
         top_card = find_top_card(connect_page)
-        loc = top_card.locator(CONNECT_SELECTORS["more_button"])
-        assert loc.count() > 0
+        assert top_card.locator(CONNECT_SELECTORS["more_button"]).count() > 0
 
     def test_invite_to_connect_selector(self, connect_page):
         top_card = find_top_card(connect_page)
-        loc = top_card.locator(CONNECT_SELECTORS["invite_to_connect"])
-        assert loc.count() > 0
+        assert top_card.locator(CONNECT_SELECTORS["invite_to_connect"]).count() > 0
 
 
-class TestFollowFirstProfile:
-    """Follow-first (creator) profiles hide Connect under the More dropdown."""
+# -- auto-discovered: pages/connect/ ------------------------------------------
+# Every page dumped when the connect button wasn't found.
+# The fix should make the selector match, so we assert it does.
 
-    def test_top_card_found(self, follow_first_page):
-        assert find_top_card(follow_first_page) is not None
+CONNECT_DUMPS = sorted(
+    p.name for p in (FIXTURE_PAGES_DIR / "connect").glob("*.html")
+) if (FIXTURE_PAGES_DIR / "connect").exists() else []
 
-    def test_more_button_found(self, follow_first_page):
-        top_card = find_top_card(follow_first_page)
-        loc = top_card.locator(CONNECT_SELECTORS["more_button"])
-        assert loc.count() > 0
+
+@pytest.mark.parametrize("fixture", CONNECT_DUMPS)
+def test_connect_dump_has_connect_or_more(page, fixture):
+    pg = load_fixture(page, "connect", fixture)
+    top_card = find_top_card(pg)
+    assert top_card is not None, f"connect/{fixture}: no top card"
+    connect = top_card.locator(CONNECT_SELECTORS["invite_to_connect"]).count()
+    more = top_card.locator(CONNECT_SELECTORS["more_button"]).count()
+    assert connect or more, f"connect/{fixture}: no Connect or More button"

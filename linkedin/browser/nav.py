@@ -86,9 +86,11 @@ def human_type(locator, text: str, min_delay: int = HUMAN_TYPE_MIN_DELAY_MS, max
     locator.type(text, delay=random.randint(min_delay, max_delay))
 
 
-def dump_page_html(session: "AccountSession", profile: dict, ):
-    filepath = FIXTURE_PAGES_DIR / f"{profile.get('public_identifier')}.html"
+def dump_page_html(session: "AccountSession", profile: dict, category: str = "connect"):
+    dest = FIXTURE_PAGES_DIR / category
+    dest.mkdir(parents=True, exist_ok=True)
+    filepath = dest / f"{profile.get('public_identifier')}.html"
     html_content = session.page.content()
     with open(filepath, "w", encoding="utf-8") as f:
         f.write(html_content)
-    logger.info("Saved ambiguous connection status page → %s", filepath)
+    logger.info("Saved page snapshot → %s", filepath)

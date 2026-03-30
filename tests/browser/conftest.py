@@ -21,9 +21,9 @@ def page(browser):
     p.close()
 
 
-def load_fixture(page, filename: str):
+def load_fixture(page, *path_parts: str):
     """Load an HTML fixture file into the Playwright page."""
-    filepath = FIXTURE_PAGES_DIR / filename
+    filepath = FIXTURE_PAGES_DIR / "/".join(path_parts)
     if not filepath.exists():
         pytest.skip(f"Fixture not found: {filepath}")
     page.set_content(filepath.read_text(encoding="utf-8"))

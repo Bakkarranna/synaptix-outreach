@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 SELECTORS = {
     "weekly_limit": 'div[class*="ip-fuse-limit-alert__warning"]',
     "invite_to_connect": (
-        'button[aria-label*="Invite"][aria-label*="to connect"]:visible, '
+        '[aria-label*="Invite"][aria-label*="to connect"]:visible, '
         'a:has(span:text-is("Connect")):visible, '
         'button:has(span:text-is("Connect")):visible'
     ),
