@@ -40,7 +40,8 @@ build: ## build all services defined in Docker Compose
 	docker compose -f local.yml build
 
 up: ## run the defined service in Docker Compose
-	docker compose -f local.yml up --build
+	docker compose -f local.yml up --build -d
+	docker compose -f local.yml logs -f
 
 up-view: ## run the defined service in Docker Compose and open vinagre
 	docker compose -f local.yml up --build -d
