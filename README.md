@@ -259,6 +259,14 @@ By using this software you accept the [Legal Notice](LEGAL_NOTICE.md). It covers
 
 <div align="center">
 
+<a href="https://star-history.com/#eracle/OpenOutreach&Date">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=eracle/OpenOutreach&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=eracle/OpenOutreach&type=Date" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=eracle/OpenOutreach&type=Date" width="400" />
+ </picture>
+</a>
+
 **Made with ❤️**
 
 </div>
