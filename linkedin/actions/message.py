@@ -4,7 +4,7 @@ import logging
 from typing import Dict, Any
 
 from playwright.sync_api import Error as PlaywrightError, Locator
-from linkedin.browser.nav import goto_page, human_type
+from linkedin.browser.nav import goto_page, human_type, dump_page_html
 
 logger = logging.getLogger(__name__)
 
@@ -15,19 +15,15 @@ LINKEDIN_MESSAGING_URL = "https://www.linkedin.com/messaging/thread/new/"
 # Each key maps to a list tried in order; first with a match wins.
 SELECTOR_CHAINS = {
     # ── Profile page ──
-    # "Message" link/button (now often an <a> to /messaging/compose/)
     "message_button": [
-        'a[href*="/messaging/compose/"]:visible',
         'button[aria-label*="Message"]:visible',
         'button:has-text("Message"):visible',
     ],
-    # "More" overflow menu on the profile hero section
     "overflow_action": [
         'button[id$="profile-overflow-action"]:visible',
         'button[aria-label="More actions"]:visible',
         'main section button:has-text("More"):visible',
     ],
-    # "Message" inside the overflow dropdown (role=menu variant)
     "message_option": [
         'div[role="menu"] a[href*="/messaging/"]:visible',
         'div[role="menuitem"]:has-text("Message"):visible',
@@ -35,14 +31,12 @@ SELECTOR_CHAINS = {
         'li:has-text("Message"):visible',
     ],
     # ── Popup / thread compose ──
-    # Message input area (contenteditable div)
     "message_input": [
         'div[role="textbox"][aria-label*="Write a message"]:visible',
         'div[role="textbox"][aria-label*="message"i]:visible',
         'div[class*="msg-form__contenteditable"]:visible',
         'div[contenteditable="true"]:visible',
     ],
-    # Send button (popup variant)
     "send_button": [
         'button[type="submit"][class*="msg-form"]:visible',
         'form button[type="submit"]:visible',
@@ -55,7 +49,6 @@ SELECTOR_CHAINS = {
         'input[placeholder*="Type a name"]',
         'input[type="text"][aria-owns]',
     ],
-    # Search result rows
     "search_result_row": [
         'ul[role="listbox"] li[role="option"]',
         'div[class*="msg-connections-typeahead__search-result-row"]',
@@ -68,7 +61,6 @@ SELECTOR_CHAINS = {
         'div[class*="msg-form__contenteditable"]',
         'div[contenteditable="true"]',
     ],
-    # Send button (both class variants: send-btn and send-button)
     "compose_send": [
         'button[type="submit"][class*="msg-form"]',
         'button[class*="send-btn"]',
@@ -97,6 +89,70 @@ def _find(page, key: str, timeout: int = 5000) -> Locator:
     raise PlaywrightError(f"No selector matched for '{key}'. Tried: {tried}")
 
 
+def _open_compose_popup(session, page) -> bool:
+    """Open the messaging compose popup on the current profile page.
+
+    Tries the direct Message button first, then More → Message.
+    Returns True if the popup was opened.
+    """
+    try:
+        direct = _find(page, "message_button", timeout=3000)
+        direct.first.click()
+        logger.debug("Opened compose popup (direct button)")
+        return True
+    except PlaywrightError:
+        pass
+
+    try:
+        _find(page, "overflow_action").first.click()
+        session.wait()
+        _find(page, "message_option").first.click()
+        logger.debug("Opened compose popup (More → Message)")
+        return True
+    except PlaywrightError:
+        return False
+
+
+def _type_message(session, page, message: str):
+    """Type a message into the compose popup input area."""
+    input_area = _find(page, "message_input").first
+    try:
+        input_area.fill(message, timeout=10000)
+        logger.debug("Message typed cleanly")
+    except Exception:
+        logger.debug("fill() failed → using clipboard paste")
+        input_area.click()
+        page.evaluate(f"() => navigator.clipboard.writeText({json.dumps(message)})")
+        session.wait()
+        input_area.press("ControlOrMeta+V")
+        session.wait()
+
+
+def _click_send_and_verify(session, page) -> bool:
+    """Click the send button and verify the message was actually sent.
+
+    After clicking send, the input should clear. If text remains,
+    the send failed silently.
+    """
+    send_btn = _find(page, "send_button").first
+    send_btn.click(force=True)
+    session.wait(4, 5)
+
+    try:
+        remaining = _find(page, "message_input", timeout=2000).first
+        text = remaining.inner_text(timeout=2000).strip()
+        if text:
+            logger.error("Message input still has text after send → send failed")
+            return False
+    except (PlaywrightError, TimeoutError):
+        pass  # input gone → popup closed → success
+
+    return True
+
+
+# ── Public entry point ────────────────────────────────────────────
+
+
 def send_raw_message(session, profile: Dict[str, Any], message: str) -> bool:
     """Send an arbitrary message to a profile. Returns True if sent."""
     from linkedin.actions.search import _go_to_profile
@@ -105,55 +161,41 @@ def send_raw_message(session, profile: Dict[str, Any], message: str) -> bool:
     public_identifier = profile.get("public_identifier")
     _go_to_profile(session, public_id_to_url(public_identifier), public_identifier)
 
-    sent = (
-        _send_msg_pop_up(session, profile, message)
-        or _send_message(session, profile, message)
-        or _send_message_via_api(session, profile, message)
-    )
-    if not sent:
-        logger.error("All send methods failed for %s", public_identifier)
-        return False
+    if _send_msg_pop_up(session, profile, message):
+        return True
+    dump_page_html(session, profile, category="message_popup")
 
-    logger.info("Message sent to %s: %s", public_identifier, message)
-    return True
+    if _send_message(session, profile, message):
+        return True
+    dump_page_html(session, profile, category="message_direct")
+
+    if _send_message_via_api(session, profile, message):
+        return True
+
+    logger.error("All send methods failed for %s", public_identifier)
+    return False
 
 
-def _send_msg_pop_up(session: "AccountSession", profile: Dict[str, Any], message: str) -> bool:
+# ── Send strategies ───────────────────────────────────────────────
+
+
+def _send_msg_pop_up(session, profile: Dict[str, Any], message: str) -> bool:
+    """Open compose popup on the profile page, type, send, verify."""
     session.wait()
     page = session.page
     public_identifier = profile.get("public_identifier")
 
     try:
-        try:
-            direct = _find(page, "message_button", timeout=3000)
-            direct.first.click()
-            logger.debug("Opened Message popup (direct button/link)")
-        except PlaywrightError:
-            more = _find(page, "overflow_action").first
-            more.click()
-            session.wait()
-            msg_option = _find(page, "message_option").first
-            msg_option.click()
-            logger.debug("Opened Message via More → Message")
+        if not _open_compose_popup(session, page):
+            return False
 
         session.wait()
+        _type_message(session, page, message)
 
-        input_area = _find(page, "message_input").first
-
-        try:
-            input_area.fill(message, timeout=10000)
-            logger.debug("Message typed cleanly")
-        except Exception:
-            logger.debug("fill() failed → using clipboard paste")
-            input_area.click()
-            page.evaluate(f"() => navigator.clipboard.writeText({json.dumps(message)})")
+        if not _click_send_and_verify(session, page):
+            page.keyboard.press("Escape")
             session.wait()
-            input_area.press("ControlOrMeta+V")
-            session.wait()
-
-        send_btn = _find(page, "send_button").first
-        send_btn.click(force=True)
-        session.wait(4, 5)
+            return False
 
         page.keyboard.press("Escape")
         session.wait()
@@ -166,7 +208,8 @@ def _send_msg_pop_up(session: "AccountSession", profile: Dict[str, Any], message
         return False
 
 
-def _send_message(session: "AccountSession", profile: Dict[str, Any], message: str) -> bool:
+def _send_message(session, profile: Dict[str, Any], message: str) -> bool:
+    """Navigate to /messaging/thread/new/, search by name, compose, send."""
     public_identifier = profile.get("public_identifier")
     full_name = profile.get("full_name")
     if not full_name:
@@ -214,7 +257,7 @@ def _send_message(session: "AccountSession", profile: Dict[str, Any], message: s
         return False
 
 
-def _send_message_via_api(session: "AccountSession", profile: Dict[str, Any], message: str) -> bool:
+def _send_message_via_api(session, profile: Dict[str, Any], message: str) -> bool:
     """Last-resort fallback: send via Voyager Messaging API.
 
     Requires profile dict to contain 'urn' (target profile URN).

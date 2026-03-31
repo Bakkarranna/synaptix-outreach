@@ -5,7 +5,7 @@ from typing import Dict, Any, Optional
 from linkedin.actions.connect import SELECTORS as CONNECT_SELECTORS
 from linkedin.actions.search import visit_profile
 from linkedin.enums import ProfileState
-from linkedin.browser.nav import find_top_card
+from linkedin.browser.nav import find_top_card, dump_page_html
 
 logger = logging.getLogger(__name__)
 
@@ -65,8 +65,9 @@ def _inspect_ui(session, profile: Dict[str, Any]) -> ProfileState:
         logger.debug("UI → 'Connect' in More menu")
         return ProfileState.QUALIFIED
 
-    logger.debug("UI → no connect/pending indicators → CONNECTED")
-    return ProfileState.CONNECTED
+    logger.debug("UI → no connect/pending indicators — dumping page")
+    dump_page_html(session, profile, category="status")
+    return ProfileState.QUALIFIED
 
 
 def _has_connect_in_more(session, top_card) -> bool:

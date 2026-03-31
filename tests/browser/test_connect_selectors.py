@@ -65,6 +65,39 @@ class TestConnectButton:
         assert top_card.locator(CONNECT_SELECTORS["invite_to_connect"]).count() > 0
 
 
+# -- auto-discovered: pages/status/ -------------------------------------------
+# Pages where no connect/pending/message buttons were found.
+# The More button should exist so the live browser can open the dropdown.
+
+STATUS_DUMPS = sorted(
+    p.name for p in (FIXTURE_PAGES_DIR / "status").glob("*.html")
+) if (FIXTURE_PAGES_DIR / "status").exists() else []
+
+
+@pytest.mark.parametrize("fixture", STATUS_DUMPS)
+def test_status_dump_has_more_button(page, fixture):
+    pg = load_fixture(page, "status", fixture)
+    top_card = find_top_card(pg)
+    assert top_card is not None, f"status/{fixture}: no top card"
+    more = top_card.locator(CONNECT_SELECTORS["more_button"]).count()
+    assert more, f"status/{fixture}: no More button"
+
+
+# -- auto-discovered: pages/status_more/ --------------------------------------
+# Pages dumped with the More dropdown open. Connect option should be visible.
+
+STATUS_MORE_DUMPS = sorted(
+    p.name for p in (FIXTURE_PAGES_DIR / "status_more").glob("*.html")
+) if (FIXTURE_PAGES_DIR / "status_more").exists() else []
+
+
+@pytest.mark.parametrize("fixture", STATUS_MORE_DUMPS)
+def test_status_more_dump_has_connect_option(page, fixture):
+    pg = load_fixture(page, "status_more", fixture)
+    connect = pg.locator(CONNECT_SELECTORS["connect_option"]).count()
+    assert connect, f"status_more/{fixture}: no Connect option in dropdown"
+
+
 # -- auto-discovered: pages/connect/ ------------------------------------------
 # Every page dumped when the connect button wasn't found.
 # The fix should make the selector match, so we assert it does.

@@ -26,6 +26,7 @@ SELECTORS = {
         'div[role="button"][aria-label^="Invite"][aria-label*=" to connect"], '
         'div[role="button"]:text-is("Connect"), '
         '[role="menuitem"][aria-label*="Connect"], '
+        '[role="menuitem"]:has-text("Connect"), '
         'li:text-is("Connect"), '
         'span[role="button"]:text-is("Connect")'
     ),
