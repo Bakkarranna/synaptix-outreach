@@ -52,6 +52,7 @@ def cli_parser(description: str):
     django.setup()
 
     logging.basicConfig(level=logging.DEBUG, format="[%(levelname)s] %(message)s")
+    logging.getLogger("asyncio").setLevel(logging.WARNING)
 
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument("--handle", default=None, help="Django username (default: first active profile)")
