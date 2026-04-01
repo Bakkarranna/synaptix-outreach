@@ -1,4 +1,3 @@
-import json
 import sys
 
 from django.core.management.base import BaseCommand
@@ -45,48 +44,31 @@ class Command(BaseCommand):
             return
 
         if options["config_file"]:
-            with open(options["config_file"]) as f:
-                data = json.load(f)
+            config = OnboardConfig.from_json(options["config_file"])
         else:
-            data = {
-                "linkedin_email": options["linkedin_email"],
-                "linkedin_password": options["linkedin_password"],
-                "campaign_name": options["campaign_name"],
-                "product_description": options["product_description"],
-                "campaign_objective": options["campaign_objective"],
-                "booking_link": options["booking_link"],
-                "seed_urls": options["seed_urls"],
-                "llm_api_key": options["llm_api_key"],
-                "ai_model": options["ai_model"],
-                "llm_api_base": options["llm_api_base"],
-                "newsletter": options["newsletter"],
-                "connect_daily_limit": options["connect_daily_limit"],
-                "connect_weekly_limit": options["connect_weekly_limit"],
-                "follow_up_daily_limit": options["follow_up_daily_limit"],
-                "legal_acceptance": options["legal_acceptance"],
-            }
+            config = OnboardConfig(
+                linkedin_email=options["linkedin_email"],
+                linkedin_password=options["linkedin_password"],
+                campaign_name=options["campaign_name"],
+                product_description=options["product_description"],
+                campaign_objective=options["campaign_objective"],
+                booking_link=options["booking_link"],
+                seed_urls=options["seed_urls"],
+                llm_api_key=options["llm_api_key"],
+                ai_model=options["ai_model"],
+                llm_api_base=options["llm_api_base"],
+                newsletter=options["newsletter"],
+                connect_daily_limit=options["connect_daily_limit"],
+                connect_weekly_limit=options["connect_weekly_limit"],
+                follow_up_daily_limit=options["follow_up_daily_limit"],
+                legal_acceptance=options["legal_acceptance"],
+            )
 
-        if not data.get("linkedin_email"):
+        if not config.linkedin_email:
             self.stderr.write("linkedin_email is required in non-interactive mode")
             sys.exit(1)
-        if not data.get("linkedin_password"):
+        if not config.linkedin_password:
             self.stderr.write("linkedin_password is required in non-interactive mode")
             sys.exit(1)
 
-        ensure_onboarding(OnboardConfig(
-            linkedin_email=data.get("linkedin_email", ""),
-            linkedin_password=data.get("linkedin_password", ""),
-            campaign_name=data.get("campaign_name", ""),
-            product_description=data.get("product_description", ""),
-            campaign_objective=data.get("campaign_objective", ""),
-            booking_link=data.get("booking_link", ""),
-            seed_urls=data.get("seed_urls", ""),
-            llm_api_key=data.get("llm_api_key", ""),
-            ai_model=data.get("ai_model", ""),
-            llm_api_base=data.get("llm_api_base", ""),
-            newsletter=data.get("newsletter", True),
-            connect_daily_limit=data.get("connect_daily_limit", DEFAULT_CONNECT_DAILY_LIMIT),
-            connect_weekly_limit=data.get("connect_weekly_limit", DEFAULT_CONNECT_WEEKLY_LIMIT),
-            follow_up_daily_limit=data.get("follow_up_daily_limit", DEFAULT_FOLLOW_UP_DAILY_LIMIT),
-            legal_acceptance=data.get("legal_acceptance", False),
-        ))
+        ensure_onboarding(config)

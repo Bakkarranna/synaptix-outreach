@@ -2,9 +2,10 @@
 """OpenOutreach management entrypoint.
 
 Usage:
-    python manage.py              # run the daemon
-    python manage.py runserver    # Django Admin at http://localhost:8000/admin/
-    python manage.py migrate      # run Django migrations
+    python manage.py                          # run the daemon (interactive onboarding)
+    python manage.py --onboard config.json    # run the daemon (non-interactive, first run only)
+    python manage.py runserver                # Django Admin at http://localhost:8000/admin/
+    python manage.py migrate                  # run Django migrations
     python manage.py createsuperuser
 """
 import logging
@@ -38,15 +39,20 @@ for _name in ("urllib3", "httpx", "langchain", "openai", "playwright",
 logger = logging.getLogger(__name__)
 
 
-def _run_daemon():
+def _run_daemon(onboard_file=None):
     from linkedin.api.newsletter import ensure_newsletter_subscription
     from linkedin.daemon import run_daemon
     from linkedin.url_utils import public_id_to_url
     from linkedin.setup.gdpr import apply_gdpr_newsletter_override
-    from linkedin.onboarding import ensure_onboarding
+    from linkedin.onboarding import ensure_onboarding, OnboardConfig
     from linkedin.browser.registry import get_or_create_session
+    from linkedin.models import Campaign
 
-    ensure_onboarding()
+    if onboard_file:
+        if not Campaign.objects.exists():
+            ensure_onboarding(OnboardConfig.from_json(onboard_file))
+    else:
+        ensure_onboarding()
 
     from linkedin.conf import LLM_API_KEY
     from linkedin.browser.registry import get_first_active_profile
@@ -93,10 +99,14 @@ if __name__ == "__main__":
         # No arguments → run the daemon
         _ensure_db()
         _run_daemon()
+    elif sys.argv[1] == "--onboard":
+        # --onboard <file> → non-interactive onboard + daemon (Premium)
+        if len(sys.argv) < 3:
+            sys.exit("Usage: python manage.py --onboard <config.json>")
+        _ensure_db()
+        _run_daemon(onboard_file=sys.argv[2])
     else:
-        # Auto-migrate before starting the admin server
         if sys.argv[1] == "runserver":
             _ensure_db()
-        # Django management command (runserver, migrate, createsuperuser, etc.)
         from django.core.management import execute_from_command_line
         execute_from_command_line(sys.argv)
