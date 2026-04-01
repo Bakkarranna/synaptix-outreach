@@ -25,6 +25,7 @@ ENV_FILE = ROOT_DIR / ".env"
 FIXTURE_DIR = ROOT_DIR / "tests" / "fixtures"
 FIXTURE_PROFILES_DIR = FIXTURE_DIR / "profiles"
 FIXTURE_PAGES_DIR = FIXTURE_DIR / "pages"
+DUMP_PAGES = False
 
 MIN_DELAY = 5
 MAX_DELAY = 8

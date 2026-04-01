@@ -58,8 +58,8 @@ def handle_check_pending(task, session, qualifiers):
             if deal:
                 deal.backoff_hours = new_backoff
                 deal.save(update_fields=["backoff_hours"])
-        logger.debug(
-            "%s still pending — backoff %.1fh → %.1fh",
-            public_id, backoff_hours, new_backoff,
+        delay_hours = enqueue_check_pending(campaign_id, public_id, backoff_hours=new_backoff)
+        logger.info(
+            "%s still pending — scheduled in %.1fh (backoff %.1fh → %.1fh)",
+            public_id, delay_hours, backoff_hours, new_backoff,
         )
-        enqueue_check_pending(campaign_id, public_id, backoff_hours=new_backoff)

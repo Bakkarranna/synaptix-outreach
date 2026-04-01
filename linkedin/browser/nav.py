@@ -5,7 +5,7 @@ from urllib.parse import unquote, urlparse, urljoin
 
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
-from linkedin.conf import BROWSER_NAV_TIMEOUT_MS, FIXTURE_PAGES_DIR, HUMAN_TYPE_MIN_DELAY_MS, HUMAN_TYPE_MAX_DELAY_MS
+from linkedin.conf import BROWSER_NAV_TIMEOUT_MS, DUMP_PAGES, FIXTURE_PAGES_DIR, HUMAN_TYPE_MIN_DELAY_MS, HUMAN_TYPE_MAX_DELAY_MS
 from linkedin.exceptions import SkipProfile
 
 logger = logging.getLogger(__name__)
@@ -87,6 +87,8 @@ def human_type(locator, text: str, min_delay: int = HUMAN_TYPE_MIN_DELAY_MS, max
 
 
 def dump_page_html(session: "AccountSession", profile: dict, category: str = "connect"):
+    if not DUMP_PAGES:
+        return
     dest = FIXTURE_PAGES_DIR / category
     dest.mkdir(parents=True, exist_ok=True)
     filepath = dest / f"{profile.get('public_identifier')}.html"

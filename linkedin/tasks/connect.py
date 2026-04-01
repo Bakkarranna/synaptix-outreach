@@ -223,7 +223,6 @@ def enqueue_check_pending(
     # Equal-jitter backoff: uniform spread across [half, backoff]
     half = backoff_hours / 2
     delay_hours = half + random.uniform(0, half)
-    logger.info("%s check_pending scheduled in %.1fh (backoff %.1fh)", public_id, delay_hours, backoff_hours)
 
     _enqueue_task(
         task_type=Task.TaskType.CHECK_PENDING,
@@ -235,6 +234,7 @@ def enqueue_check_pending(
         delay_seconds=delay_hours * 3600,
         dedup_keys=["campaign_id", "public_id"],
     )
+    return delay_hours
 
 
 def enqueue_follow_up(campaign_id: int, public_id: str, delay_seconds: float = 10):
