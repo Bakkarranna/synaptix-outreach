@@ -5,12 +5,14 @@ set -o errexit
 set -o pipefail
 set -o nounset
 
-# Virtual display + VNC (only for open-source local use)
+# Virtual display (always needed — Playwright launches headed mode)
+rm -f /tmp/.X99-lock
+Xvfb :99 -screen 0 1920x1080x24 &
+sleep 1
+export DISPLAY=:99
+
+# VNC remote access (only for open-source local use)
 if [ "${ENABLE_VNC:-false}" = "true" ]; then
-    rm -f /tmp/.X99-lock
-    Xvfb :99 -screen 0 1920x1080x24 &
-    sleep 1
-    export DISPLAY=:99
     x11vnc -display :99 -forever -shared -nopw &
     websockify --web /opt/noVNC 6080 localhost:5900 &
 fi
