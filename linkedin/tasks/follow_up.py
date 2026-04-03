@@ -43,6 +43,7 @@ def handle_follow_up(task, session, qualifiers):
     decision = run_follow_up_agent(session, public_id, profile)
 
     if decision.action == "send_message":
+        logger.info("[%s] follow_up message for %s: %s", session.campaign, public_id, decision.message)
         sent = send_raw_message(session, profile, decision.message)
         if not sent:
             set_profile_state(session, public_id, ProfileState.QUALIFIED.value)
