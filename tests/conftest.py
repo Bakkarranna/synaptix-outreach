@@ -1,4 +1,7 @@
 # tests/conftest.py
+from unittest.mock import patch
+
+import numpy as np
 import pytest
 
 from linkedin.management.setup_crm import setup_crm
@@ -13,6 +16,16 @@ def _ensure_crm_data(db):
     Since transaction=True tests rollback, we re-create data each time.
     """
     setup_crm()
+
+
+@pytest.fixture(autouse=True)
+def _mock_embeddings(request):
+    """Stub fastembed so tests don't need the ONNX model."""
+    if "no_embed_mock" in request.keywords:
+        yield
+    else:
+        with patch("linkedin.ml.embeddings.embed_text", return_value=np.ones(384)):
+            yield
 
 
 class FakeAccountSession:

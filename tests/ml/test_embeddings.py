@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 
 
+@pytest.mark.no_embed_mock
 class TestEmbedText:
     def test_embed_text_returns_384_dim(self):
         mock_model = MagicMock()
