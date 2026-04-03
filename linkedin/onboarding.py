@@ -292,7 +292,7 @@ def _onboard_interactive() -> None:
         skip_keys.add("llm_api_base")
 
     questions = [q for q in SELF_HOSTED_QUESTIONS if q.key not in skip_keys]
-    if not questions:
+    if not questions or not any(q.required for q in questions):
         return
 
     answers = ask(questions)
