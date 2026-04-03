@@ -21,5 +21,5 @@ fi
 python manage.py migrate --no-input
 python manage.py setup_crm
 
-# Run the daemon
-python manage.py
+# Run the daemon (forward any arguments, e.g. --onboard <file>)
+exec python manage.py "$@"
