@@ -17,12 +17,13 @@ COPY --from=deps /usr/local/bin /usr/local/bin
 
 # Install Playwright Chromium to a shared path accessible by any user
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers
+ENV EDITOR=nano
 RUN playwright install --with-deps chromium
 
 # VNC stack (started conditionally via ENABLE_VNC=true at runtime)
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        xvfb x11vnc python3-websockify curl \
+        xvfb x11vnc python3-websockify curl nano \
     && curl -fsSL https://github.com/novnc/noVNC/archive/refs/tags/v1.6.0.tar.gz \
         | tar -xz -C /opt \
     && mv /opt/noVNC-1.6.0 /opt/noVNC \
