@@ -37,10 +37,20 @@ class Command(BaseCommand):
         parser.add_argument("--legal-acceptance", action="store_true")
 
     def handle(self, *args, **options):
-        from linkedin.onboarding import OnboardConfig, ensure_onboarding
+        from linkedin.onboarding import (
+            OnboardConfig, apply, collect_from_wizard, missing_keys,
+        )
 
         if not options["non_interactive"]:
-            ensure_onboarding()
+            if not sys.stdin.isatty():
+                self.stderr.write(
+                    "No TTY available. Use --non-interactive with --config-file or flags."
+                )
+                sys.exit(1)
+            if not missing_keys():
+                return
+            config = collect_from_wizard()
+            apply(config)
             return
 
         if options["config_file"]:
@@ -71,4 +81,4 @@ class Command(BaseCommand):
             self.stderr.write("linkedin_password is required in non-interactive mode")
             sys.exit(1)
 
-        ensure_onboarding(config)
+        apply(config)

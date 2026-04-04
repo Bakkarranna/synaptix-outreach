@@ -180,7 +180,7 @@ Configure rate limits and behavior via Django Admin (LinkedInProfile + Campaign 
 │   ├── pipeline/                    # Candidate sourcing, qualification, pool management
 │   ├── setup/                       # GDPR, self-profile, freemium campaign setup
 │   └── tasks/                       # Task handlers (connect, check_pending, follow_up)
-├── manage.py                         # Entry point (no args = daemon, or Django commands)
+├── manage.py                         # Django management (no args defaults to rundaemon)
 ├── local.yml                        # Docker Compose
 └── Makefile                         # Shortcuts (setup, run, admin, test)
 ```

@@ -14,7 +14,7 @@ setup: install ## install deps + Playwright browsers + migrate + bootstrap CRM
 	python manage.py setup_crm
 
 run: ## run the daemon
-	python manage.py
+	python manage.py rundaemon
 
 test: ## run the test suite
 	.venv/bin/pytest

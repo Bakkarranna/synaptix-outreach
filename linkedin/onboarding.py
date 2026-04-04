@@ -1,14 +1,17 @@
 # linkedin/onboarding.py
-"""Onboarding: create Campaign + LinkedInProfile in DB.
+"""Onboarding: create Campaign + LinkedInProfile + LLM config in DB.
 
-Supports two modes:
-- Interactive (default): questionary wizard via ``openoutreach`` package.
-- Non-interactive: all values supplied via OnboardConfig (CLI flags).
+Two ways to supply config:
+- OnboardConfig.from_json(path) — from a JSON file (non-interactive / cloud).
+- collect_from_wizard()         — interactive questionary wizard (needs TTY).
+
+Both return an OnboardConfig; ``apply()`` is the single write path.
 """
 from __future__ import annotations
 
 import logging
 import os
+import sys
 from dataclasses import dataclass
 
 from linkedin.conf import (
@@ -25,9 +28,13 @@ DEFAULT_CAMPAIGN_OBJECTIVE = ROOT_DIR / "docs" / "default_campaign.md"
 logger = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# Config dataclass (pure data — no I/O)
+# ---------------------------------------------------------------------------
+
 @dataclass
 class OnboardConfig:
-    """All values needed to onboard — filled interactively or from CLI flags."""
+    """All values needed to onboard — filled interactively or from JSON."""
 
     linkedin_email: str = ""
     linkedin_password: str = ""
@@ -54,11 +61,70 @@ class OnboardConfig:
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# State inspection
 # ---------------------------------------------------------------------------
 
-def _read_default_file(path) -> str:
-    return path.read_text(encoding="utf-8").strip() if path.exists() else ""
+_CAMPAIGN_KEYS = {
+    "campaign_name", "product_description", "campaign_objective",
+    "booking_link", "seed_urls",
+}
+_ACCOUNT_KEYS = {
+    "linkedin_email", "linkedin_password", "newsletter",
+    "connect_daily_limit", "connect_weekly_limit", "follow_up_daily_limit",
+    "legal_acceptance",
+}
+_LLM_KEYS = {"llm_api_key", "ai_model", "llm_api_base"}
+_ALL_KEYS = _CAMPAIGN_KEYS | _ACCOUNT_KEYS | _LLM_KEYS
+
+
+def missing_keys() -> set[str]:
+    """Return onboarding field keys that still need values."""
+    import linkedin.conf as conf
+    from linkedin.models import Campaign, LinkedInProfile
+
+    keys: set[str] = set()
+
+    if not Campaign.objects.exists():
+        keys |= _CAMPAIGN_KEYS
+
+    if not LinkedInProfile.objects.filter(active=True).exists():
+        keys |= _ACCOUNT_KEYS
+
+    if not getattr(conf, "LLM_API_KEY", None):
+        keys.add("llm_api_key")
+    if not getattr(conf, "AI_MODEL", None):
+        keys.add("ai_model")
+    if not getattr(conf, "LLM_API_BASE", None):
+        keys.add("llm_api_base")
+
+    return keys
+
+
+# ---------------------------------------------------------------------------
+# Interactive collection (needs TTY)
+# ---------------------------------------------------------------------------
+
+def collect_from_wizard() -> OnboardConfig:
+    """Run the questionary wizard for missing fields; return an OnboardConfig.
+
+    Raises SystemExit if the user cancels.
+    """
+    from openoutreach.prompts import SELF_HOSTED_QUESTIONS
+    from openoutreach.wizard import ask
+
+    skip = _ALL_KEYS - missing_keys()
+    questions = [q for q in SELF_HOSTED_QUESTIONS if q.key not in skip]
+    if not questions or not any(q.required for q in questions):
+        return OnboardConfig()
+
+    answers = ask(questions)
+    if answers is None:
+        raise SystemExit("Onboarding cancelled.")
+
+    return OnboardConfig(**{
+        k: v for k, v in answers.items()
+        if k in OnboardConfig.__dataclass_fields__
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -89,6 +155,10 @@ def _set_env_var(var_name: str, value: str) -> None:
 # ---------------------------------------------------------------------------
 # Record creation (pure DB, no I/O)
 # ---------------------------------------------------------------------------
+
+def _read_default_file(path) -> str:
+    return path.read_text(encoding="utf-8").strip() if path.exists() else ""
+
 
 def _create_campaign(name: str, product_docs: str, objective: str, booking_link: str = ""):
     """Create a Campaign record and return it."""
@@ -146,15 +216,6 @@ def _create_account(
     return profile
 
 
-def _auto_accept_legal() -> None:
-    """Auto-accept legal for all active profiles that haven't accepted yet."""
-    from linkedin.models import LinkedInProfile
-
-    LinkedInProfile.objects.filter(legal_accepted=False, active=True).update(
-        legal_accepted=True,
-    )
-
-
 def _create_seed_leads(campaign, seed_urls: str) -> None:
     """Parse seed URL text and create QUALIFIED leads."""
     if not seed_urls or not seed_urls.strip():
@@ -168,67 +229,17 @@ def _create_seed_leads(campaign, seed_urls: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Apply wizard answers → DB
+# Single write path
 # ---------------------------------------------------------------------------
 
-def _apply_answers(answers: dict) -> None:
-    """Take a wizard answers dict and create all DB records + write env vars."""
+def apply(config: OnboardConfig) -> None:
+    """Idempotent: create missing Campaign, Account, env vars, and legal acceptance."""
     from linkedin.management.setup_crm import DEFAULT_CAMPAIGN_NAME
     from linkedin.models import Campaign, LinkedInProfile
 
     # Campaign
     campaign = Campaign.objects.first()
-    if campaign is None and "campaign_name" in answers:
-        campaign = _create_campaign(
-            name=answers.get("campaign_name") or DEFAULT_CAMPAIGN_NAME,
-            product_docs=answers.get("product_description", ""),
-            objective=answers.get("campaign_objective", ""),
-            booking_link=answers.get("booking_link", ""),
-        )
-        _create_seed_leads(campaign, answers.get("seed_urls", ""))
-
-    # Account
-    if (
-        not LinkedInProfile.objects.filter(active=True).exists()
-        and "linkedin_email" in answers
-    ):
-        _create_account(
-            campaign,
-            answers["linkedin_email"],
-            answers["linkedin_password"],
-            subscribe=answers.get("newsletter", True),
-            connect_daily=answers.get("connect_daily_limit", DEFAULT_CONNECT_DAILY_LIMIT),
-            connect_weekly=answers.get("connect_weekly_limit", DEFAULT_CONNECT_WEEKLY_LIMIT),
-            follow_up_daily=answers.get("follow_up_daily_limit", DEFAULT_FOLLOW_UP_DAILY_LIMIT),
-        )
-
-    # LLM env vars
-    for var, key in [
-        ("LLM_API_KEY", "llm_api_key"),
-        ("AI_MODEL", "ai_model"),
-        ("LLM_API_BASE", "llm_api_base"),
-    ]:
-        val = answers.get(key)
-        if val:
-            _set_env_var(var, val)
-
-    # Legal
-    if answers.get("legal_acceptance"):
-        _auto_accept_legal()
-
-
-# ---------------------------------------------------------------------------
-# Orchestrators
-# ---------------------------------------------------------------------------
-
-def _onboard_non_interactive(config: OnboardConfig) -> None:
-    """Non-interactive onboarding: create all records from pre-filled config."""
-    from linkedin.management.setup_crm import DEFAULT_CAMPAIGN_NAME
-    from linkedin.models import Campaign, LinkedInProfile
-
-    # Campaign
-    campaign = Campaign.objects.first()
-    if campaign is None:
+    if campaign is None and config.campaign_name:
         campaign = _create_campaign(
             name=config.campaign_name or DEFAULT_CAMPAIGN_NAME,
             product_docs=config.product_description or _read_default_file(DEFAULT_PRODUCT_DOCS),
@@ -238,9 +249,14 @@ def _onboard_non_interactive(config: OnboardConfig) -> None:
         _create_seed_leads(campaign, config.seed_urls)
 
     # Account
-    if not LinkedInProfile.objects.filter(active=True).exists():
+    if (
+        not LinkedInProfile.objects.filter(active=True).exists()
+        and config.linkedin_email
+    ):
         _create_account(
-            campaign, config.linkedin_email, config.linkedin_password,
+            campaign,
+            config.linkedin_email,
+            config.linkedin_password,
             subscribe=config.newsletter,
             connect_daily=config.connect_daily_limit,
             connect_weekly=config.connect_weekly_limit,
@@ -256,59 +272,7 @@ def _onboard_non_interactive(config: OnboardConfig) -> None:
         if val:
             _set_env_var(var, val)
 
-    # Auto-accept legal
+    # Legal
     if config.legal_acceptance:
-        _auto_accept_legal()
-
-
-def _onboard_interactive() -> None:
-    """Interactive onboarding: questionary wizard from the openoutreach package."""
-    import linkedin.conf as conf
-    from linkedin.models import Campaign, LinkedInProfile
-    from openoutreach.prompts import SELF_HOSTED_QUESTIONS
-    from openoutreach.wizard import ask
-
-    # Filter out steps that are already complete
-    skip_keys: set[str] = set()
-
-    if Campaign.objects.exists():
-        skip_keys |= {
-            "campaign_name", "product_description", "campaign_objective",
-            "booking_link", "seed_urls",
-        }
-
-    if LinkedInProfile.objects.filter(active=True).exists():
-        skip_keys |= {
-            "linkedin_email", "linkedin_password", "newsletter",
-            "connect_daily_limit", "connect_weekly_limit", "follow_up_daily_limit",
-            "legal_acceptance",
-        }
-
-    if getattr(conf, "LLM_API_KEY", None):
-        skip_keys.add("llm_api_key")
-    if getattr(conf, "AI_MODEL", None):
-        skip_keys.add("ai_model")
-    if getattr(conf, "LLM_API_BASE", None):
-        skip_keys.add("llm_api_base")
-
-    questions = [q for q in SELF_HOSTED_QUESTIONS if q.key not in skip_keys]
-    if not questions or not any(q.required for q in questions):
-        return
-
-    answers = ask(questions)
-    if answers is None:
-        raise SystemExit("Onboarding cancelled.")
-
-    _apply_answers(answers)
-
-
-def ensure_onboarding(config: OnboardConfig | None = None) -> None:
-    """Ensure Campaign, LinkedInProfile, LLM config, and legal acceptance.
-
-    Pass an OnboardConfig to skip interactive prompts (non-interactive mode).
-    Pass None (default) for the interactive wizard.
-    """
-    if config:
-        _onboard_non_interactive(config)
-    else:
-        _onboard_interactive()
+        from linkedin.models import LinkedInProfile as LP
+        LP.objects.filter(legal_accepted=False, active=True).update(legal_accepted=True)

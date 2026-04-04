@@ -4,19 +4,38 @@ Detailed module documentation for OpenOutreach. See `CLAUDE.md` for rules and qu
 
 ## Entry Flow
 
-`manage.py` (Django bootstrap + auto-migrate + CRM setup):
-- Suppresses Pydantic serialization warning from langchain-openai. Configures logging: DEBUG level, suppresses noisy third-party loggers.
-- No args → runs daemon: `ensure_onboarding()` → validate `LLM_API_KEY` → `get_or_create_session(linkedin_profile)` → set default campaign → `session.self_profile` → GDPR newsletter override (marker-guarded) → `ensure_newsletter_subscription()` → `run_daemon(session)`.
-- With `runserver` arg → auto-migrates, then delegates to Django CLI.
-- Other args → delegates directly to `execute_from_command_line`.
+`manage.py` — stock Django management entrypoint. Bare `python manage.py` (no args) defaults to `rundaemon`.
+
+### `rundaemon` management command (`management/commands/rundaemon.py`)
+
+Startup sequence:
+1. **Configure logging** — DEBUG level, suppresses noisy third-party loggers (urllib3, httpx, langchain, openai, playwright, etc.).
+2. **Ensure DB** — `migrate --no-input` + `setup_crm` (idempotent).
+3. **Onboard** — checks `missing_keys()`; if incomplete: uses `--onboard <config.json>` (non-interactive), falls back to interactive wizard (TTY), or exits with clear error (no TTY).
+4. **Validate** — `LLM_API_KEY`, active `LinkedInProfile`, at least one campaign.
+5. **Session** — `get_or_create_session(profile)`, sets default campaign (first non-freemium).
+6. **Newsletter** — GDPR override + `ensure_newsletter_subscription()` (marker-guarded, runs once).
+7. **Run** — `run_daemon(session)`.
+
+Docker `start` script handles only Xvfb/VNC setup, then `exec python manage.py rundaemon "$@"`.
+
+### Other management commands
+
+- `onboard` — standalone onboarding (interactive or `--non-interactive` with `--config-file` / individual flags).
+- `setup_crm` — idempotent CRM bootstrap (default Site).
+- `add_seeds` — add seed LinkedIn profile URLs to a campaign.
 
 ## Onboarding (`onboarding.py`)
 
-`ensure_onboarding()` ensures Campaign, active LinkedInProfile, LLM config, and legal acceptance exist. Four checks:
+`OnboardConfig` — pure dataclass with all onboarding fields. Two constructors:
+- `OnboardConfig.from_json(path)` — from JSON file (cloud / non-interactive).
+- `collect_from_wizard()` — interactive questionary wizard (needs TTY), only asks for `missing_keys()`.
 
-1. **Campaign** — interactive prompts for campaign name, product docs, objective, booking link. Creates `Campaign` with M2M user membership.
-2. **LinkedInProfile** — prompts for LinkedIn email, password, newsletter, rate limits. Django username from email slug.
-3. **LLM config** — prompts for `LLM_API_KEY`, `AI_MODEL`, `LLM_API_BASE` → writes to `.env`.
+Single write path: `apply(config)` — idempotent, creates missing Campaign, LinkedInProfile, env vars, and legal acceptance. Four components:
+
+1. **Campaign** — name, product docs, objective, booking link, seed URLs. Creates `Campaign` with M2M user membership.
+2. **LinkedInProfile** — email, password, newsletter, rate limits. Django username from email slug.
+3. **LLM config** — `LLM_API_KEY`, `AI_MODEL`, `LLM_API_BASE` → writes to `.env` + `os.environ` + `conf`.
 4. **Legal notice** — per-account acceptance stored as `LinkedInProfile.legal_accepted`.
 
 ## Profile State Machine

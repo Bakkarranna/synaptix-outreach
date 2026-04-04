@@ -17,9 +17,6 @@ if [ "${ENABLE_VNC:-false}" = "true" ]; then
     websockify --web /opt/noVNC 6080 localhost:5900 &
 fi
 
-# Run Django migrations and bootstrap CRM data
-python manage.py migrate --no-input
-python manage.py setup_crm
-
-# Run the daemon (forward any arguments, e.g. --onboard <file>)
-exec python manage.py "$@"
+# Run the daemon (migrate + onboard + task queue).
+# Forward any arguments, e.g. --onboard <file>.
+exec python manage.py rundaemon "$@"
