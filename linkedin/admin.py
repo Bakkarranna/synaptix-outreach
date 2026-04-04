@@ -3,7 +3,18 @@ from django.contrib import admin
 
 from chat.models import ChatMessage
 
-from linkedin.models import ActionLog, Campaign, LinkedInProfile, SearchKeyword, Task
+from linkedin.models import ActionLog, Campaign, LinkedInProfile, SearchKeyword, SiteConfig, Task
+
+
+@admin.register(SiteConfig)
+class SiteConfigAdmin(admin.ModelAdmin):
+    list_display = ("__str__", "ai_model", "llm_api_base")
+
+    def has_add_permission(self, request):
+        return not SiteConfig.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(Campaign)

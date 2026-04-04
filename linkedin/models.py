@@ -17,6 +17,31 @@ _RATE_LIMIT_FIELDS = {
 }
 
 
+class SiteConfig(models.Model):
+    """Singleton model for global site configuration (LLM keys, etc.)."""
+
+    llm_api_key = models.CharField(max_length=500, blank=True, default="")
+    ai_model = models.CharField(max_length=200, blank=True, default="")
+    llm_api_base = models.CharField(max_length=500, blank=True, default="")
+
+    class Meta:
+        app_label = "linkedin"
+        verbose_name = "Site Configuration"
+        verbose_name_plural = "Site Configuration"
+
+    def __str__(self):
+        return "Site Configuration"
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def load(cls) -> "SiteConfig":
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+
 class Campaign(models.Model):
     name = models.CharField(max_length=200, unique=True)
     users = models.ManyToManyField(User, blank=True, related_name="campaigns")

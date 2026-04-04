@@ -45,7 +45,7 @@ class Command(BaseCommand):
             logging.getLogger(name).setLevel(logging.WARNING)
 
     def _ensure_db(self):
-        call_command("migrate", "--no-input", verbosity=0)
+        call_command("migrate", "--no-input")
 
         from linkedin.management.setup_crm import setup_crm
         setup_crm()
@@ -73,10 +73,11 @@ class Command(BaseCommand):
 
     def _create_session(self):
         from linkedin.browser.registry import get_first_active_profile, get_or_create_session
-        from linkedin.conf import LLM_API_KEY
+        from linkedin.conf import get_llm_config
 
-        if not LLM_API_KEY:
-            logger.error("LLM_API_KEY is required. Set it in .env or environment.")
+        llm_api_key, _, _ = get_llm_config()
+        if not llm_api_key:
+            logger.error("LLM_API_KEY is required. Set it in Site Configuration (Django Admin).")
             sys.exit(1)
 
         profile = get_first_active_profile()

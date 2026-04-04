@@ -13,7 +13,7 @@ import jinja2
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field, model_validator
 
-from linkedin.conf import AI_MODEL, LLM_API_KEY, LLM_API_BASE, PROMPTS_DIR
+from linkedin.conf import PROMPTS_DIR, get_llm_config
 
 logger = logging.getLogger(__name__)
 
@@ -98,11 +98,12 @@ def run_follow_up_agent(
     conversation_text = _format_conversation(messages)
     system_prompt = _render_system_prompt(session, profile, conversation_text)
 
+    llm_api_key, ai_model, llm_api_base = get_llm_config()
     llm = ChatOpenAI(
-        model=AI_MODEL,
+        model=ai_model,
         temperature=0.7,
-        api_key=LLM_API_KEY,
-        base_url=LLM_API_BASE,
+        api_key=llm_api_key,
+        base_url=llm_api_base,
         timeout=60,
     )
     structured_llm = llm.with_structured_output(FollowUpDecision)

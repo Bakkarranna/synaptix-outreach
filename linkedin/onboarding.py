@@ -10,7 +10,6 @@ Both return an OnboardConfig; ``apply()`` is the single write path.
 from __future__ import annotations
 
 import logging
-import os
 import sys
 from dataclasses import dataclass
 
@@ -18,7 +17,6 @@ from linkedin.conf import (
     DEFAULT_CONNECT_DAILY_LIMIT,
     DEFAULT_CONNECT_WEEKLY_LIMIT,
     DEFAULT_FOLLOW_UP_DAILY_LIMIT,
-    ENV_FILE,
     ROOT_DIR,
 )
 
@@ -79,8 +77,7 @@ _ALL_KEYS = _CAMPAIGN_KEYS | _ACCOUNT_KEYS | _LLM_KEYS
 
 def missing_keys() -> set[str]:
     """Return onboarding field keys that still need values."""
-    import linkedin.conf as conf
-    from linkedin.models import Campaign, LinkedInProfile
+    from linkedin.models import Campaign, LinkedInProfile, SiteConfig
 
     keys: set[str] = set()
 
@@ -90,11 +87,12 @@ def missing_keys() -> set[str]:
     if not LinkedInProfile.objects.filter(active=True).exists():
         keys |= _ACCOUNT_KEYS
 
-    if not getattr(conf, "LLM_API_KEY", None):
+    cfg = SiteConfig.load()
+    if not cfg.llm_api_key:
         keys.add("llm_api_key")
-    if not getattr(conf, "AI_MODEL", None):
+    if not cfg.ai_model:
         keys.add("ai_model")
-    if not getattr(conf, "LLM_API_BASE", None):
+    if not cfg.llm_api_base:
         keys.add("llm_api_base")
 
     return keys
@@ -125,31 +123,6 @@ def collect_from_wizard() -> OnboardConfig:
         k: v for k, v in answers.items()
         if k in OnboardConfig.__dataclass_fields__
     })
-
-
-# ---------------------------------------------------------------------------
-# .env helpers
-# ---------------------------------------------------------------------------
-
-def _write_env_var(var_name: str, value: str) -> None:
-    """Append a variable to .env if not already present."""
-    if ENV_FILE.exists():
-        content = ENV_FILE.read_text(encoding="utf-8")
-        if var_name not in content:
-            with open(ENV_FILE, "a", encoding="utf-8") as f:
-                f.write(f"\n{var_name}={value}\n")
-    else:
-        ENV_FILE.write_text(f"{var_name}={value}\n", encoding="utf-8")
-
-
-def _set_env_var(var_name: str, value: str) -> None:
-    """Write an env var to .env, os.environ, and linkedin.conf."""
-    import linkedin.conf as conf
-
-    _write_env_var(var_name, value)
-    os.environ[var_name] = value
-    setattr(conf, var_name, value)
-    logger.info("%s written to %s", var_name, ENV_FILE)
 
 
 # ---------------------------------------------------------------------------
@@ -263,14 +236,21 @@ def apply(config: OnboardConfig) -> None:
             follow_up_daily=config.follow_up_daily_limit,
         )
 
-    # LLM env vars
-    for var, val in [
-        ("LLM_API_KEY", config.llm_api_key),
-        ("AI_MODEL", config.ai_model),
-        ("LLM_API_BASE", config.llm_api_base),
+    # LLM config → DB
+    from linkedin.models import SiteConfig
+    cfg = SiteConfig.load()
+    updated = False
+    for field, val in [
+        ("llm_api_key", config.llm_api_key),
+        ("ai_model", config.ai_model),
+        ("llm_api_base", config.llm_api_base),
     ]:
         if val:
-            _set_env_var(var, val)
+            setattr(cfg, field, val)
+            updated = True
+    if updated:
+        cfg.save()
+        logger.info("LLM config saved to database.")
 
     # Legal
     if config.legal_acceptance:

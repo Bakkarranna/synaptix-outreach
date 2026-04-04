@@ -1,12 +1,7 @@
 # linkedin/conf.py
 from __future__ import annotations
 
-import os
 from pathlib import Path
-
-from dotenv import load_dotenv
-
-load_dotenv()
 
 
 # ----------------------------------------------------------------------
@@ -19,8 +14,6 @@ PROMPTS_DIR = Path(__file__).parent / "templates" / "prompts"
 DIAGNOSTICS_DIR = Path("/tmp/openoutreach-diagnostics")
 
 FASTEMBED_CACHE_DIR = ROOT_DIR / ".cache" / "fastembed"
-
-ENV_FILE = ROOT_DIR / ".env"
 
 FIXTURE_DIR = ROOT_DIR / "tests" / "fixtures"
 FIXTURE_PROFILES_DIR = FIXTURE_DIR / "profiles"
@@ -73,9 +66,12 @@ CAMPAIGN_CONFIG = {
 }
 
 # ----------------------------------------------------------------------
-# Global OpenAI / LLM config
+# Global OpenAI / LLM config (stored in DB via SiteConfig)
 # ----------------------------------------------------------------------
-LLM_API_KEY = os.getenv("LLM_API_KEY")
-LLM_API_BASE = os.getenv("LLM_API_BASE")
-AI_MODEL = os.getenv("AI_MODEL")
+
+def get_llm_config():
+    """Return (llm_api_key, ai_model, llm_api_base) from the DB."""
+    from linkedin.models import SiteConfig
+    cfg = SiteConfig.load()
+    return cfg.llm_api_key, cfg.ai_model, cfg.llm_api_base or None
 
