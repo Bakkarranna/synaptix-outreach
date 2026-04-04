@@ -50,7 +50,9 @@ jobs:
         with:
           context: .
           file: ./compose/linkedin/Dockerfile
-          build-args: BUILD_ENV=production
+          build-args: |
+            BUILD_ENV=production
+            GIT_SHA=${{ github.sha }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

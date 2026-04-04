@@ -1,4 +1,5 @@
 import logging
+import os
 import sys
 
 from django.core.management import call_command
@@ -19,6 +20,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         self._configure_logging()
+        self._print_version()
         self._ensure_db()
         self._ensure_onboarded(options["onboard"])
         session = self._create_session()
@@ -28,6 +30,10 @@ class Command(BaseCommand):
         run_daemon(session)
 
     # -- Steps ---------------------------------------------------------------
+
+    def _print_version(self):
+        sha = os.environ.get("GIT_SHA", "dev")
+        logger.info("OpenOutreach %s", sha[:8])
 
     def _configure_logging(self):
         logging.getLogger().handlers.clear()
