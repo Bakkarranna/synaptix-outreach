@@ -79,7 +79,7 @@ HOST_UID=$(id -u) HOST_GID=$(id -g) make up
 | `make build` | Build the Docker image without starting |
 | `make up` | Build and start the service |
 | `make stop` | Stop the running containers |
-| `make attach` | Follow application logs |
+| `make logs` | Follow application logs |
 | `make up-view` | Start + open VNC viewer (Linux, requires `vinagre`) |
 | `make view` | Open VNC viewer standalone (requires `vinagre`) |
 | `make docker-test` | Run the test suite in Docker |

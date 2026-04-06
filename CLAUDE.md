@@ -18,7 +18,7 @@ OpenOutreach — self-hosted LinkedIn automation for B2B lead generation. Playwr
 
 ```bash
 # Docker
-make build / make up / make stop / make attach / make up-view
+make build / make up / make stop / make logs / make up-view
 
 # Local dev
 make setup    # install deps + browsers + migrate + bootstrap CRM

@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help attach test docker-test stop build up up-view install setup run admin view
+.PHONY: help logs test docker-test stop build up up-view install setup run admin view
 
 help:
 	@perl -nle'print $& if m{^[a-zA-Z_-]+:.*?## .*$$}' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-25s\033[0m %s\n", $$1, $$2}'
@@ -27,7 +27,7 @@ admin: ## start the Django Admin web server
 	python manage.py runserver
 
 # Docker targets
-attach: ## follow the logs of the service
+logs: ## follow the logs of the service
 	docker compose -f local.yml logs -f
 
 docker-test: ## run tests in Docker
