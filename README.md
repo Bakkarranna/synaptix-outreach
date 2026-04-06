@@ -62,7 +62,7 @@ That's it. No spreadsheets, no lead databases, no scraping setup.
 Pre-built images are published to GitHub Container Registry on every push to `master`.
 
 ```bash
-docker run --pull always -it -p 5900:5900 -p 6080:6080 -v openoutreach_db:/app ghcr.io/eracle/openoutreach:latest
+docker run --pull always -it -p 5900:5900 -p 6080:6080 -v openoutreach_db:/app/data ghcr.io/eracle/openoutreach:latest
 
 # Open http://localhost:6080/vnc.html in your browser to watch the automation live
 ```

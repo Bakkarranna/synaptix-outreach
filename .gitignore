@@ -10,7 +10,7 @@ __pycache__/
 /.coverage
 /venv/
 /linkedin/management/commands/export_model.py
-/db.sqlite3
+/data/
 /media/
 .cache/
 tests/fixtures/pages/**/*.html

@@ -21,6 +21,9 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "linkedin.django_settings")
 
 if __name__ == "__main__":
     from django.core.management import execute_from_command_line
+    from linkedin.premigrations import run_premigrations
+
+    run_premigrations()
 
     # Bare `python manage.py` with no args → run the daemon (backward compat).
     if len(sys.argv) == 1:
