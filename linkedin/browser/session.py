@@ -71,6 +71,16 @@ class AccountSession:
         random_sleep(min_delay, max_delay)
         self.page.wait_for_load_state("load")
 
+    def reauthenticate(self):
+        """Force a fresh login: close browser, clear saved cookies, re-launch."""
+        from linkedin.browser.login import start_browser_session
+
+        logger.warning("Re-authenticating %s — clearing saved session", self)
+        self.close()
+        self.linkedin_profile.cookie_data = None
+        self.linkedin_profile.save(update_fields=["cookie_data"])
+        start_browser_session(session=self)
+
     def _maybe_refresh_cookies(self):
         """Re-login if the li_at auth cookie in the saved DB state is expired."""
         from linkedin.browser.login import start_browser_session

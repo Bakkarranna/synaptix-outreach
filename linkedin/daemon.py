@@ -21,6 +21,7 @@ from linkedin.conf import (
     REST_DAYS,
 )
 from linkedin.diagnostics import failure_diagnostics
+from linkedin.exceptions import AuthenticationError
 from linkedin.ml.qualifier import BayesianQualifier, KitQualifier
 from linkedin.models import Task
 from linkedin.tasks.check_pending import handle_check_pending
@@ -256,6 +257,16 @@ def run_daemon(session):
         try:
             with failure_diagnostics(session):
                 handler(task, session, qualifiers)
+        except AuthenticationError:
+            logger.warning("Session expired during %s — re-authenticating", task)
+            try:
+                session.reauthenticate()
+            except Exception:
+                task.mark_failed(traceback.format_exc())
+                logger.exception("Re-authentication failed for %s", task)
+                continue
+            task.reset_to_pending()
+            continue
         except Exception:
             task.mark_failed(traceback.format_exc())
             logger.exception("Task %s failed", task)

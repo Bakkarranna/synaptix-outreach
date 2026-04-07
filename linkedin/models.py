@@ -257,3 +257,9 @@ class Task(models.Model):
         self.status = self.Status.FAILED
         self.error = error
         self.save(update_fields=["status", "error"])
+
+    def reset_to_pending(self):
+        self.status = self.Status.PENDING
+        self.error = ""
+        self.started_at = None
+        self.save(update_fields=["status", "error", "started_at"])
