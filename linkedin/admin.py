@@ -51,7 +51,7 @@ class TaskAdmin(admin.ModelAdmin):
     list_display = ("task_type", "status", "scheduled_at", "payload", "created_at")
     list_filter = ("task_type", "status")
     readonly_fields = (
-        "task_type", "status", "scheduled_at", "payload", "error",
+        "task_type", "status", "scheduled_at", "payload",
         "created_at", "started_at", "completed_at",
     )
     date_hierarchy = "scheduled_at"

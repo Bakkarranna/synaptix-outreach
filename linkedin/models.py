@@ -227,7 +227,6 @@ class Task(models.Model):
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
     scheduled_at = models.DateTimeField()
     payload = models.JSONField(default=dict)
-    error = models.TextField(blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
     started_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
@@ -253,13 +252,11 @@ class Task(models.Model):
         self.completed_at = timezone.now()
         self.save(update_fields=["status", "completed_at"])
 
-    def mark_failed(self, error: str):
+    def mark_failed(self):
         self.status = self.Status.FAILED
-        self.error = error
-        self.save(update_fields=["status", "error"])
+        self.save(update_fields=["status"])
 
     def reset_to_pending(self):
         self.status = self.Status.PENDING
-        self.error = ""
         self.started_at = None
-        self.save(update_fields=["status", "error", "started_at"])
+        self.save(update_fields=["status", "started_at"])

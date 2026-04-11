@@ -4,7 +4,6 @@ from __future__ import annotations
 import logging
 import random
 import time
-import traceback
 from datetime import timedelta
 from zoneinfo import ZoneInfo
 
@@ -244,7 +243,8 @@ def run_daemon(session):
 
         campaign = Campaign.objects.filter(pk=task.payload.get("campaign_id")).first()
         if not campaign:
-            task.mark_failed(f"Campaign {task.payload.get('campaign_id')} not found")
+            logger.error("Campaign %s not found", task.payload.get("campaign_id"))
+            task.mark_failed()
             continue
 
         session.campaign = campaign
@@ -252,7 +252,8 @@ def run_daemon(session):
 
         handler = _HANDLERS.get(task.task_type)
         if handler is None:
-            task.mark_failed(f"Unknown task type: {task.task_type}")
+            logger.error("Unknown task type: %s", task.task_type)
+            task.mark_failed()
             continue
 
         try:
@@ -263,20 +264,20 @@ def run_daemon(session):
             try:
                 session.reauthenticate()
             except Exception:
-                task.mark_failed(traceback.format_exc())
+                task.mark_failed()
                 logger.exception("Re-authentication failed for %s", task)
                 continue
             task.reset_to_pending()
             continue
         except (openai.BadRequestError, openai.AuthenticationError, openai.NotFoundError) as e:
-            task.mark_failed(str(e))
+            task.mark_failed()
             logger.error(
                 colored("Daemon stopped — OpenAI API error", "red", attrs=["bold"])
                 + "\n%s\nCheck ai_model, llm_api_key, and llm_api_base in Admin → Site Configuration.", e,
             )
             return
         except Exception:
-            task.mark_failed(traceback.format_exc())
+            task.mark_failed()
             logger.exception("Task %s failed", task)
             continue
 
