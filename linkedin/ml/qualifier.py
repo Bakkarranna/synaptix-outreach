@@ -298,7 +298,7 @@ class BayesianQualifier:
         import joblib
 
         buf = io.BytesIO()
-        joblib.dump(self._pipeline, buf)
+        joblib.dump(self._pipeline, buf, compress=3)
         self._campaign.model_blob = buf.getvalue()
         self._campaign.save(update_fields=["model_blob"])
         logger.debug("Pipeline saved to DB for campaign %s", self._campaign)
