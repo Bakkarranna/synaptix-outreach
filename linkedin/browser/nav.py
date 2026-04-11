@@ -64,6 +64,18 @@ def find_first_visible(page, selectors: list[str]):
     return None
 
 
+def resolve_locator(page, candidates, timeout_per_ms: int = 5000):
+    """Try locator factories in order, return the first one that becomes visible."""
+    for factory in candidates:
+        locator = factory(page).first
+        try:
+            locator.wait_for(state="visible", timeout=timeout_per_ms)
+            return locator
+        except PlaywrightTimeoutError:
+            continue
+    raise RuntimeError(f"No locator matched on {page.url}")
+
+
 TOP_CARD_SELECTORS = [
     'section:has(div.top-card-background-hero-image)',
     'section[data-member-id]',

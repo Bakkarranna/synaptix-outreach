@@ -5,7 +5,7 @@ from playwright.sync_api import sync_playwright
 from playwright_stealth import Stealth
 from termcolor import colored
 
-from linkedin.browser.nav import goto_page, human_type
+from linkedin.browser.nav import goto_page, human_type, resolve_locator
 from linkedin.conf import (
     BROWSER_DEFAULT_TIMEOUT_MS,
     BROWSER_LOGIN_TIMEOUT_MS,
@@ -17,11 +17,30 @@ logger = logging.getLogger(__name__)
 LINKEDIN_LOGIN_URL = "https://www.linkedin.com/login"
 LINKEDIN_FEED_URL = "https://www.linkedin.com/feed/"
 
-SELECTORS = {
-    "email": 'input#username',
-    "password": 'input#password',
-    "submit": 'button[type="submit"]',
-}
+EMAIL_LOCATORS = [
+    lambda p: p.get_by_role("textbox", name="Email or phone"),
+    lambda p: p.get_by_label("Email or phone"),
+    lambda p: p.locator('input[autocomplete="webauthn"]'),
+    lambda p: p.locator('input[name="session_key"]'),
+    lambda p: p.locator('input#username'),
+    lambda p: p.locator('form input[type="text"]'),
+]
+
+PASSWORD_LOCATORS = [
+    lambda p: p.locator('input[type="password"]'),
+    lambda p: p.locator('input[autocomplete="current-password"]'),
+    lambda p: p.get_by_role("textbox", name="Password"),
+    lambda p: p.get_by_label("Password"),
+    lambda p: p.locator('input[name="session_password"]'),
+    lambda p: p.locator('input#password'),
+]
+
+SUBMIT_LOCATORS = [
+    lambda p: p.locator("form").get_by_role("button", name="Sign in", exact=True),
+    lambda p: p.get_by_role("button", name="Sign in", exact=True),
+    lambda p: p.locator('form button[type="submit"]'),
+    lambda p: p.locator('button[type="submit"]'),
+]
 
 
 def playwright_login(session: "AccountSession"):
@@ -36,14 +55,15 @@ def playwright_login(session: "AccountSession"):
         error_message="Failed to load login page",
     )
 
-    human_type(page.locator(SELECTORS["email"]), lp.linkedin_username)
+    human_type(resolve_locator(page, EMAIL_LOCATORS), lp.linkedin_username)
     session.wait()
-    human_type(page.locator(SELECTORS["password"]), lp.linkedin_password)
+    human_type(resolve_locator(page, PASSWORD_LOCATORS), lp.linkedin_password)
     session.wait()
 
+    submit = resolve_locator(page, SUBMIT_LOCATORS)
     goto_page(
         session,
-        action=lambda: page.locator(SELECTORS["submit"]).click(),
+        action=lambda: submit.click(),
         expected_url_pattern="/feed",
         timeout=BROWSER_LOGIN_TIMEOUT_MS,
         error_message="Login failed – no redirect to feed",
