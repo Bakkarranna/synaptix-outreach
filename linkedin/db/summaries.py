@@ -146,13 +146,20 @@ def materialize_profile_summary_if_missing(deal, session) -> None:
 # ── Chat summary ──
 
 def _format_messages_for_extraction(messages: Iterable) -> str:
-    """Render new ChatMessages as a `Me:`/`Lead:` transcript for fact extraction."""
+    """Render incoming ChatMessages as a transcript for fact extraction.
+
+    Outgoing messages are dropped: `chat_summary` holds facts ABOUT the
+    lead, not about our own pitch. A one-sided burst of outgoing messages
+    therefore yields an empty string and short-circuits the LLM call,
+    keeping seller content out of the lead's memory.
+    """
     lines = []
     for m in messages:
-        speaker = "Me" if m.is_outgoing else "Lead"
+        if m.is_outgoing:
+            continue
         content = (m.content or "").strip()
         if content:
-            lines.append(f"{speaker}: {content}")
+            lines.append(content)
     return "\n".join(lines)
 
 

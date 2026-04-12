@@ -117,14 +117,15 @@ class TestUpdateChatSummary:
         deal_with_lead.refresh_from_db()
         assert deal_with_lead.chat_summary is None
 
-    def test_first_pass_persists_facts(self, db, deal_with_lead):
+    def test_first_pass_persists_facts_and_drops_outgoing(self, db, deal_with_lead):
+        """Outgoing messages are filtered before extraction; only lead replies reach the LLM."""
         from linkedin.db.summaries import update_chat_summary
 
         msgs = [
             self._msg("Hi, are you the founder?", is_outgoing=True),
-            self._msg("Yeah, what's up?", is_outgoing=False),
+            self._msg("Yeah, I founded Acme last year.", is_outgoing=False),
         ]
-        new_facts = ["Lead is the founder.", "Conversation has been cordial."]
+        new_facts = ["Lead founded Acme last year."]
         with patch("linkedin.db.summaries.extract_facts",
                    return_value=new_facts) as mock_extract, \
              patch("linkedin.db.summaries.reconcile_facts",
@@ -132,12 +133,29 @@ class TestUpdateChatSummary:
             update_chat_summary(deal_with_lead, iter(msgs))
 
         sent_text = mock_extract.call_args[0][0]
-        assert "Me: Hi, are you the founder?" in sent_text
-        assert "Lead: Yeah, what's up?" in sent_text
+        assert sent_text == "Yeah, I founded Acme last year."
+        assert "Hi, are you the founder?" not in sent_text  # outgoing was dropped
         # First pass: existing is empty, reconcile sees only new facts.
         mock_reconcile.assert_called_once_with([], new_facts)
         deal_with_lead.refresh_from_db()
         assert deal_with_lead.chat_summary == {"facts": new_facts}
+
+    def test_all_outgoing_burst_is_noop(self, db, deal_with_lead):
+        """A one-sided seller-only burst must not pollute chat_summary with our pitch."""
+        from linkedin.db.summaries import update_chat_summary
+
+        msgs = [
+            self._msg("Ciao Andrea, sono Diego di Sunnyplans...", is_outgoing=True),
+            self._msg("Hai visto il mio messaggio?", is_outgoing=True),
+        ]
+        with patch("linkedin.db.summaries.extract_facts") as mock_extract, \
+             patch("linkedin.db.summaries.reconcile_facts") as mock_reconcile:
+            update_chat_summary(deal_with_lead, msgs)
+
+        mock_extract.assert_not_called()
+        mock_reconcile.assert_not_called()
+        deal_with_lead.refresh_from_db()
+        assert deal_with_lead.chat_summary is None
 
     def test_second_pass_reconciles_via_mem0_prompt(self, db, deal_with_lead):
         """A second sync routes through reconcile_facts → mem0 UPDATE prompt."""
