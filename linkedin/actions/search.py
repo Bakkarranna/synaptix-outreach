@@ -19,12 +19,31 @@ def _go_to_profile(session: "AccountSession", url: str, public_identifier: str):
     if f"/in/{public_identifier}" in session.page.url:
         return
     logger.debug("Direct navigation → %s", public_identifier)
-    goto_page(
-        session,
-        action=lambda: session.page.goto(url),
-        expected_url_pattern=f"/in/{public_identifier}",
-        error_message="Failed to navigate to the target profile"
-    )
+    try:
+        goto_page(
+            session,
+            action=lambda: session.page.goto(url),
+            expected_url_pattern=f"/in/{public_identifier}",
+            error_message="Failed to navigate to the target profile"
+        )
+    except RuntimeError:
+        new_id = _detect_profile_redirect(session, public_identifier)
+        if not new_id:
+            raise
+        from linkedin.db.leads import update_lead_slug
+        update_lead_slug(public_identifier, new_id)
+
+
+def _detect_profile_redirect(session, old_public_id: str) -> str | None:
+    """Return the new public_id if LinkedIn redirected to a different /in/ slug."""
+    from urllib.parse import unquote
+    from linkedin.url_utils import url_to_public_id
+
+    new_id = url_to_public_id(unquote(session.page.url))
+    if new_id and new_id != old_public_id:
+        logger.info("Profile redirect: %s → %s", old_public_id, new_id)
+        return new_id
+    return None
 
 
 def visit_profile(session: "AccountSession", profile: Dict[str, Any]):

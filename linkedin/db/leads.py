@@ -86,6 +86,20 @@ def get_leads_for_qualification(session) -> list:
     return [lead.to_profile_dict() for lead in leads]
 
 
+def update_lead_slug(old_public_id: str, new_public_id: str):
+    """Update a Lead after LinkedIn redirected its vanity URL."""
+    from crm.models import Lead
+
+    new_url = public_id_to_url(new_public_id)
+    updated = Lead.objects.filter(public_identifier=old_public_id).update(
+        public_identifier=new_public_id,
+        linkedin_url=new_url,
+    )
+    if updated:
+        logger.info("Lead slug updated: %s → %s", old_public_id, new_public_id)
+    return updated
+
+
 def disqualify_lead(public_id: str):
     """Set Lead.disqualified = True (account-level, permanent, cross-campaign)."""
     from crm.models import Lead
