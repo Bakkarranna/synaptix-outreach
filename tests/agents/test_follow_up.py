@@ -30,6 +30,7 @@ def _msg(content, is_outgoing):
     m = MagicMock()
     m.content = content
     m.is_outgoing = is_outgoing
+    m.creation_date = None
     return m
 
 
