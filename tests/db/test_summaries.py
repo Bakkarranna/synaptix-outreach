@@ -1,6 +1,7 @@
 """Tests for linkedin/db/summaries.py — the mem0-style fact-list boundary."""
 from __future__ import annotations
 
+import json
 from unittest.mock import patch, MagicMock
 
 import pytest
@@ -123,19 +124,23 @@ class TestUpdateChatSummary:
             self._msg("Hi, are you the founder?", is_outgoing=True),
             self._msg("Yeah, what's up?", is_outgoing=False),
         ]
+        new_facts = ["Lead is the founder.", "Conversation has been cordial."]
         with patch("linkedin.db.summaries.extract_facts",
-                   return_value=["Lead is the founder.", "Conversation has been cordial."]) as mock_extract:
+                   return_value=new_facts) as mock_extract, \
+             patch("linkedin.db.summaries.reconcile_facts",
+                   return_value=new_facts) as mock_reconcile:
             update_chat_summary(deal_with_lead, iter(msgs))
 
         sent_text = mock_extract.call_args[0][0]
         assert "Me: Hi, are you the founder?" in sent_text
         assert "Lead: Yeah, what's up?" in sent_text
+        # First pass: existing is empty, reconcile sees only new facts.
+        mock_reconcile.assert_called_once_with([], new_facts)
         deal_with_lead.refresh_from_db()
-        assert deal_with_lead.chat_summary == {
-            "facts": ["Lead is the founder.", "Conversation has been cordial."],
-        }
+        assert deal_with_lead.chat_summary == {"facts": new_facts}
 
-    def test_second_pass_merges_dedups(self, db, deal_with_lead):
+    def test_second_pass_reconciles_via_mem0_prompt(self, db, deal_with_lead):
+        """A second sync routes through reconcile_facts → mem0 UPDATE prompt."""
         from linkedin.db.summaries import update_chat_summary
 
         deal_with_lead.chat_summary = {"facts": ["Lead is the founder."]}
@@ -143,9 +148,14 @@ class TestUpdateChatSummary:
 
         msgs = [self._msg("We have budget.", is_outgoing=False)]
         with patch("linkedin.db.summaries.extract_facts",
-                   return_value=["Lead is the founder.", "Lead has budget."]):
+                   return_value=["Lead has budget."]), \
+             patch("linkedin.db.summaries.reconcile_facts",
+                   return_value=["Lead is the founder.", "Lead has budget."]) as mock_reconcile:
             update_chat_summary(deal_with_lead, msgs)
 
+        mock_reconcile.assert_called_once_with(
+            ["Lead is the founder."], ["Lead has budget."]
+        )
         deal_with_lead.refresh_from_db()
         assert deal_with_lead.chat_summary == {
             "facts": ["Lead is the founder.", "Lead has budget."],
@@ -159,3 +169,137 @@ class TestUpdateChatSummary:
             update_chat_summary(deal_with_lead, msgs)
 
         mock_extract.assert_not_called()
+
+
+class TestReconcileFacts:
+    """reconcile_facts wraps mem0's UPDATE prompt — mock the LLM at the boundary."""
+
+    def _stub_llm_with(self, memory_actions, *, raw_text=None):
+        """Build a fake ChatOpenAI whose `.invoke().content` returns a JSON string.
+
+        `raw_text` lets a test inject a non-JSON wrapper (markdown fence, think
+        block, leading prose) to exercise the parse-fallback chain.
+        """
+        payload = raw_text if raw_text is not None else json.dumps({"memory": memory_actions})
+        fake_response = MagicMock()
+        fake_response.content = payload
+        fake_llm = MagicMock()
+        fake_llm.invoke.return_value = fake_response
+        return fake_llm
+
+    def test_empty_new_facts_returns_existing_unchanged(self, db):
+        from linkedin.db.summaries import reconcile_facts
+
+        with patch("langchain_openai.ChatOpenAI") as mock_cls:
+            result = reconcile_facts(["fact a", "fact b"], [])
+
+        assert result == ["fact a", "fact b"]
+        mock_cls.assert_not_called()
+
+    def test_contradiction_drops_stale_fact(self, db):
+        """LLM returns DELETE for the stale fact + ADD for the new one — both applied."""
+        from linkedin.db.summaries import reconcile_facts
+
+        actions = [
+            {"id": "0", "text": "Lead has no budget.", "event": "DELETE"},
+            {"id": "1", "text": "Lead has budget.", "event": "ADD"},
+        ]
+        fake_llm = self._stub_llm_with(actions)
+        with patch("langchain_openai.ChatOpenAI", return_value=fake_llm), \
+             patch("linkedin.conf.get_llm_config",
+                   return_value=("sk-test", "gpt-4o-mini", "https://api.openai.com/v1")):
+            result = reconcile_facts(
+                ["Lead has no budget."],
+                ["Lead has budget."],
+            )
+
+        assert result == ["Lead has budget."]
+
+    def test_update_event_replaces_in_place(self, db):
+        from linkedin.db.summaries import reconcile_facts
+
+        actions = [
+            {"id": "0", "text": "Lead is CTO at Acme.", "event": "UPDATE",
+             "old_memory": "Lead is an engineer at Acme."},
+        ]
+        fake_llm = self._stub_llm_with(actions)
+        with patch("langchain_openai.ChatOpenAI", return_value=fake_llm), \
+             patch("linkedin.conf.get_llm_config",
+                   return_value=("sk-test", "gpt-4o-mini", "https://api.openai.com/v1")):
+            result = reconcile_facts(
+                ["Lead is an engineer at Acme."],
+                ["Lead is CTO at Acme."],
+            )
+
+        assert result == ["Lead is CTO at Acme."]
+
+    def test_unknown_id_in_update_is_skipped(self, db, caplog):
+        """LLM hallucinates an id that doesn't exist — log + skip, don't crash."""
+        from linkedin.db.summaries import reconcile_facts
+
+        actions = [
+            {"id": "999", "text": "Hallucinated.", "event": "UPDATE"},
+            {"id": "0", "text": "Real ADD.", "event": "ADD"},
+        ]
+        fake_llm = self._stub_llm_with(actions)
+        with caplog.at_level("WARNING"), \
+             patch("langchain_openai.ChatOpenAI", return_value=fake_llm), \
+             patch("linkedin.conf.get_llm_config",
+                   return_value=("sk-test", "gpt-4o-mini", "https://api.openai.com/v1")):
+            result = reconcile_facts(["existing fact"], ["new fact"])
+
+        assert "existing fact" in result
+        assert "Real ADD." in result
+        assert "Hallucinated." not in result
+        assert any("UPDATE skipped" in r.message for r in caplog.records)
+
+    def test_none_event_is_noop(self, db):
+        from linkedin.db.summaries import reconcile_facts
+
+        actions = [
+            {"id": "0", "text": "Lead is the founder.", "event": "NONE"},
+            {"id": "1", "text": "Lead replied politely.", "event": "ADD"},
+        ]
+        fake_llm = self._stub_llm_with(actions)
+        with patch("langchain_openai.ChatOpenAI", return_value=fake_llm), \
+             patch("linkedin.conf.get_llm_config",
+                   return_value=("sk-test", "gpt-4o-mini", "https://api.openai.com/v1")):
+            result = reconcile_facts(
+                ["Lead is the founder."],
+                ["Lead replied politely."],
+            )
+
+        assert result == ["Lead is the founder.", "Lead replied politely."]
+
+    def test_markdown_wrapped_json_is_parsed(self, db):
+        """Provider that wraps JSON in ```json ... ``` should still parse via fallback."""
+        from linkedin.db.summaries import reconcile_facts
+
+        wrapped = (
+            "```json\n"
+            '{"memory": [{"id": "0", "text": "Lead is in Berlin.", "event": "ADD"}]}\n'
+            "```"
+        )
+        fake_llm = self._stub_llm_with([], raw_text=wrapped)
+        with patch("langchain_openai.ChatOpenAI", return_value=fake_llm), \
+             patch("linkedin.conf.get_llm_config",
+                   return_value=("sk-test", "gpt-4o-mini", "https://api.openai.com/v1")):
+            result = reconcile_facts([], ["Lead is in Berlin."])
+
+        assert result == ["Lead is in Berlin."]
+
+    def test_reasoning_model_think_block_is_stripped(self, db):
+        """Reasoning model output with <think> blocks before the JSON parses cleanly."""
+        from linkedin.db.summaries import reconcile_facts
+
+        wrapped = (
+            "<think>The user wants me to add this fact about location.</think>\n"
+            '{"memory": [{"id": "0", "text": "Lead is in Berlin.", "event": "ADD"}]}'
+        )
+        fake_llm = self._stub_llm_with([], raw_text=wrapped)
+        with patch("langchain_openai.ChatOpenAI", return_value=fake_llm), \
+             patch("linkedin.conf.get_llm_config",
+                   return_value=("sk-test", "gpt-4o-mini", "https://api.openai.com/v1")):
+            result = reconcile_facts([], ["Lead is in Berlin."])
+
+        assert result == ["Lead is in Berlin."]

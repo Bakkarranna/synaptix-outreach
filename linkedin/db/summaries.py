@@ -8,10 +8,14 @@ rebuilds them from source (a Voyager re-scrape for `profile_summary`,
 """
 from __future__ import annotations
 
+import json
 import logging
 from typing import Iterable
 
 from pydantic import BaseModel, Field
+
+from linkedin.vendor.mem0.configs.prompts import get_update_memory_messages
+from linkedin.vendor.mem0.memory.utils import extract_json, remove_code_blocks
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +49,19 @@ class FactList(BaseModel):
         default_factory=list,
         description="Atomic, self-contained factual statements extracted from the input text.",
     )
+
+
+class _MemoryAction(BaseModel):
+    """One entry in mem0's reconciliation response — matches DEFAULT_UPDATE_MEMORY_PROMPT schema."""
+
+    id: str
+    text: str
+    event: str = Field(description='One of "ADD", "UPDATE", "DELETE", "NONE".')
+    old_memory: str | None = None
+
+
+class _ReconcileResponse(BaseModel):
+    memory: list[_MemoryAction] = Field(default_factory=list)
 
 
 # ── LLM boundary ──
@@ -158,22 +175,94 @@ def update_chat_summary(deal, new_messages) -> None:
         return
 
     existing = (deal.chat_summary or {}).get("facts", [])
-    merged = _merge_facts(existing, new_facts)
-    deal.chat_summary = {"facts": merged}
+    reconciled = reconcile_facts(existing, new_facts)
+    deal.chat_summary = {"facts": reconciled}
     deal.save(update_fields=["chat_summary"])
     logger.info(
-        "chat_summary updated for deal=%s (+%d facts → %d total)",
-        deal.pk, len(new_facts), len(merged),
+        "chat_summary updated for deal=%s (+%d new facts → %d total)",
+        deal.pk, len(new_facts), len(reconciled),
     )
 
 
-def _merge_facts(existing: list[str], new: list[str]) -> list[str]:
-    """Append new facts that aren't already present (case-insensitive match)."""
-    seen = {f.strip().lower() for f in existing}
-    merged = list(existing)
-    for fact in new:
-        key = fact.strip().lower()
-        if key and key not in seen:
-            merged.append(fact)
-            seen.add(key)
-    return merged
+# ── Reconciliation ──
+#
+# Mirrors mem0/memory/main.py::Memory._add_to_vector_store reconciliation
+# (pinned commit c239d8a4, upstream lines 594-700) with two substitutions:
+#   - vector-store ops → in-memory dict (Deal.chat_summary is a flat list)
+#   - mem0's `self.llm.generate_response` → ChatOpenAI.with_structured_output
+
+def reconcile_facts(existing: list[str], new_facts: list[str]) -> list[str]:
+    """Reconcile `new_facts` against `existing` via mem0's UPDATE prompt.
+
+    Returns the new flat fact list after applying ADD/UPDATE/DELETE/NONE.
+    """
+    if not new_facts:
+        return list(existing)
+    actions = _request_memory_actions(existing, new_facts)
+    return _apply_memory_actions(existing, actions)
+
+
+def _request_memory_actions(existing: list[str], new_facts: list[str]) -> list[_MemoryAction]:
+    """Run mem0's UPDATE prompt and return the parsed event list.
+
+    Uses raw JSON mode + the vendored `remove_code_blocks` / `extract_json`
+    fallback chain (mirroring upstream lines 545-556) so providers that wrap
+    JSON in markdown or emit `<think>` blocks still parse cleanly.
+    """
+    from langchain_openai import ChatOpenAI
+
+    from linkedin.conf import get_llm_config
+
+    llm_api_key, ai_model, llm_api_base = get_llm_config()
+    if not llm_api_key:
+        raise ValueError("LLM_API_KEY is not set in Site Configuration.")
+
+    old_memory = [{"id": str(idx), "text": fact} for idx, fact in enumerate(existing)]
+    prompt = get_update_memory_messages(old_memory, new_facts, None)
+
+    llm = ChatOpenAI(
+        model=ai_model,
+        temperature=0.0,
+        api_key=llm_api_key,
+        base_url=llm_api_base,
+        timeout=60,
+        model_kwargs={"response_format": {"type": "json_object"}},
+    )
+    raw = llm.invoke([{"role": "user", "content": prompt}])
+    text = raw.content if isinstance(raw.content, str) else str(raw.content)
+    return _ReconcileResponse.model_validate(_parse_memory_response(text)).memory
+
+
+def _parse_memory_response(text: str) -> dict:
+    """Parse mem0's UPDATE prompt response, mirroring upstream's two-step fallback."""
+    cleaned = remove_code_blocks(text)
+    if not cleaned.strip():
+        return {"memory": []}
+    try:
+        return json.loads(cleaned, strict=False)
+    except json.JSONDecodeError:
+        return json.loads(extract_json(text), strict=False)
+
+
+def _apply_memory_actions(existing: list[str], actions: list[_MemoryAction]) -> list[str]:
+    """Apply ADD/UPDATE/DELETE/NONE events to a flat fact list keyed by index."""
+    store: dict[str, str] = {str(idx): fact for idx, fact in enumerate(existing)}
+    next_id = len(existing)
+
+    for action in actions:
+        if not action.text:
+            continue
+        if action.event == "ADD":
+            store[str(next_id)] = action.text
+            next_id += 1
+        elif action.event == "UPDATE":
+            if action.id in store:
+                store[action.id] = action.text
+            else:
+                logger.warning("UPDATE skipped: unknown id %r", action.id)
+        elif action.event == "DELETE":
+            if store.pop(action.id, None) is None:
+                logger.warning("DELETE skipped: unknown id %r", action.id)
+        # NONE: explicit no-op
+
+    return list(store.values())
