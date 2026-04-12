@@ -141,17 +141,17 @@ if __name__ == "__main__":
     args = parser.parse_args()
     session = cli_session(args)
 
-    print(f"Fetching conversation as {session} → {args.profile}")
+    logger.info("Fetching conversation as %s → %s", session, args.profile)
     lead = Lead.objects.get(public_identifier=args.profile)
     target_urn = lead.get_urn(session)
     mailbox_urn = session.self_profile["urn"]
     messages = get_conversation(session, target_urn, mailbox_urn)
 
     if messages is None:
-        print(f"No conversation found with {args.profile}")
+        logger.error("No conversation found with %s", args.profile)
     elif not messages:
-        print("Conversation found but no messages parsed")
+        logger.warning("Conversation found but no messages parsed")
     else:
-        print(f"\n--- Conversation with {args.profile} ({len(messages)} messages) ---\n")
+        logger.info("--- Conversation with %s (%d messages) ---", args.profile, len(messages))
         for msg in messages:
-            print(f"[{msg['timestamp']}] {msg['sender']}: {msg['text']}\n")
+            logger.info("[%s] %s: %s", msg['timestamp'], msg['sender'], msg['text'])

@@ -91,22 +91,22 @@ if __name__ == "__main__":
     # Resolve target profile URN
     lead = Lead.objects.get(public_identifier=args.profile)
     target_urn = lead.get_urn(session)
-    print(f"Resolved URN: {target_urn}")
+    logger.debug("Resolved URN: %s", target_urn)
 
     # Find conversation URN
     mailbox_urn = session.self_profile["urn"]
 
     conversation_urn = find_conversation_urn(api, target_urn, mailbox_urn)
     if not conversation_urn:
-        print("Not in recent conversations, trying navigation fallback...")
+        logger.info("Not in recent conversations, trying navigation fallback...")
         conversation_urn = find_conversation_urn_via_navigation(session, target_urn)
     if not conversation_urn:
-        print(f"No existing conversation found with {args.profile}")
+        logger.error("No existing conversation found with %s", args.profile)
         raise SystemExit(1)
-    print(f"Conversation URN: {conversation_urn}")
+    logger.debug("Conversation URN: %s", conversation_urn)
 
     # Send message via API
-    print(f"Sending message to {args.profile}: {args.text}")
+    logger.info("Sending message to %s: %s", args.profile, args.text)
     result = send_message(api, conversation_urn, args.text, mailbox_urn)
     delivered_at = result.get("value", {}).get("deliveredAt")
-    print(f"Message sent successfully! (deliveredAt: {delivered_at})")
+    logger.info("Message sent successfully! (deliveredAt: %s)", delivered_at)

@@ -1,7 +1,10 @@
 """Backfill empty public_identifier/linkedin_url, then enforce unique + non-nullable."""
+import logging
 from urllib.parse import quote, urlparse, unquote
 
 from django.db import migrations, models
+
+logger = logging.getLogger(__name__)
 
 
 def _url_to_public_id(url):
@@ -26,12 +29,12 @@ def backfill(apps, schema_editor):
     for lead in Lead.objects.all():
         pid = _url_to_public_id(lead.linkedin_url)
         if pid and pid != lead.public_identifier:
-            print(f"  Backfill: Lead {lead.pk} public_identifier='{lead.public_identifier}' → '{pid}'")
+            logger.debug("Backfill: Lead %d public_identifier='%s' → '%s'", lead.pk, lead.public_identifier, pid)
             lead.public_identifier = pid
             lead.save(update_fields=["public_identifier"])
         elif not pid and not lead.public_identifier:
             pid = f"_unknown_{lead.pk}"
-            print(f"  Backfill: Lead {lead.pk} → public_identifier='{pid}'")
+            logger.debug("Backfill: Lead %d → public_identifier='%s'", lead.pk, pid)
             lead.public_identifier = pid
             lead.save(update_fields=["public_identifier"])
 
@@ -40,7 +43,7 @@ def backfill(apps, schema_editor):
 
     for lead in Lead.objects.filter(linkedin_url=""):
         url = _public_id_to_url(lead.public_identifier)
-        print(f"  Backfill: Lead {lead.pk} linkedin_url='' → '{url}'")
+        logger.debug("Backfill: Lead %d linkedin_url='' → '%s'", lead.pk, url)
         lead.linkedin_url = url
         lead.save(update_fields=["linkedin_url"])
 

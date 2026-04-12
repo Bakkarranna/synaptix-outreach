@@ -73,7 +73,7 @@ if __name__ == "__main__":
         mailbox_urn = session.self_profile["urn"]
         raw = fetch_conversations(api, mailbox_urn)
         elements = raw.get("data", {}).get("messengerConversationsBySyncToken", {}).get("elements", [])
-        print(f"Got {len(elements)} conversations:\n")
+        logger.info("Got %d conversations:", len(elements))
         for conv in elements:
             urn = conv.get("entityUrn", "")
             participants = []
@@ -84,12 +84,12 @@ if __name__ == "__main__":
                 name = f"{first} {last}".strip()
                 if name:
                     participants.append(name)
-            print(f"  {', '.join(participants)}")
-            print(f"    URN: {urn}\n")
+            logger.info("  %s", ", ".join(participants))
+            logger.debug("    URN: %s", urn)
 
     elif args.messages:
         raw = fetch_messages(api, args.messages)
-        print(json.dumps(raw, indent=2, default=str)[:10000])
+        logger.info(json.dumps(raw, indent=2, default=str)[:10000])
 
     else:
         parser.print_help()

@@ -11,7 +11,7 @@ class Command(BaseCommand):
     help = "Run the OpenOutreach daemon (onboard, validate, start task queue)."
 
     def handle(self, *args, **options):
-        self._configure_logging()
+        self._configure_logging(verbose=options["verbosity"] >= 2)
         self._ensure_db()
         self._ensure_onboarded()
         session = self._create_session()
@@ -22,14 +22,12 @@ class Command(BaseCommand):
 
     # -- Steps ---------------------------------------------------------------
 
-    def _configure_logging(self):
-        logging.getLogger().handlers.clear()
-        logging.basicConfig(level=logging.DEBUG, format="%(message)s")
-        for name in (
-            "urllib3", "httpx", "langchain", "openai", "playwright",
-            "httpcore", "fastembed", "huggingface_hub", "filelock", "asyncio",
-        ):
-            logging.getLogger(name).setLevel(logging.WARNING)
+    def _configure_logging(self, verbose: bool = False):
+        from linkedin.logging import configure_logging, print_banner
+
+        level = logging.DEBUG if verbose else logging.INFO
+        configure_logging(level=level)
+        print_banner()
 
     def _ensure_db(self):
         call_command("migrate", "--no-input")

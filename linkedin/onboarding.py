@@ -136,8 +136,7 @@ def _create_campaign(name: str, product_docs: str, objective: str, booking_link:
         campaign_objective=objective,
         booking_link=booking_link,
     )
-    logger.info("Created campaign: %s", name)
-    print(f"Campaign '{name}' created!")
+    logger.info("Campaign '%s' created!", name)
     return campaign
 
 
@@ -177,8 +176,7 @@ def _create_account(
         follow_up_daily_limit=follow_up_daily,
     )
 
-    logger.info("Created LinkedIn profile for %s (handle=%s)", email, handle)
-    print(f"Account '{handle}' created!")
+    logger.info("Account '%s' created! (email=%s)", handle, email)
     return profile
 
 
@@ -191,7 +189,7 @@ def _create_seed_leads(campaign, seed_urls: str) -> None:
     public_ids = parse_seed_urls(seed_urls)
     if public_ids:
         created = create_seed_leads(campaign, public_ids)
-        print(f"{created} seed profile(s) added as QUALIFIED.")
+        logger.info("%d seed profile(s) added as QUALIFIED.", created)
 
 
 # ---------------------------------------------------------------------------

@@ -171,7 +171,7 @@ if __name__ == "__main__":
         "public_identifier": args.profile,
     }
 
-    print(f"Navigating to profile as {session} → {args.profile}")
+    logger.info("Navigating to profile as %s → %s", session, args.profile)
 
     visit_profile(session, test_profile)
 

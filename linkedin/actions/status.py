@@ -127,6 +127,6 @@ if __name__ == "__main__":
         "public_identifier": args.profile,
     }
 
-    print(f"Checking connection status as {session} → {args.profile}")
+    logger.info("Checking connection status as %s → %s", session, args.profile)
     status = get_connection_status(session, test_profile)
-    print(f"Connection status → {status.value}")
+    logger.info("Connection status → %s", status.value)

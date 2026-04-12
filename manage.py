@@ -25,8 +25,8 @@ if __name__ == "__main__":
 
     run_premigrations()
 
-    # Bare `python manage.py` with no args → run the daemon (backward compat).
-    if len(sys.argv) == 1:
-        sys.argv = [sys.argv[0], "rundaemon"]
+    # No subcommand (or first arg is a flag) → default to rundaemon.
+    if len(sys.argv) == 1 or sys.argv[1].startswith("-"):
+        sys.argv = [sys.argv[0], "rundaemon"] + sys.argv[1:]
 
     execute_from_command_line(sys.argv)

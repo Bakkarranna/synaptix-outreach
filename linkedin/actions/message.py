@@ -292,7 +292,7 @@ if __name__ == "__main__":
     session = cli_session(args)
     session.ensure_browser()
 
-    print(f"Searching for '{args.name}' ...")
+    logger.info("Searching for '%s' ...", args.name)
 
     goto_page(
         session,
@@ -310,11 +310,10 @@ if __name__ == "__main__":
 
     rows = _find(session.page, "search_result_row")
     count = rows.count()
-    print(f"\n=== Found {count} result rows ===\n")
+    logger.info("=== Found %d result rows ===", count)
     for i in range(min(count, 3)):
         row = rows.nth(i)
-        print(f"--- Row {i} inner_text ---")
-        print(row.inner_text(timeout=5_000))
-        print(f"\n--- Row {i} outer_html ---")
-        print(row.evaluate("el => el.outerHTML"))
-        print()
+        logger.debug("--- Row %d inner_text ---", i)
+        logger.debug(row.inner_text(timeout=5_000))
+        logger.debug("--- Row %d outer_html ---", i)
+        logger.debug(row.evaluate("el => el.outerHTML"))

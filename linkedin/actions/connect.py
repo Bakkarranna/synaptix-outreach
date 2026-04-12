@@ -132,13 +132,13 @@ if __name__ == "__main__":
         "public_identifier": args.profile,
     }
 
-    print(f"Testing connection request as {session} → {args.profile}")
+    logger.info("Testing connection request as %s → %s", session, args.profile)
 
     connection_status = get_connection_status(session, test_profile)
-    print(f"Pre-check status → {connection_status.value}")
+    logger.info("Pre-check status → %s", connection_status.value)
 
     if connection_status in (ProfileState.CONNECTED, ProfileState.PENDING):
-        print(f"Skipping – already {connection_status.value}")
+        logger.info("Skipping – already %s", connection_status.value)
     else:
         status = send_connection_request(session=session, profile=test_profile)
-        print(f"Finished → Status: {status.value}")
+        logger.info("Finished → Status: %s", status.value)

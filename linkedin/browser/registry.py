@@ -51,8 +51,8 @@ def cli_parser(description: str):
     import django
     django.setup()
 
-    logging.basicConfig(level=logging.DEBUG, format="[%(levelname)s] %(message)s")
-    logging.getLogger("asyncio").setLevel(logging.WARNING)
+    from linkedin.logging import configure_logging
+    configure_logging(level=logging.DEBUG)
 
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument("--handle", default=None, help="Django username (default: first active profile)")
@@ -63,12 +63,12 @@ def cli_session(args) -> "AccountSession":
     """Resolve profile from parsed args, create session, set default campaign."""
     linkedin_profile = resolve_profile(args.handle)
     if not linkedin_profile:
-        print("No active LinkedInProfile found.")
+        logger.error("No active LinkedInProfile found.")
         raise SystemExit(1)
 
     session = get_or_create_session(linkedin_profile)
     if not session.campaigns:
-        print(f"No campaigns found for {linkedin_profile}.")
+        logger.error("No campaigns found for %s.", linkedin_profile)
         raise SystemExit(1)
     session.campaign = session.campaigns[0]
     return session

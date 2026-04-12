@@ -126,5 +126,5 @@ if __name__ == "__main__":
     session.ensure_browser()
 
     start_browser_session(session=session)
-    print("Logged in! Close browser manually.")
+    logger.info("Logged in! Close browser manually.")
     session.page.pause()

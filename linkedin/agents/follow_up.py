@@ -222,20 +222,19 @@ if __name__ == "__main__":
         .first()
     )
     if not deal:
-        print(f"No Deal found for {public_id}")
+        logger.error("No Deal found for %s", public_id)
         raise SystemExit(1)
 
-    print(f"Running follow-up agent as {session} for {public_id}")
-    print(f"Campaign: {session.campaign}")
-    print()
+    logger.info("Running follow-up agent as %s for %s", session, public_id)
+    logger.info("Campaign: %s", session.campaign)
 
     materialize_profile_summary_if_missing(deal, session)
     decision = run_follow_up_agent(session, deal)
 
-    print(f"Chat facts: {_format_facts(deal.chat_summary)}")
-    print(f"Action: {decision.action}")
+    logger.info("Chat facts: %s", _format_facts(deal.chat_summary))
+    logger.info("Action: %s", decision.action)
     if decision.message:
-        print(f"Message: {decision.message}")
+        logger.info("Message: %s", decision.message)
     if decision.outcome:
-        print(f"Outcome: {decision.outcome}")
-    print(f"Follow-up in: {decision.follow_up_hours}h")
+        logger.info("Outcome: %s", decision.outcome)
+    logger.info("Follow-up in: %sh", decision.follow_up_hours)

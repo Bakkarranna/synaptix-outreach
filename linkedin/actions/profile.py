@@ -38,7 +38,7 @@ def _save_profile_to_fixture(enriched_profile: Dict[str, Any], path: str | Path)
 
 # python -m linkedin.actions.profile
 if __name__ == "__main__":
-    from pprint import pprint
+    import json as _json
     from linkedin.browser.registry import cli_parser, cli_session
 
     parser = cli_parser("Scrape a LinkedIn profile")
@@ -51,10 +51,10 @@ if __name__ == "__main__":
         "url": f"https://www.linkedin.com/in/{args.profile}/",
     }
 
-    print(f"Scraping profile as {session} → {args.profile}")
+    logger.info("Scraping profile as %s → %s", session, args.profile)
 
     profile, data = scrape_profile(session, test_profile)
-    pprint(profile)
+    logger.info("Profile data:\n%s", _json.dumps(profile, indent=2, default=str))
 
     if args.save_fixture:
         fixture_path = FIXTURE_PROFILES_DIR / "linkedin_profile.json"
