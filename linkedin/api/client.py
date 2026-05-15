@@ -1,7 +1,6 @@
 # linkedin/api/client.py
 import json
 import logging
-import threading
 from typing import Optional, Any
 from urllib.parse import urlencode
 
@@ -11,7 +10,6 @@ from linkedin.api.voyager import parse_linkedin_voyager_response, parse_connecti
 from linkedin.url_utils import url_to_public_id
 from linkedin.exceptions import (
     AuthenticationError,
-    BrowserUnresponsiveError,
     ProfileInaccessibleError,
 )
 
@@ -78,64 +76,19 @@ class PlaywrightLinkedinAPI:
         });
     }"""
 
-    def _run_with_watchdog(self, label: str, fn):
-        """Run *fn* under a Python-side watchdog.
-
-        The JS-side ``AbortController`` only fires while V8 is running; if
-        Chromium is OOM-killed or the page is stuck on a consent/captcha
-        overlay, ``page.evaluate`` blocks the Python thread indefinitely.
-        This watchdog closes the browser context after ``2 * timeout_ms`` so
-        the caller raises ``BrowserUnresponsiveError`` (an ``IOError``) and
-        the existing tenacity retry can try again on a fresh session.
-        """
-        deadline_s = 2 * self.timeout_ms / 1000
-        fired = threading.Event()
-
-        def _kill():
-            fired.set()
-            logger.error("Browser watchdog fired on %s — closing context", label)
-            try:
-                self.page.context.close()
-            except Exception:
-                logger.debug("context.close() raised inside watchdog", exc_info=True)
-
-        timer = threading.Timer(deadline_s, _kill)
-        timer.daemon = True
-        timer.start()
-        try:
-            result = fn()
-        except Exception as exc:
-            if fired.is_set():
-                raise BrowserUnresponsiveError(
-                    f"Browser unresponsive after {int(deadline_s)}s on {label}"
-                ) from exc
-            raise
-        finally:
-            timer.cancel()
-
-        # Race: the timer may have fired after fn() returned but before we
-        # cancelled. Any response we obtained is from an already-closed
-        # context; treat it as a hang.
-        if fired.is_set():
-            raise BrowserUnresponsiveError(
-                f"Browser unresponsive after {int(deadline_s)}s on {label}"
-            )
-        return result
-
     def _fetch(self, method: str, url: str, headers: dict,
                body: str | None = None) -> _FetchResponse:
         """Run fetch() inside the browser page context.
 
         Carries all browser-injected headers (x-li-track, cookies, sec-ch-*,
-        …) exactly like a real XHR. Wrapped in the Python-side watchdog so
-        a dead Chromium child can't hang the daemon forever.
+        …) exactly like a real XHR. The JS-side AbortController enforces
+        the per-request deadline; if Chromium itself dies, page.evaluate
+        raises a Playwright error, the handler fails, and reconcile
+        re-creates the task on the next idle cycle.
         """
-        raw = self._run_with_watchdog(
-            f"{method} {url}",
-            lambda: self.page.evaluate(
-                self._FETCH_JS,
-                [method, url, headers, body, self.timeout_ms],
-            ),
+        raw = self.page.evaluate(
+            self._FETCH_JS,
+            [method, url, headers, body, self.timeout_ms],
         )
         return _FetchResponse(raw)
 
