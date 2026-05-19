@@ -249,7 +249,7 @@ Book a **free 15-minute call** — I'd love to hear your needs and improve the t
 
 <div align="center">
 
-[![Book a 15-min call](https://img.shields.io/badge/Book%20a%2015--min%20call-28A745?style=for-the-badge&logo=calendar)](https://calendly.com/eracle/new-meeting)
+[![Book a 15-min call](https://img.shields.io/badge/Book%20a%2015--min%20call-28A745?style=for-the-badge&logo=calendar)](https://www.cal.eu/eracle/15min)
 
 </div>
 
