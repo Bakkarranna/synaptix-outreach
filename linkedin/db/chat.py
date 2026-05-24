@@ -33,12 +33,12 @@ def _update_deal_chat_summary(session, lead, new_messages):
     if not new_messages:
         return
     from crm.models import Deal
-    from linkedin.db.summaries import update_chat_summary
+    from linkedin.db.summaries import seller_name_from, update_chat_summary
 
     deal = Deal.objects.filter(lead=lead, campaign=session.campaign).first()
     if not deal:
         return
-    update_chat_summary(deal, new_messages)
+    update_chat_summary(deal, new_messages, seller_name=seller_name_from(session))
 
 
 def _sync_from_api(session, public_identifier: str, lead, ct) -> list:

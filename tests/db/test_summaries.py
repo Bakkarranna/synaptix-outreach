@@ -60,8 +60,8 @@ class TestExtractFacts:
     def test_empty_input_returns_empty_list(self, db):
         from linkedin.db.summaries import extract_facts
 
-        assert extract_facts("") == []
-        assert extract_facts("   \n  ") == []
+        assert extract_facts("", seller_name="Diego") == []
+        assert extract_facts("   \n  ", seller_name="Diego") == []
 
     def test_invokes_llm_with_structured_output(self, db):
         from linkedin.db.summaries import extract_facts
@@ -73,12 +73,13 @@ class TestExtractFacts:
         with patch("linkedin.llm.get_llm_model", return_value=model):
             facts = extract_facts(
                 "Alice works at Acme. She lives in Berlin.",
+                seller_name="Diego",
                 context="Campaign objective: hire engineers",
             )
 
         assert facts == ["Works at Acme.", "Based in Berlin."]
-        # The system prompt carries the vendored prompt + context; the user
-        # message carries the input text.
+        # The system prompt carries the vendored prompt + identity binding +
+        # context; the user message carries the input text.
         rendered = "\n".join(
             part.content
             for msg in captured["messages"]
@@ -87,6 +88,7 @@ class TestExtractFacts:
         )
         assert "Campaign objective" in rendered
         assert "Alice works at Acme" in rendered
+        assert "[Me] is named Diego" in rendered
 
 
 class TestMaterializeProfileSummary:
@@ -129,6 +131,8 @@ class TestMaterializeProfileSummary:
 
 
 class TestUpdateChatSummary:
+    BINDING = {"seller_name": "Diego"}
+
     def _msg(self, content, is_outgoing):
         m = MagicMock()
         m.content = content
@@ -139,7 +143,7 @@ class TestUpdateChatSummary:
         from linkedin.db.summaries import update_chat_summary
 
         with patch("linkedin.db.summaries.extract_facts") as mock_extract:
-            update_chat_summary(deal_with_lead, [])
+            update_chat_summary(deal_with_lead, [], **self.BINDING)
 
         mock_extract.assert_not_called()
         deal_with_lead.refresh_from_db()
@@ -158,13 +162,14 @@ class TestUpdateChatSummary:
                    return_value=new_facts) as mock_extract, \
              patch("linkedin.db.summaries.reconcile_facts",
                    return_value=new_facts) as mock_reconcile:
-            update_chat_summary(deal_with_lead, iter(msgs))
+            update_chat_summary(deal_with_lead, iter(msgs), **self.BINDING)
 
         sent_text = mock_extract.call_args[0][0]
         assert "[Me] Hi, are you the founder?" in sent_text
         assert "[Lead] Yeah, I founded Acme last year." in sent_text
+        assert mock_extract.call_args.kwargs["seller_name"] == "Diego"
         # First pass: existing is empty, reconcile sees only new facts.
-        mock_reconcile.assert_called_once_with([], new_facts)
+        mock_reconcile.assert_called_once_with([], new_facts, **self.BINDING)
         deal_with_lead.refresh_from_db()
         assert deal_with_lead.chat_summary == {"facts": new_facts}
 
@@ -178,7 +183,7 @@ class TestUpdateChatSummary:
         ]
         with patch("linkedin.db.summaries.extract_facts") as mock_extract, \
              patch("linkedin.db.summaries.reconcile_facts") as mock_reconcile:
-            update_chat_summary(deal_with_lead, msgs)
+            update_chat_summary(deal_with_lead, msgs, **self.BINDING)
 
         mock_extract.assert_not_called()
         mock_reconcile.assert_not_called()
@@ -197,10 +202,10 @@ class TestUpdateChatSummary:
                    return_value=["Lead has budget."]), \
              patch("linkedin.db.summaries.reconcile_facts",
                    return_value=["Lead is the founder.", "Lead has budget."]) as mock_reconcile:
-            update_chat_summary(deal_with_lead, msgs)
+            update_chat_summary(deal_with_lead, msgs, **self.BINDING)
 
         mock_reconcile.assert_called_once_with(
-            ["Lead is the founder."], ["Lead has budget."]
+            ["Lead is the founder."], ["Lead has budget."], **self.BINDING,
         )
         deal_with_lead.refresh_from_db()
         assert deal_with_lead.chat_summary == {
@@ -212,7 +217,7 @@ class TestUpdateChatSummary:
 
         msgs = [self._msg("   ", is_outgoing=True), self._msg("", is_outgoing=False)]
         with patch("linkedin.db.summaries.extract_facts") as mock_extract:
-            update_chat_summary(deal_with_lead, msgs)
+            update_chat_summary(deal_with_lead, msgs, **self.BINDING)
 
         mock_extract.assert_not_called()
 
@@ -220,11 +225,13 @@ class TestUpdateChatSummary:
 class TestReconcileFacts:
     """reconcile_facts wraps mem0's UPDATE prompt — mock the LLM at the boundary."""
 
+    BINDING = {"seller_name": "Diego"}
+
     def test_empty_new_facts_returns_existing_unchanged(self, db):
         from linkedin.db.summaries import reconcile_facts
 
         with patch("linkedin.llm.get_llm_model") as mock_factory:
-            result = reconcile_facts(["fact a", "fact b"], [])
+            result = reconcile_facts(["fact a", "fact b"], [], **self.BINDING)
 
         assert result == ["fact a", "fact b"]
         mock_factory.assert_not_called()
@@ -242,6 +249,7 @@ class TestReconcileFacts:
             result = reconcile_facts(
                 ["Lead has no budget."],
                 ["Lead has budget."],
+                **self.BINDING,
             )
 
         assert result == ["Lead has budget."]
@@ -258,6 +266,7 @@ class TestReconcileFacts:
             result = reconcile_facts(
                 ["Lead is an engineer at Acme."],
                 ["Lead is CTO at Acme."],
+                **self.BINDING,
             )
 
         assert result == ["Lead is CTO at Acme."]
@@ -273,7 +282,7 @@ class TestReconcileFacts:
         model = _text_function_model(json.dumps({"memory": actions}))
         with caplog.at_level("WARNING"), \
              patch("linkedin.llm.get_llm_model", return_value=model):
-            result = reconcile_facts(["existing fact"], ["new fact"])
+            result = reconcile_facts(["existing fact"], ["new fact"], **self.BINDING)
 
         assert "existing fact" in result
         assert "Real ADD." in result
@@ -292,6 +301,7 @@ class TestReconcileFacts:
             result = reconcile_facts(
                 ["Lead is the founder."],
                 ["Lead replied politely."],
+                **self.BINDING,
             )
 
         assert result == ["Lead is the founder.", "Lead replied politely."]
@@ -307,7 +317,7 @@ class TestReconcileFacts:
         )
         model = _text_function_model(wrapped)
         with patch("linkedin.llm.get_llm_model", return_value=model):
-            result = reconcile_facts([], ["Lead is in Berlin."])
+            result = reconcile_facts([], ["Lead is in Berlin."], **self.BINDING)
 
         assert result == ["Lead is in Berlin."]
 
@@ -321,6 +331,6 @@ class TestReconcileFacts:
         )
         model = _text_function_model(wrapped)
         with patch("linkedin.llm.get_llm_model", return_value=model):
-            result = reconcile_facts([], ["Lead is in Berlin."])
+            result = reconcile_facts([], ["Lead is in Berlin."], **self.BINDING)
 
         assert result == ["Lead is in Berlin."]
