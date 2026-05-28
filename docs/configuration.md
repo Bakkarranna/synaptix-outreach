@@ -41,7 +41,6 @@ Django Admin or created during interactive onboarding.
 | `active` | boolean | Enable/disable this account. | `true` |
 | `subscribe_newsletter` | boolean | Receive OpenOutreach updates. | `true` |
 | `connect_daily_limit` | integer | Max connection requests per day. | `20` |
-| `connect_weekly_limit` | integer | Max connection requests per week. | `100` |
 | `follow_up_daily_limit` | integer | Max follow-up messages per day. | `30` |
 | `legal_accepted` | boolean | Whether the user accepted the legal notice. | `false` |
 

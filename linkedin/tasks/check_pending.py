@@ -1,60 +1,68 @@
 # linkedin/tasks/check_pending.py
-"""Check pending task — re-checks one PENDING profile's connection status.
+"""Check pending task — re-checks one due PENDING deal in the campaign.
 
-The next task (follow_up for CONNECTED, check_pending for still-PENDING)
-is enqueued by the scheduler hook fired from set_profile_state. This
-handler is responsible only for domain logic: running the status probe
-and doubling the check_pending backoff when the profile is still pending.
+Lazy: the slot carries only ``campaign_id``. The handler picks the
+oldest-due PENDING deal at execution time. If the recheck leaves the
+deal in PENDING, the backoff is doubled and ``next_check_pending_at``
+re-stamped via the ``on_deal_state_entered`` hook.
 """
 from __future__ import annotations
 
 import logging
 
+from django.utils import timezone
 from termcolor import colored
 
-from linkedin.db.deals import get_profile_dict_for_public_id, set_profile_state
+from linkedin.db.deals import set_profile_state
 from linkedin.enums import ProfileState
 from linkedin.exceptions import SkipProfile
 
 logger = logging.getLogger(__name__)
 
 
-def _bump_backoff(session, public_id: str, current_hours: float) -> float:
-    """Double the check_pending backoff on the Deal; return the new value."""
+def _next_due_pending_deal(campaign):
     from crm.models import Deal
 
-    new_backoff = current_hours * 2
-    deal = Deal.objects.filter(
-        lead__public_identifier=public_id,
-        campaign=session.campaign,
-    ).first()
-    if deal:
-        deal.backoff_hours = new_backoff
-        deal.save(update_fields=["backoff_hours"])
-    return new_backoff
+    return (
+        Deal.objects.filter(
+            campaign=campaign,
+            state=ProfileState.PENDING,
+            next_check_pending_at__lte=timezone.now(),
+        )
+        .select_related("lead", "campaign")
+        .order_by("next_check_pending_at")
+        .first()
+    )
+
+
+def _double_backoff(deal) -> float:
+    from linkedin.conf import CAMPAIGN_CONFIG
+    current = deal.backoff_hours or CAMPAIGN_CONFIG["check_pending_recheck_after_hours"]
+    deal.backoff_hours = current * 2
+    deal.save(update_fields=["backoff_hours"])
+    return deal.backoff_hours
 
 
 def handle_check_pending(task, session, qualifiers):
     from linkedin.actions.status import get_connection_status
 
-    payload = task.payload
-    public_id = payload["public_id"]
-    backoff_hours = payload.get("backoff_hours", 24)
-
-    logger.info(
-        "[%s] %s %s",
-        session.campaign, colored("\u25b6 check_pending", "magenta", attrs=["bold"]), public_id,
-    )
-
-    profile_dict = get_profile_dict_for_public_id(session, public_id)
-    if profile_dict is None:
-        logger.warning("check_pending: no Deal for %s — skipping", public_id)
+    campaign = session.campaign
+    deal = _next_due_pending_deal(campaign)
+    if deal is None:
+        logger.info("[%s] check_pending: no due PENDING deals — slot skipped", campaign)
         return
 
-    profile = profile_dict.get("profile") or profile_dict
+    public_id = deal.lead.public_identifier
+    logger.info(
+        "[%s] %s %s",
+        campaign, colored("▶ check_pending", "magenta", attrs=["bold"]), public_id,
+    )
+
+    profile = deal.lead.to_profile_dict()
+    profile_for_status = profile.get("profile") or profile
 
     try:
-        new_state = get_connection_status(session, profile)
+        new_state = get_connection_status(session, profile_for_status)
     except SkipProfile as e:
         logger.warning("Skipping %s: %s", public_id, e)
         set_profile_state(session, public_id, ProfileState.FAILED.value)
@@ -62,12 +70,9 @@ def handle_check_pending(task, session, qualifiers):
 
     if new_state == ProfileState.PENDING:
         # Still pending — double the backoff before set_profile_state so the
-        # scheduler hook picks up the bumped value when enqueueing the next
-        # check_pending.
-        new_backoff = _bump_backoff(session, public_id, backoff_hours)
-        logger.info(
-            "%s still pending — backoff %.1fh → %.1fh",
-            public_id, backoff_hours, new_backoff,
-        )
+        # state hook re-stamps next_check_pending_at with the doubled value.
+        old = deal.backoff_hours or 0
+        new = _double_backoff(deal)
+        logger.info("%s still pending — backoff %.1fh → %.1fh", public_id, old, new)
 
     set_profile_state(session, public_id, new_state.value)

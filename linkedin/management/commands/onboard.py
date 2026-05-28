@@ -4,7 +4,6 @@ from django.core.management.base import BaseCommand
 
 from linkedin.conf import (
     DEFAULT_CONNECT_DAILY_LIMIT,
-    DEFAULT_CONNECT_WEEKLY_LIMIT,
     DEFAULT_FOLLOW_UP_DAILY_LIMIT,
 )
 
@@ -32,7 +31,6 @@ class Command(BaseCommand):
         parser.add_argument("--newsletter", action="store_true", default=True)
         parser.add_argument("--no-newsletter", dest="newsletter", action="store_false")
         parser.add_argument("--connect-daily-limit", type=int, default=DEFAULT_CONNECT_DAILY_LIMIT)
-        parser.add_argument("--connect-weekly-limit", type=int, default=DEFAULT_CONNECT_WEEKLY_LIMIT)
         parser.add_argument("--follow-up-daily-limit", type=int, default=DEFAULT_FOLLOW_UP_DAILY_LIMIT)
         parser.add_argument("--legal-acceptance", action="store_true")
 
@@ -69,7 +67,6 @@ class Command(BaseCommand):
                 llm_api_base=options["llm_api_base"],
                 newsletter=options["newsletter"],
                 connect_daily_limit=options["connect_daily_limit"],
-                connect_weekly_limit=options["connect_weekly_limit"],
                 follow_up_daily_limit=options["follow_up_daily_limit"],
                 legal_acceptance=options["legal_acceptance"],
             )

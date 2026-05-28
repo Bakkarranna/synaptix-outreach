@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import date, timedelta
+from datetime import date
 
 from django.contrib.auth.models import User
 from django.db import models
@@ -10,10 +10,10 @@ from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
-# action_type → (daily_limit_field, weekly_limit_field)
+# action_type → daily_limit_field
 _RATE_LIMIT_FIELDS = {
-    "connect": ("connect_daily_limit", "connect_weekly_limit"),
-    "follow_up": ("follow_up_daily_limit", None),
+    "connect": "connect_daily_limit",
+    "follow_up": "follow_up_daily_limit",
 }
 
 
@@ -92,7 +92,6 @@ class LinkedInProfile(models.Model):
     subscribe_newsletter = models.BooleanField(default=True)
     active = models.BooleanField(default=True)
     connect_daily_limit = models.PositiveIntegerField(default=20)
-    connect_weekly_limit = models.PositiveIntegerField(default=100)
     follow_up_daily_limit = models.PositiveIntegerField(default=25)
     legal_accepted = models.BooleanField(default=False)
     cookie_data = models.JSONField(null=True, blank=True)
@@ -103,7 +102,7 @@ class LinkedInProfile(models.Model):
         self._exhausted: dict[str, date] = {}
 
     def can_execute(self, action_type: str) -> bool:
-        """Check if the action is allowed under daily/weekly rate limits."""
+        """Check if the action is allowed under the daily rate limit."""
         # Reset exhaustion flag on a new day
         exhausted_date = self._exhausted.get(action_type)
         if exhausted_date is not None and exhausted_date != date.today():
@@ -111,18 +110,12 @@ class LinkedInProfile(models.Model):
         if action_type in self._exhausted:
             return False
 
-        daily_field, weekly_field = _RATE_LIMIT_FIELDS[action_type]
-
-        self.refresh_from_db(fields=[daily_field] + ([weekly_field] if weekly_field else []))
+        daily_field = _RATE_LIMIT_FIELDS[action_type]
+        self.refresh_from_db(fields=[daily_field])
 
         daily_limit = getattr(self, daily_field)
         if daily_limit is not None and self._daily_count(action_type) >= daily_limit:
             return False
-
-        if weekly_field:
-            weekly_limit = getattr(self, weekly_field)
-            if weekly_limit is not None and self._weekly_count(action_type) >= weekly_limit:
-                return False
 
         return True
 
@@ -142,16 +135,6 @@ class LinkedInProfile(models.Model):
         return ActionLog.objects.filter(
             linkedin_profile=self, action_type=action_type,
             created_at__gte=today_start,
-        ).count()
-
-    def _weekly_count(self, action_type: str) -> int:
-        now = timezone.now()
-        monday = (now - timedelta(days=now.weekday())).replace(
-            hour=0, minute=0, second=0, microsecond=0,
-        )
-        return ActionLog.objects.filter(
-            linkedin_profile=self, action_type=action_type,
-            created_at__gte=monday,
         ).count()
 
     def __str__(self):

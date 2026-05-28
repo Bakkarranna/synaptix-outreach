@@ -18,7 +18,6 @@ from linkedin.conf import (
     ACTIVE_TIMEZONE,
     CAMPAIGN_CONFIG,
     ENABLE_ACTIVE_HOURS,
-    REST_DAYS,
 )
 from linkedin.diagnostics import failure_diagnostics
 from linkedin.exceptions import AuthenticationError
@@ -215,23 +214,23 @@ def _build_qualifiers(campaigns, cfg, kit_model=None):
 
 
 def seconds_until_active() -> float:
-    """Return seconds to wait before the next active window, or 0 if active now."""
+    """Return seconds to wait before the next active window, or 0 if active now.
+
+    Single contiguous daily window — no weekend skip.
+    """
     if not ENABLE_ACTIVE_HOURS:
         return 0.0
     tz = ZoneInfo(ACTIVE_TIMEZONE)
     now = timezone.localtime(timezone=tz)
 
-    if now.weekday() not in REST_DAYS and ACTIVE_START_HOUR <= now.hour < ACTIVE_END_HOUR:
+    if ACTIVE_START_HOUR <= now.hour < ACTIVE_END_HOUR:
         return 0.0
 
-    # Find the next active start: try today first, then subsequent days
     candidate = timezone.make_aware(
         now.replace(hour=ACTIVE_START_HOUR, minute=0, second=0, microsecond=0, tzinfo=None),
         timezone=tz,
     )
     if candidate <= now:
-        candidate += timedelta(days=1)
-    while candidate.weekday() in REST_DAYS:
         candidate += timedelta(days=1)
     return (candidate - now).total_seconds()
 

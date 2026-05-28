@@ -42,27 +42,6 @@ class TestCanExecuteDaily:
 
 
 @pytest.mark.django_db
-class TestCanExecuteWeekly:
-    def test_within_weekly_limit(self, fake_session):
-        lp = fake_session.linkedin_profile
-        lp.connect_weekly_limit = 5
-        lp.save(update_fields=["connect_weekly_limit"])
-
-        for _ in range(4):
-            lp.record_action(ActionLog.ActionType.CONNECT, fake_session.campaign)
-        assert lp.can_execute(ActionLog.ActionType.CONNECT)
-
-    def test_at_weekly_limit(self, fake_session):
-        lp = fake_session.linkedin_profile
-        lp.connect_weekly_limit = 3
-        lp.save(update_fields=["connect_weekly_limit"])
-
-        for _ in range(3):
-            lp.record_action(ActionLog.ActionType.CONNECT, fake_session.campaign)
-        assert not lp.can_execute(ActionLog.ActionType.CONNECT)
-
-
-@pytest.mark.django_db
 class TestCanExecuteReset:
     def test_daily_reset_via_old_actions(self, fake_session):
         lp = fake_session.linkedin_profile
@@ -74,18 +53,6 @@ class TestCanExecuteReset:
 
         # Backdate the action to yesterday
         ActionLog.objects.update(created_at=timezone.now() - timedelta(days=1))
-        assert lp.can_execute(ActionLog.ActionType.CONNECT)
-
-    def test_weekly_reset_via_old_actions(self, fake_session):
-        lp = fake_session.linkedin_profile
-        lp.connect_weekly_limit = 1
-        lp.save(update_fields=["connect_weekly_limit"])
-
-        lp.record_action(ActionLog.ActionType.CONNECT, fake_session.campaign)
-        assert not lp.can_execute(ActionLog.ActionType.CONNECT)
-
-        # Backdate the action to last week
-        ActionLog.objects.update(created_at=timezone.now() - timedelta(days=8))
         assert lp.can_execute(ActionLog.ActionType.CONNECT)
 
 
@@ -120,17 +87,6 @@ class TestFollowUpLimits:
         lp.record_action(ActionLog.ActionType.FOLLOW_UP, fake_session.campaign)
         lp.record_action(ActionLog.ActionType.FOLLOW_UP, fake_session.campaign)
         assert not lp.can_execute(ActionLog.ActionType.FOLLOW_UP)
-
-    def test_follow_up_no_weekly_limit(self, fake_session):
-        """Follow-up has no weekly limit — only daily matters."""
-        lp = fake_session.linkedin_profile
-        lp.follow_up_daily_limit = 100
-        lp.save(update_fields=["follow_up_daily_limit"])
-
-        for _ in range(50):
-            lp.record_action(ActionLog.ActionType.FOLLOW_UP, fake_session.campaign)
-        assert lp.can_execute(ActionLog.ActionType.FOLLOW_UP)
-
 
 @pytest.mark.django_db
 class TestDynamicLimitChanges:

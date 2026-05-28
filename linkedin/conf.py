@@ -39,18 +39,24 @@ HUMAN_TYPE_MAX_DELAY_MS = 200
 # Onboarding defaults (shown to user during interactive setup)
 # ----------------------------------------------------------------------
 DEFAULT_CONNECT_DAILY_LIMIT = 20
-DEFAULT_CONNECT_WEEKLY_LIMIT = 100
 DEFAULT_FOLLOW_UP_DAILY_LIMIT = 25
 
 # ----------------------------------------------------------------------
 # Active-hours schedule (daemon pauses outside this window)
-# Set to False to run 24/7.
+# Set to False to run 24/7. Working hours are a single contiguous window;
+# weekends are no longer special-cased (humans use LinkedIn 7 days a week).
 # ----------------------------------------------------------------------
 ENABLE_ACTIVE_HOURS = False
 ACTIVE_START_HOUR = 9   # inclusive, local time
 ACTIVE_END_HOUR = 19    # exclusive, local time
 ACTIVE_TIMEZONE = system_timezone()
-REST_DAYS = (5, 6)      # 0=Mon … 6=Sun; default Sat+Sun off
+
+# ----------------------------------------------------------------------
+# Planner cap for check_pending: at most this many lazy slots per 24h
+# planning window, regardless of how many PENDING deals are overdue.
+# Overflow rolls into the next planning cycle.
+# ----------------------------------------------------------------------
+CHECK_PENDING_DAILY_CAP = 100
 
 # ----------------------------------------------------------------------
 # Campaign config (timing + ML defaults — hardcoded, no YAML)
@@ -62,8 +68,6 @@ CAMPAIGN_CONFIG = {
     "min_ready_to_connect_prob": 0.9,
     "min_positive_pool_prob": 0.20,
     "embedding_model": "BAAI/bge-small-en-v1.5",
-    "connect_delay_seconds": 10,
-    "connect_no_candidate_delay_seconds": 300,
     "enrich_min_delay_seconds": 6,
     "enrich_max_delay_seconds": 10,
     "enrich_max_per_page": 10,

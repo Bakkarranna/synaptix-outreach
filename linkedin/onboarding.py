@@ -15,7 +15,6 @@ from dataclasses import dataclass
 
 from linkedin.conf import (
     DEFAULT_CONNECT_DAILY_LIMIT,
-    DEFAULT_CONNECT_WEEKLY_LIMIT,
     DEFAULT_FOLLOW_UP_DAILY_LIMIT,
     ROOT_DIR,
 )
@@ -47,7 +46,6 @@ class OnboardConfig:
     llm_api_base: str = ""
     newsletter: bool = True
     connect_daily_limit: int = DEFAULT_CONNECT_DAILY_LIMIT
-    connect_weekly_limit: int = DEFAULT_CONNECT_WEEKLY_LIMIT
     follow_up_daily_limit: int = DEFAULT_FOLLOW_UP_DAILY_LIMIT
     legal_acceptance: bool = False
 
@@ -62,7 +60,7 @@ _CAMPAIGN_KEYS = {
 }
 _ACCOUNT_KEYS = {
     "linkedin_email", "linkedin_password", "newsletter",
-    "connect_daily_limit", "connect_weekly_limit", "follow_up_daily_limit",
+    "connect_daily_limit", "follow_up_daily_limit",
     "legal_acceptance",
 }
 _LLM_KEYS = {"llm_provider", "llm_api_key", "ai_model", "llm_api_base"}
@@ -151,7 +149,6 @@ def _create_account(
     *,
     subscribe: bool = True,
     connect_daily: int = DEFAULT_CONNECT_DAILY_LIMIT,
-    connect_weekly: int = DEFAULT_CONNECT_WEEKLY_LIMIT,
     follow_up_daily: int = DEFAULT_FOLLOW_UP_DAILY_LIMIT,
 ):
     """Create a User + LinkedInProfile record and return the profile."""
@@ -176,7 +173,6 @@ def _create_account(
         linkedin_password=password,
         subscribe_newsletter=subscribe,
         connect_daily_limit=connect_daily,
-        connect_weekly_limit=connect_weekly,
         follow_up_daily_limit=follow_up_daily,
     )
 
@@ -227,7 +223,6 @@ def apply(config: OnboardConfig) -> None:
             config.linkedin_password,
             subscribe=config.newsletter,
             connect_daily=config.connect_daily_limit,
-            connect_weekly=config.connect_weekly_limit,
             follow_up_daily=config.follow_up_daily_limit,
         )
 

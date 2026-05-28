@@ -1,7 +1,9 @@
 # linkedin/tasks/connect.py
-"""Connect task — pulls one candidate, connects, self-reschedules.
+"""Connect task — resolves one candidate from the campaign pool and acts.
 
-Works for both regular and freemium campaigns via ConnectStrategy.
+Lazy: the task payload carries only ``campaign_id``. The handler picks
+its candidate at execution time via the campaign's ``ConnectStrategy``.
+No self-rescheduling — pacing is owned by ``tasks/scheduler.py``.
 """
 from __future__ import annotations
 
@@ -9,10 +11,8 @@ import logging
 from dataclasses import dataclass
 from typing import Callable
 
-from django.utils import timezone
 from termcolor import colored
 
-from linkedin.conf import CAMPAIGN_CONFIG
 from linkedin.db.deals import increment_connect_attempts, set_profile_state
 from linkedin.db.leads import disqualify_lead
 from linkedin.models import ActionLog
@@ -28,15 +28,7 @@ MAX_CONNECT_ATTEMPTS = 3
 class ConnectStrategy:
     find_candidate: Callable
     pre_connect: Callable | None
-    delay: float
-    action_fraction: float  # 1.0 = always fire at base delay
     qualifier: object
-
-    def compute_delay(self, elapsed: float) -> float:
-        """Delay until next connect, scaled by elapsed execution time for freemium campaigns."""
-        if self.action_fraction >= 1.0:
-            return self.delay
-        return max(self.delay, elapsed * (1 - self.action_fraction) / self.action_fraction)
 
 
 def strategy_for(campaign, qualifiers):
@@ -47,12 +39,9 @@ def strategy_for(campaign, qualifiers):
         from linkedin.db.deals import create_freemium_deal
         from linkedin.pipeline.freemium_pool import find_freemium_candidate
 
-        fraction = campaign.action_fraction
         return ConnectStrategy(
             find_candidate=lambda s: find_freemium_candidate(s, qualifier),
             pre_connect=lambda s, pid: create_freemium_deal(s, pid),
-            delay=CAMPAIGN_CONFIG["connect_delay_seconds"],
-            action_fraction=fraction,
             qualifier=qualifier,
         )
 
@@ -61,8 +50,6 @@ def strategy_for(campaign, qualifiers):
     return ConnectStrategy(
         find_candidate=lambda s: find_candidate(s, qualifier),
         pre_connect=None,
-        delay=CAMPAIGN_CONFIG["connect_delay_seconds"],
-        action_fraction=1.0,
         qualifier=qualifier,
     )
 
@@ -70,26 +57,17 @@ def strategy_for(campaign, qualifiers):
 def handle_connect(task, session, qualifiers):
     from linkedin.actions.connect import send_connection_request
     from linkedin.actions.status import get_connection_status
-    from linkedin.tasks.scheduler import enqueue_connect, seconds_until_tomorrow
 
-    cfg = CAMPAIGN_CONFIG
     campaign = session.campaign
-    campaign_id = campaign.pk
     strategy = strategy_for(campaign, qualifiers)
 
-    def _reschedule():
-        elapsed = (timezone.now() - task.started_at).total_seconds() if task.started_at else 0
-        enqueue_connect(campaign_id, delay_seconds=strategy.compute_delay(elapsed))
-
-    # --- Rate limit check ---
     if not session.linkedin_profile.can_execute(ActionLog.ActionType.CONNECT):
-        enqueue_connect(campaign_id, delay_seconds=seconds_until_tomorrow())
+        logger.info("[%s] connect: daily limit reached — slot skipped", campaign)
         return
 
-    # --- Get candidate ---
     candidate = strategy.find_candidate(session)
     if candidate is None:
-        enqueue_connect(campaign_id, delay_seconds=cfg["connect_no_candidate_delay_seconds"])
+        logger.info("[%s] connect: no candidate available — slot skipped", campaign)
         return
 
     public_id = candidate["public_identifier"]
@@ -107,17 +85,16 @@ def handle_connect(task, session, qualifiers):
     ).first()
     reason = deal.reason if deal else ""
     stats = strategy.qualifier.explain(candidate, session) if strategy.qualifier else ""
-    logger.info("[%s] %s", campaign, colored("\u25b6 connect", "cyan", attrs=["bold"]))
+    logger.info("[%s] %s", campaign, colored("▶ connect", "cyan", attrs=["bold"]))
     logger.info("[%s] %s (%s) — %s", campaign, public_id, stats, reason or "")
 
     try:
         status = get_connection_status(session, profile)
 
         if status in (ProfileState.CONNECTED, ProfileState.PENDING):
-            # set_profile_state triggers the scheduler hook, which enqueues
-            # follow_up (CONNECTED) or check_pending (PENDING).
+            # set_profile_state fires on_deal_state_entered, which stamps
+            # next_check_pending_at on PENDING and no-ops on CONNECTED.
             set_profile_state(session, public_id, status.value)
-            _reschedule()
             return
 
         # get_connection_status already navigated to the profile page
@@ -143,8 +120,6 @@ def handle_connect(task, session, qualifiers):
     except ReachedConnectionLimit as e:
         logger.warning("Rate limited: %s", e)
         session.linkedin_profile.mark_exhausted(ActionLog.ActionType.CONNECT)
-        enqueue_connect(campaign_id, delay_seconds=seconds_until_tomorrow())
-        return
     except ProfileInaccessibleError as e:
         logger.warning("Profile inaccessible — marking FAILED: %s", e)
         set_profile_state(session, public_id, ProfileState.FAILED.value,
@@ -152,7 +127,3 @@ def handle_connect(task, session, qualifiers):
     except SkipProfile as e:
         logger.warning("Skipping %s: %s", public_id, e)
         set_profile_state(session, public_id, ProfileState.FAILED.value)
-
-    _reschedule()
-
-

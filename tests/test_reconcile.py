@@ -1,5 +1,6 @@
 # tests/test_reconcile.py
 import pytest
+from unittest.mock import patch
 from django.utils import timezone
 
 from linkedin.db.deals import set_profile_state
@@ -22,9 +23,6 @@ def _make_pending(session, public_id="alice"):
     create_enriched_lead(session, url, SAMPLE_PROFILE)
     promote_lead_to_deal(session, public_id)
     set_profile_state(session, public_id, ProfileState.PENDING.value)
-    # set_profile_state's scheduler hook auto-enqueues — wipe so heal tests
-    # exercise reconcile from a clean queue.
-    Task.objects.all().delete()
 
 
 def _make_connected(session, public_id="alice"):
@@ -32,10 +30,10 @@ def _make_connected(session, public_id="alice"):
     create_enriched_lead(session, url, SAMPLE_PROFILE)
     promote_lead_to_deal(session, public_id)
     set_profile_state(session, public_id, ProfileState.CONNECTED.value)
-    Task.objects.all().delete()
 
 
 @pytest.mark.django_db
+@patch("linkedin.tasks.scheduler.ENABLE_ACTIVE_HOURS", False)
 class TestReconcile:
     @pytest.fixture(autouse=True)
     def _db(self, db):
@@ -55,50 +53,44 @@ class TestReconcile:
             status=Task.Status.PENDING,
         ).exists()
 
-    def test_seeds_connect_per_campaign(self, fake_session):
+    def test_plans_connect_slots_per_campaign(self, fake_session):
+        reconcile(fake_session)
+        # connect_daily_limit defaults to 20 on LinkedInProfile.
+        n = Task.objects.filter(
+            task_type=Task.TaskType.CONNECT,
+            status=Task.Status.PENDING,
+            payload__campaign_id=fake_session.campaign.pk,
+        ).count()
+        assert n == fake_session.linkedin_profile.connect_daily_limit
+
+    def test_plans_check_pending_slots_for_due_deals(self, fake_session):
+        _make_pending(fake_session, "alice")
+        # set_profile_state(PENDING) stamps next_check_pending_at = now + 24h.
+        # Pull it back to now so plan_check_pending_window picks it up.
+        from crm.models import Deal
+        Deal.objects.filter(lead__public_identifier="alice").update(
+            next_check_pending_at=timezone.now(),
+        )
+        Task.objects.all().delete()
+
         reconcile(fake_session)
         assert Task.objects.filter(
-            task_type=Task.TaskType.CONNECT,
+            task_type=Task.TaskType.CHECK_PENDING,
             status=Task.Status.PENDING,
             payload__campaign_id=fake_session.campaign.pk,
         ).count() == 1
 
-    def test_creates_check_pending_for_pending_profiles(self, fake_session):
-        _make_pending(fake_session, "alice")
-        reconcile(fake_session)
-        assert Task.objects.filter(
-            task_type=Task.TaskType.CHECK_PENDING,
-            status=Task.Status.PENDING,
-            payload__public_id="alice",
-        ).exists()
-
-    def test_uses_deal_backoff_for_check_pending(self, fake_session):
-        _make_pending(fake_session, "alice")
-        from crm.models import Deal
-        from linkedin.url_utils import public_id_to_url
-        Deal.objects.filter(
-            lead__linkedin_url=public_id_to_url("alice"),
-        ).update(backoff_hours=96)
-
-        reconcile(fake_session)
-        task = Task.objects.get(
-            task_type=Task.TaskType.CHECK_PENDING,
-            payload__public_id="alice",
-        )
-        assert task.payload["backoff_hours"] == 96
-
-    def test_creates_follow_up_for_connected_profiles(self, fake_session):
+    def test_plans_follow_up_slots(self, fake_session):
         _make_connected(fake_session, "alice")
         reconcile(fake_session)
+        # follow_up_daily_limit defaults to 25.
         assert Task.objects.filter(
             task_type=Task.TaskType.FOLLOW_UP,
             status=Task.Status.PENDING,
-            payload__public_id="alice",
-        ).exists()
+            payload__campaign_id=fake_session.campaign.pk,
+        ).count() == fake_session.linkedin_profile.follow_up_daily_limit
 
-    def test_no_duplicates_on_second_heal(self, fake_session):
-        _make_pending(fake_session, "alice")
-        _make_connected(fake_session, "bob")
+    def test_does_not_replan_when_pending_exists(self, fake_session):
         reconcile(fake_session)
         count_before = Task.objects.filter(status=Task.Status.PENDING).count()
         reconcile(fake_session)
@@ -106,46 +98,36 @@ class TestReconcile:
         assert count_before == count_after
 
     def test_does_not_create_for_completed_tasks(self, fake_session):
-        """Already-completed tasks should not block reconcile from creating new ones."""
-        _make_pending(fake_session, "alice")
-        # Create a completed check_pending task for alice
+        """Already-completed tasks should not block reconcile from planning new ones."""
+        # Pre-create a completed connect (no pending). Planner should still plan a fresh window.
         Task.objects.create(
-            task_type=Task.TaskType.CHECK_PENDING,
+            task_type=Task.TaskType.CONNECT,
             status=Task.Status.COMPLETED,
             scheduled_at=timezone.now(),
-            payload={"campaign_id": fake_session.campaign.pk, "public_id": "alice", "backoff_hours": 24},
+            payload={"campaign_id": fake_session.campaign.pk},
         )
         reconcile(fake_session)
-        # Should still create a new pending task
         assert Task.objects.filter(
-            task_type=Task.TaskType.CHECK_PENDING,
+            task_type=Task.TaskType.CONNECT,
             status=Task.Status.PENDING,
-            payload__public_id="alice",
         ).exists()
 
-    def test_recreates_task_after_handler_crash(self, fake_session):
-        """The retry mechanism: a FAILED task on an active deal leaves the deal
-        without a pending task. Reconcile must re-create one on the next idle
-        cycle so the pipeline doesn't stall."""
-        _make_pending(fake_session, "alice")
-        # Simulate a crashed handler: a FAILED check_pending task with no
-        # pending successor.
+    def test_recreates_window_after_handler_crash(self, fake_session):
+        """A FAILED task with no pending successor → next idle cycle re-plans."""
         Task.objects.create(
-            task_type=Task.TaskType.CHECK_PENDING,
+            task_type=Task.TaskType.CONNECT,
             status=Task.Status.FAILED,
             scheduled_at=timezone.now(),
-            payload={"campaign_id": fake_session.campaign.pk, "public_id": "alice", "backoff_hours": 24},
+            payload={"campaign_id": fake_session.campaign.pk},
         )
         assert not Task.objects.filter(
-            task_type=Task.TaskType.CHECK_PENDING,
+            task_type=Task.TaskType.CONNECT,
             status=Task.Status.PENDING,
-            payload__public_id="alice",
         ).exists()
 
         reconcile(fake_session)
 
         assert Task.objects.filter(
-            task_type=Task.TaskType.CHECK_PENDING,
+            task_type=Task.TaskType.CONNECT,
             status=Task.Status.PENDING,
-            payload__public_id="alice",
         ).exists()
