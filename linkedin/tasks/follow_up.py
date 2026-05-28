@@ -106,6 +106,15 @@ def handle_follow_up(task, session, qualifiers):
         session.linkedin_profile.record_action(
             ActionLog.ActionType.FOLLOW_UP, session.campaign,
         )
+        # Persist the outgoing message locally and bump update_date so the
+        # next slot's eligibility query respects the cooldown and moves
+        # this deal to the back of the queue.
+        from linkedin.db.chat import sync_conversation
+        try:
+            sync_conversation(session, public_id)
+        except Exception:
+            logger.exception("post-send sync failed for %s (best-effort)", public_id)
+        deal.save()
 
     elif decision.action == "mark_completed":
         set_profile_state(session, public_id, ProfileState.COMPLETED.value, outcome=decision.outcome)

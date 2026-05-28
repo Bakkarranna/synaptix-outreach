@@ -259,10 +259,11 @@ class TestHandleCheckPending:
 
 @pytest.mark.django_db
 class TestHandleFollowUp:
+    @patch("linkedin.db.chat.sync_conversation")
     @patch("linkedin.db.summaries.materialize_profile_summary_if_missing")
     @patch("linkedin.actions.message.send_raw_message", return_value=True)
     @patch("linkedin.agents.follow_up.run_follow_up_agent")
-    def test_send_message_records_action(self, mock_agent, mock_send, mock_materialize, fake_session):
+    def test_send_message_records_action(self, mock_agent, mock_send, mock_materialize, mock_sync, fake_session):
         mock_agent.return_value = FollowUpDecision(
             action="send_message", message="Hello Alice!", follow_up_hours=72,
         )
@@ -281,6 +282,7 @@ class TestHandleFollowUp:
         assert agent_deal.lead.public_identifier == "alice"
 
         mock_send.assert_called_once()
+        mock_sync.assert_called_once_with(fake_session, "alice")
         assert ActionLog.objects.filter(action_type=ActionLog.ActionType.FOLLOW_UP).count() == 1
 
     @patch("linkedin.db.summaries.materialize_profile_summary_if_missing")
