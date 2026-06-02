@@ -5,8 +5,10 @@
 Pre-built production images are published to GitHub Container Registry on every push to `master`.
 
 ```bash
-docker run --pull always -it -p 5900:5900 -v openoutreach_db:/app/data ghcr.io/eracle/openoutreach:latest
+docker run --pull always -it -p 6080:6080 -p 5900:5900 -v openoutreach_db:/app/data ghcr.io/eracle/openoutreach:latest
 ```
+
+Watch the live browser (and clear any LinkedIn checkpoint) at **http://localhost:6080/vnc.html**.
 
 The interactive onboarding will guide you through LinkedIn credentials, LLM API key, and campaign setup on first run. All data (CRM database, cookies, model blobs, embeddings) persists in the `openoutreach_db` Docker volume.
 
@@ -18,14 +20,20 @@ The interactive onboarding will guide you through LinkedIn credentials, LLM API 
 | `sha-<commit>` | Pinned to a specific commit |
 | `1.0.0` / `1.0` | Semantic version (when tagged) |
 
-### VNC (Live Browser View)
+### Live Browser View (noVNC)
 
-The container includes a VNC server for watching the automation live. Connect any VNC client to `localhost:5900` (no password).
+The container ships a noVNC web viewer for watching the automation live — and for clearing a LinkedIn security checkpoint by hand when one appears. Open it in any browser (no password):
 
-On Linux with `vinagre`:
+```
+http://localhost:6080/vnc.html
+```
+
+Prefer a native VNC client? One is also exposed on `localhost:5900`. On Linux with `vinagre`:
 ```bash
 vinagre vnc://127.0.0.1:5900
 ```
+
+> Both ports must be published for the viewers to work — see the `-p 6080:6080 -p 5900:5900` flags in the run command below.
 
 ### Stopping & Restarting
 
@@ -37,7 +45,7 @@ docker ps
 docker stop <container-id>
 
 # Restart (data persists in the openoutreach_db volume)
-docker run --pull always -it -p 5900:5900 -v openoutreach_db:/app/data ghcr.io/eracle/openoutreach:latest
+docker run --pull always -it -p 6080:6080 -p 5900:5900 -v openoutreach_db:/app/data ghcr.io/eracle/openoutreach:latest
 ```
 
 ---
@@ -86,7 +94,7 @@ HOST_UID=$(id -u) HOST_GID=$(id -g) make up
 
 ### VNC with Docker Compose
 
-The VNC server is exposed on port 5900. Use `make up-view` to auto-open it, or connect manually to `localhost:5900` with any VNC client.
+The live browser view is exposed two ways: the noVNC web viewer at **http://localhost:6080/vnc.html** (open in any browser), or the native VNC port `localhost:5900`. Use `make up-view` to auto-open the native viewer, or connect manually with any VNC client.
 
 ### Volume Mounts
 

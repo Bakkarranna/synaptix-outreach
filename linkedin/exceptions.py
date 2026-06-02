@@ -22,3 +22,15 @@ class ReachedConnectionLimit(Exception):
     """ Weekly connection limit reached. """
     pass
 
+
+class CheckpointChallengeError(Exception):
+    """LinkedIn flagged the account with a security checkpoint.
+
+    Carries the challenge URL so the user knows where to go to clear it.
+    Raised from the login flow; the daemon must NOT call reauthenticate()
+    when it sees this — that just hardens the block.
+    """
+    def __init__(self, url: str):
+        self.url = url
+        super().__init__(f"LinkedIn checkpoint challenge: {url}")
+

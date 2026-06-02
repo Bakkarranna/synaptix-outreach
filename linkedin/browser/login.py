@@ -1,5 +1,7 @@
 # linkedin/browser/login.py
 import logging
+import time
+from urllib.parse import unquote
 
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
@@ -11,7 +13,11 @@ from linkedin.conf import (
     BROWSER_DEFAULT_TIMEOUT_MS,
     BROWSER_LOGIN_TIMEOUT_MS,
     BROWSER_SLOW_MO,
+    CHECKPOINT_RESOLVE_TIMEOUT_S,
 )
+from linkedin.exceptions import CheckpointChallengeError
+
+CHECKPOINT_POLL_S = 5
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +72,37 @@ def dismiss_comply_gate(page, timeout_ms: int = COMPLY_PROBE_TIMEOUT_MS) -> bool
     return False
 
 
+def await_checkpoint_clear(page, timeout_s: int = CHECKPOINT_RESOLVE_TIMEOUT_S) -> bool:
+    """Block while the user clears a LinkedIn checkpoint in the live browser.
+
+    The browser runs headed (noVNC at http://localhost:6080/vnc.html), so the
+    user can solve the challenge by hand. Returns True once the page leaves
+    ``/checkpoint/``, or False if it is still there after *timeout_s*. We never
+    resubmit credentials — every automated retry hardens the block; the only
+    escape is a human.
+    """
+    banner = "*" * 64
+    logger.error(colored(banner, "red", attrs=["bold"]))
+    logger.error(colored("  RESOLVE CHECKPOINT  ".center(64, "*"), "red", attrs=["bold"]))
+    logger.error(colored(banner, "red", attrs=["bold"]))
+    logger.error(
+        colored(
+            "Clear the challenge by hand in the live browser:",
+            "red", attrs=["bold"],
+        )
+    )
+    logger.error("Open the browser here: http://localhost:6080/vnc.html")
+    logger.error(f"Checkpoint URL: {page.url}")
+    logger.error(colored(banner, "red", attrs=["bold"]))
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if "/checkpoint/" not in unquote(page.url):
+            logger.info(colored("Checkpoint cleared — continuing", "green", attrs=["bold"]))
+            return True
+        time.sleep(CHECKPOINT_POLL_S)
+    return False
+
+
 def playwright_login(session: "AccountSession"):
     page = session.page
     lp = session.linkedin_profile
@@ -86,13 +123,17 @@ def playwright_login(session: "AccountSession"):
     submit = resolve_locator(page, SUBMIT_LOCATORS)
     submit.click()
     dismiss_comply_gate(page)
-    goto_page(
-        session,
-        action=lambda: None,
-        expected_url_pattern="/feed",
-        timeout=BROWSER_LOGIN_TIMEOUT_MS,
-        error_message="Login failed – no redirect to feed",
-    )
+    page.wait_for_load_state("domcontentloaded", timeout=BROWSER_LOGIN_TIMEOUT_MS)
+
+    current = unquote(page.url)
+    if "/checkpoint/" in current:
+        # Give the user a chance to clear it by hand in the live browser.
+        # Escalate (the daemon exits) only if the challenge is still there.
+        if not await_checkpoint_clear(page):
+            raise CheckpointChallengeError(current)
+        current = unquote(page.url)
+    if "/feed" not in current:
+        raise RuntimeError(f"Login failed – expected '/feed' | got '{current}'")
 
 
 def launch_browser(storage_state=None):

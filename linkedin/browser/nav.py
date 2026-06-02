@@ -6,7 +6,7 @@ from urllib.parse import unquote, urlparse, urljoin
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from linkedin.conf import BROWSER_NAV_TIMEOUT_MS, DUMP_PAGES, FIXTURE_PAGES_DIR, HUMAN_TYPE_MIN_DELAY_MS, HUMAN_TYPE_MAX_DELAY_MS
-from linkedin.exceptions import SkipProfile
+from linkedin.exceptions import CheckpointChallengeError, SkipProfile
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +76,8 @@ def resolve_locator(page, candidates, timeout_per_ms: int = 5000):
             return locator
         except PlaywrightTimeoutError:
             continue
+    if "/checkpoint/" in page.url:
+        raise CheckpointChallengeError(page.url)
     raise RuntimeError(f"No locator matched on {page.url}")
 
 

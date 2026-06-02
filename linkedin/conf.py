@@ -35,6 +35,10 @@ BROWSER_NAV_TIMEOUT_MS = 10_000
 HUMAN_TYPE_MIN_DELAY_MS = 50
 HUMAN_TYPE_MAX_DELAY_MS = 200
 
+# Seconds to wait for the user to clear a LinkedIn security checkpoint in the
+# live browser (noVNC http://localhost:6080/vnc.html) before the daemon exits.
+CHECKPOINT_RESOLVE_TIMEOUT_S = 1800
+
 # ----------------------------------------------------------------------
 # Onboarding defaults (shown to user during interactive setup)
 # ----------------------------------------------------------------------

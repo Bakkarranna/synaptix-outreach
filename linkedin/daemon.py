@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import random
+import sys
 import time
 from datetime import timedelta
 from zoneinfo import ZoneInfo
@@ -20,7 +21,7 @@ from linkedin.conf import (
     ENABLE_ACTIVE_HOURS,
 )
 from linkedin.diagnostics import failure_diagnostics
-from linkedin.exceptions import AuthenticationError
+from linkedin.exceptions import AuthenticationError, CheckpointChallengeError
 from linkedin.ml.qualifier import BayesianQualifier, KitQualifier
 from linkedin.models import Task
 from linkedin.tasks.check_pending import handle_check_pending
@@ -236,6 +237,31 @@ def seconds_until_active() -> float:
 
 
 # ------------------------------------------------------------------
+# Checkpoint exit
+# ------------------------------------------------------------------
+
+
+def _exit_on_checkpoint(session, task, url: str) -> None:
+    """Log loudly, mark the task failed, close the session, and exit(1).
+
+    Called when LinkedIn flags the account with a security checkpoint.
+    We do NOT retry or reauthenticate — every retry hardens the block.
+    The user clears the challenge in a real browser, then restarts the daemon.
+    """
+    logger.error(
+        colored(
+            f"ACCOUNT CHECKPOINTED — {session.linkedin_profile.linkedin_username}",
+            "red", attrs=["bold"],
+        )
+    )
+    logger.error("Clear the challenge in a real browser: %s", url)
+    logger.error("Then restart the daemon.")
+    task.mark_failed()
+    session.close()
+    sys.exit(1)
+
+
+# ------------------------------------------------------------------
 # Task queue worker
 # ------------------------------------------------------------------
 
@@ -331,10 +357,14 @@ def run_daemon(session):
         try:
             with failure_diagnostics(session):
                 handler(task, session, qualifiers)
+        except CheckpointChallengeError as exc:
+            _exit_on_checkpoint(session, task, exc.url)
         except AuthenticationError:
             logger.warning("Session expired during %s — re-authenticating", task)
             try:
                 session.reauthenticate()
+            except CheckpointChallengeError as exc:
+                _exit_on_checkpoint(session, task, exc.url)
             except Exception:
                 logger.exception("Re-authentication failed for %s", task)
             # Either way, mark this task FAILED; reconcile will re-create a
