@@ -17,9 +17,9 @@ def discover_self_profile(session) -> dict:
     Raises ``AuthenticationError`` if the API call fails.
     """
     from crm.models import Lead
-    from linkedin.api.client import PlaywrightLinkedinAPI
-    from linkedin.url_utils import public_id_to_url
-    from linkedin.exceptions import AuthenticationError
+    from linkedin_cli.api.client import PlaywrightLinkedinAPI
+    from linkedin_cli.url_utils import public_id_to_url
+    from linkedin_cli.exceptions import AuthenticationError
 
     api = PlaywrightLinkedinAPI(session=session)
     profile, _raw = api.get_profile(public_identifier="me")

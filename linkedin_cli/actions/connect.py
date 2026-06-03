@@ -2,9 +2,9 @@
 import logging
 from typing import Dict, Any
 
-from linkedin.enums import ProfileState
-from linkedin.exceptions import SkipProfile, ReachedConnectionLimit
-from linkedin.browser.nav import find_top_card, dump_page_html
+from linkedin_cli.enums import ProfileState
+from linkedin_cli.exceptions import SkipProfile, ReachedConnectionLimit
+from linkedin_cli.browser.nav import find_top_card, dump_page_html
 
 logger = logging.getLogger(__name__)
 
@@ -120,7 +120,7 @@ def _click_without_note(session):
 
 if __name__ == "__main__":
     from linkedin.browser.registry import cli_parser, cli_session
-    from linkedin.actions.status import get_connection_status
+    from linkedin_cli.actions.status import get_connection_status
 
     parser = cli_parser("Send a LinkedIn connection request")
     parser.add_argument("--profile", required=True, help="Public identifier of the target profile")

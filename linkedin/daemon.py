@@ -21,7 +21,7 @@ from linkedin.conf import (
     ENABLE_ACTIVE_HOURS,
 )
 from linkedin.diagnostics import failure_diagnostics
-from linkedin.exceptions import AuthenticationError, CheckpointChallengeError
+from linkedin_cli.exceptions import AuthenticationError, CheckpointChallengeError
 from linkedin.ml.qualifier import BayesianQualifier, KitQualifier
 from linkedin.models import Task
 from linkedin.tasks.check_pending import handle_check_pending

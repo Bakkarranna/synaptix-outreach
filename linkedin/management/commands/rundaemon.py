@@ -83,7 +83,7 @@ class Command(BaseCommand):
 
         from linkedin.api.newsletter import ensure_newsletter_subscription
         from linkedin.setup.gdpr import apply_gdpr_newsletter_override
-        from linkedin.url_utils import public_id_to_url
+        from linkedin_cli.url_utils import public_id_to_url
 
         profile = session.self_profile
         country_code = profile.get("country_code")

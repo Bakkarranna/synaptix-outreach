@@ -5,8 +5,8 @@ from typing import Dict, Any, Optional
 
 from django.db import transaction
 
-from linkedin.url_utils import url_to_public_id, public_id_to_url
-from linkedin.enums import ProfileState
+from linkedin_cli.url_utils import url_to_public_id, public_id_to_url
+from linkedin_cli.enums import ProfileState
 
 logger = logging.getLogger(__name__)
 
@@ -128,7 +128,7 @@ def discover_and_enrich(session, urls):
     order — LinkedIn's own relevance), and pauses a human-ish
     [enrich_min_delay_seconds, enrich_max_delay_seconds] between scrapes.
     """
-    from linkedin.api.client import PlaywrightLinkedinAPI
+    from linkedin_cli.api.client import PlaywrightLinkedinAPI
     from linkedin.conf import CAMPAIGN_CONFIG
 
     new_urls = [u for u in urls if not lead_exists(u)]

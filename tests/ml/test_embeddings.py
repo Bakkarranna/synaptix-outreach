@@ -79,7 +79,7 @@ class TestLeadEmbeddingFields:
     def test_get_labeled_arrays_from_deals(self, fake_session):
         """Labels are derived from Deal state + outcome."""
         from crm.models import Deal, Lead, Outcome
-        from linkedin.enums import ProfileState
+        from linkedin_cli.enums import ProfileState
 
         campaign = fake_session.campaign
 
@@ -111,7 +111,7 @@ class TestLeadEmbeddingFields:
     def test_get_labeled_arrays_skips_operational_failures(self, fake_session):
         """FAILED deals with non-wrong_fit outcome are not training data."""
         from crm.models import Deal, Lead, Outcome
-        from linkedin.enums import ProfileState
+        from linkedin_cli.enums import ProfileState
 
         campaign = fake_session.campaign
 

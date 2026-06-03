@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import logging
 
-from linkedin.url_utils import public_id_to_url, url_to_public_id
-from linkedin.enums import ProfileState
+from linkedin_cli.url_utils import public_id_to_url, url_to_public_id
+from linkedin_cli.enums import ProfileState
 
 logger = logging.getLogger(__name__)
 

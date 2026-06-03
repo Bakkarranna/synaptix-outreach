@@ -8,7 +8,7 @@ from datetime import timedelta
 from django.utils import timezone
 from termcolor import colored
 
-from linkedin.enums import ProfileState
+from linkedin_cli.enums import ProfileState
 from linkedin.models import ActionLog
 
 logger = logging.getLogger(__name__)
@@ -69,7 +69,7 @@ def _next_followup_deal(campaign):
 
 
 def handle_follow_up(task, session, qualifiers):
-    from linkedin.actions.message import send_raw_message
+    from linkedin_cli.actions.message import send_raw_message
     from linkedin.agents.follow_up import run_follow_up_agent
     from linkedin.db.deals import set_profile_state
     from linkedin.db.summaries import materialize_profile_summary_if_missing

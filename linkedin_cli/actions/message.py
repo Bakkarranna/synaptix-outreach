@@ -3,7 +3,7 @@ import logging
 from typing import Dict, Any
 
 from playwright.sync_api import Error as PlaywrightError, Locator
-from linkedin.browser.nav import goto_page, human_type, dump_page_html
+from linkedin_cli.browser.nav import goto_page, human_type, dump_page_html
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +86,7 @@ def _send_message(session, profile: Dict[str, Any], message: str) -> bool:
     row no longer carries first_name/last_name, so name-based search is
     not available anyway.
     """
-    from linkedin.api.messaging.utils import encode_urn
+    from linkedin_cli.api.messaging.utils import encode_urn
 
     public_identifier = profile.get("public_identifier")
     target_urn = profile.get("urn")
@@ -124,9 +124,9 @@ def _send_message_via_api(session, profile: Dict[str, Any], message: str) -> boo
 
     Requires profile dict to contain 'urn' (target profile URN).
     """
-    from linkedin.api.client import PlaywrightLinkedinAPI
-    from linkedin.api.messaging import send_message
-    from linkedin.actions.conversations import find_conversation_urn, find_conversation_urn_via_navigation
+    from linkedin_cli.api.client import PlaywrightLinkedinAPI
+    from linkedin_cli.api.messaging import send_message
+    from linkedin_cli.actions.conversations import find_conversation_urn, find_conversation_urn_via_navigation
 
     public_identifier = profile.get("public_identifier")
     target_urn = profile.get("urn")

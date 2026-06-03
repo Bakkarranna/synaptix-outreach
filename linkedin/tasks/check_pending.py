@@ -14,8 +14,8 @@ from django.utils import timezone
 from termcolor import colored
 
 from linkedin.db.deals import set_profile_state
-from linkedin.enums import ProfileState
-from linkedin.exceptions import SkipProfile
+from linkedin_cli.enums import ProfileState
+from linkedin_cli.exceptions import SkipProfile
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +44,7 @@ def _double_backoff(deal) -> float:
 
 
 def handle_check_pending(task, session, qualifiers):
-    from linkedin.actions.status import get_connection_status
+    from linkedin_cli.actions.status import get_connection_status
 
     campaign = session.campaign
     deal = _next_due_pending_deal(campaign)

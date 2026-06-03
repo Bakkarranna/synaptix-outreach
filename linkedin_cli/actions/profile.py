@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 from typing import Dict, Any
 
-from linkedin.conf import FIXTURE_PROFILES_DIR
+from linkedin_cli.conf import FIXTURE_PROFILES_DIR
 from ..api.client import PlaywrightLinkedinAPI
 
 logger = logging.getLogger(__name__)
@@ -36,7 +36,7 @@ def _save_profile_to_fixture(enriched_profile: Dict[str, Any], path: str | Path)
     logger.info("Enriched profile saved to fixture → %s", path)
 
 
-# python -m linkedin.actions.profile
+# python -m linkedin_cli.actions.profile
 if __name__ == "__main__":
     import json as _json
     from linkedin.browser.registry import cli_parser, cli_session

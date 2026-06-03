@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from linkedin.enums import ProfileState
+from linkedin_cli.enums import ProfileState
 
 logger = logging.getLogger(__name__)
 

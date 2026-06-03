@@ -8,10 +8,10 @@ every file in each subdirectory so new dumps are tested without manual setup.
 """
 import pytest
 
-from linkedin.actions.connect import SELECTORS as CONNECT_SELECTORS
-from linkedin.actions.status import SELECTORS as STATUS_SELECTORS
-from linkedin.browser.nav import TOP_CARD_SELECTORS
-from linkedin.conf import FIXTURE_PAGES_DIR
+from linkedin_cli.actions.connect import SELECTORS as CONNECT_SELECTORS
+from linkedin_cli.actions.status import SELECTORS as STATUS_SELECTORS
+from linkedin_cli.browser.nav import TOP_CARD_SELECTORS
+from linkedin_cli.conf import FIXTURE_PAGES_DIR
 from tests.browser.conftest import load_fixture
 
 

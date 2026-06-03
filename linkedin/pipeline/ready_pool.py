@@ -12,7 +12,7 @@ from linkedin.db.deals import (
     set_profile_state,
 )
 from linkedin.ml.qualifier import BayesianQualifier
-from linkedin.enums import ProfileState
+from linkedin_cli.enums import ProfileState
 
 logger = logging.getLogger(__name__)
 

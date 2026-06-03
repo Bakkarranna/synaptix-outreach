@@ -48,11 +48,11 @@ def _sync_from_api(session, public_identifier: str, lead, ct) -> list:
     so callers can incrementally update derived caches like ``chat_summary``.
     """
     from chat.models import ChatMessage
-    from linkedin.actions.conversations import (
+    from linkedin_cli.actions.conversations import (
         find_conversation_urn, find_conversation_urn_via_navigation, parse_message_element,
     )
-    from linkedin.api.client import PlaywrightLinkedinAPI
-    from linkedin.api.messaging import fetch_messages
+    from linkedin_cli.api.client import PlaywrightLinkedinAPI
+    from linkedin_cli.api.messaging import fetch_messages
 
     session.ensure_browser()
     api = PlaywrightLinkedinAPI(session=session)

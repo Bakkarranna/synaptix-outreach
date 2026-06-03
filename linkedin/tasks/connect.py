@@ -16,8 +16,8 @@ from termcolor import colored
 from linkedin.db.deals import increment_connect_attempts, set_profile_state
 from linkedin.db.leads import disqualify_lead
 from linkedin.models import ActionLog
-from linkedin.enums import ProfileState
-from linkedin.exceptions import ProfileInaccessibleError, ReachedConnectionLimit, SkipProfile
+from linkedin_cli.enums import ProfileState
+from linkedin_cli.exceptions import ProfileInaccessibleError, ReachedConnectionLimit, SkipProfile
 
 logger = logging.getLogger(__name__)
 
@@ -55,8 +55,8 @@ def strategy_for(campaign, qualifiers):
 
 
 def handle_connect(task, session, qualifiers):
-    from linkedin.actions.connect import send_connection_request
-    from linkedin.actions.status import get_connection_status
+    from linkedin_cli.actions.connect import send_connection_request
+    from linkedin_cli.actions.status import get_connection_status
 
     campaign = session.campaign
     strategy = strategy_for(campaign, qualifiers)

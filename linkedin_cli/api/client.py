@@ -6,9 +6,9 @@ from urllib.parse import urlencode
 
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
-from linkedin.api.voyager import parse_linkedin_voyager_response, parse_connection_degree
-from linkedin.url_utils import url_to_public_id
-from linkedin.exceptions import (
+from linkedin_cli.api.voyager import parse_linkedin_voyager_response, parse_connection_degree
+from linkedin_cli.url_utils import url_to_public_id
+from linkedin_cli.exceptions import (
     AuthenticationError,
     ProfileInaccessibleError,
 )

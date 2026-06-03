@@ -2,10 +2,10 @@
 import logging
 from typing import Dict, Any, Optional
 
-from linkedin.actions.connect import SELECTORS as CONNECT_SELECTORS
-from linkedin.actions.search import visit_profile
-from linkedin.enums import ProfileState
-from linkedin.browser.nav import find_top_card, dump_page_html
+from linkedin_cli.actions.connect import SELECTORS as CONNECT_SELECTORS
+from linkedin_cli.actions.search import visit_profile
+from linkedin_cli.enums import ProfileState
+from linkedin_cli.browser.nav import find_top_card, dump_page_html
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ def _fetch_degree(session, public_identifier: str, profile: Dict[str, Any]) -> O
     2. If that returns None, fall back to the lightweight
        TopCardSupplementary endpoint.
     """
-    from linkedin.api.client import PlaywrightLinkedinAPI
+    from linkedin_cli.api.client import PlaywrightLinkedinAPI
 
     api = PlaywrightLinkedinAPI(session=session)
     fresh, _raw = api.get_profile(public_identifier=public_identifier)

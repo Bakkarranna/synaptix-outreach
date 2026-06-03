@@ -12,8 +12,8 @@ from linkedin.db.leads import (
     get_leads_for_qualification,
     lead_exists,
 )
-from linkedin.url_utils import url_to_public_id, public_id_to_url
-from linkedin.enums import ProfileState
+from linkedin_cli.url_utils import url_to_public_id, public_id_to_url
+from linkedin_cli.enums import ProfileState
 
 
 # ── url_to_public_id (pure function) ──

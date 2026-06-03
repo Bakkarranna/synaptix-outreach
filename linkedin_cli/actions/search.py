@@ -1,11 +1,8 @@
-# linkedin/actions/search.py
-
 import logging
 from typing import Dict, Any
 from urllib.parse import urlparse, parse_qs, urlencode
 
-from linkedin.browser.nav import goto_page, human_type, extract_in_urls
-from linkedin.db.leads import discover_and_enrich
+from linkedin_cli.browser.nav import goto_page, human_type, extract_in_urls
 
 logger = logging.getLogger(__name__)
 
@@ -27,17 +24,16 @@ def _go_to_profile(session: "AccountSession", url: str, public_identifier: str):
             error_message="Failed to navigate to the target profile"
         )
     except RuntimeError:
-        new_id = _detect_profile_redirect(session, public_identifier)
-        if not new_id:
+        # Redirect to a different /in/ slug is tolerated; reconciling the
+        # lead's stored slug is the caller's job (this layer holds no DB).
+        if not _detect_profile_redirect(session, public_identifier):
             raise
-        from linkedin.db.leads import update_lead_slug
-        update_lead_slug(public_identifier, new_id)
 
 
 def _detect_profile_redirect(session, old_public_id: str) -> str | None:
     """Return the new public_id if LinkedIn redirected to a different /in/ slug."""
     from urllib.parse import unquote
-    from linkedin.url_utils import url_to_public_id
+    from linkedin_cli.url_utils import url_to_public_id
 
     new_id = url_to_public_id(unquote(session.page.url))
     if new_id and new_id != old_public_id:
@@ -60,9 +56,8 @@ def visit_profile(session: "AccountSession", profile: Dict[str, Any]):
     url = profile.get("url")
     _go_to_profile(session, url, public_identifier)
 
-    # Discover and enrich new profiles visible on the page
-    urls = extract_in_urls(session.page)
-    discover_and_enrich(session, urls)
+    # Emit the /in/ profile URLs visible on the page; enrichment is caller-side.
+    return extract_in_urls(session.page)
 
 
 def _initiate_search(session: "AccountSession", keyword: str):
@@ -96,14 +91,13 @@ def _paginate_to_next_page(session: "AccountSession", page_num: int):
 
 
 def search_people(session: "AccountSession", keyword: str, page: int = 1):
-    """Search LinkedIn People by keyword and navigate to the given page."""
+    """Search LinkedIn People by keyword; return the /in/ URLs on the result page."""
     session.ensure_browser()
     _initiate_search(session, keyword)
     if page > 1:
         _paginate_to_next_page(session, page)
 
-    urls = extract_in_urls(session.page)
-    discover_and_enrich(session, urls)
+    return extract_in_urls(session.page)
 
 
 def _simulate_human_search(session: "AccountSession", profile: Dict[str, Any]) -> bool:

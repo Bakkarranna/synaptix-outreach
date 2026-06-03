@@ -40,8 +40,8 @@ class Lead(models.Model):
         opportunistically populate ``self.urn`` if it's still null and
         the scrape returns one.
         """
-        from linkedin.api.client import PlaywrightLinkedinAPI
-        from linkedin.exceptions import ProfileInaccessibleError
+        from linkedin_cli.api.client import PlaywrightLinkedinAPI
+        from linkedin_cli.exceptions import ProfileInaccessibleError
 
         session.ensure_browser()
         api = PlaywrightLinkedinAPI(session=session)
@@ -129,7 +129,7 @@ class Lead(models.Model):
         """
         from crm.models import Outcome
         from crm.models.deal import Deal
-        from linkedin.enums import ProfileState
+        from linkedin_cli.enums import ProfileState
 
         deals = Deal.objects.filter(
             campaign=campaign, lead_id__isnull=False,

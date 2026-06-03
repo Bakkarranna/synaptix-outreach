@@ -8,14 +8,14 @@ from playwright.sync_api import sync_playwright
 from playwright_stealth import Stealth
 from termcolor import colored
 
-from linkedin.browser.nav import goto_page, human_type, resolve_locator
-from linkedin.conf import (
+from linkedin_cli.browser.nav import goto_page, human_type, resolve_locator
+from linkedin_cli.conf import (
     BROWSER_DEFAULT_TIMEOUT_MS,
     BROWSER_LOGIN_TIMEOUT_MS,
     BROWSER_SLOW_MO,
     CHECKPOINT_RESOLVE_TIMEOUT_S,
 )
-from linkedin.exceptions import CheckpointChallengeError
+from linkedin_cli.exceptions import CheckpointChallengeError
 
 CHECKPOINT_POLL_S = 5
 

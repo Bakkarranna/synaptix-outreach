@@ -44,7 +44,7 @@ from linkedin.conf import (
     CHECK_PENDING_DAILY_CAP,
     ENABLE_ACTIVE_HOURS,
 )
-from linkedin.enums import ProfileState
+from linkedin_cli.enums import ProfileState
 from linkedin.models import Task
 
 logger = logging.getLogger(__name__)

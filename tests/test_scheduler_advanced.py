@@ -11,7 +11,7 @@ from django.utils import timezone
 
 from linkedin.db.deals import set_profile_state
 from linkedin.db.leads import create_enriched_lead, promote_lead_to_deal
-from linkedin.enums import ProfileState
+from linkedin_cli.enums import ProfileState
 from linkedin.models import ActionLog, Task
 from linkedin.tasks import scheduler
 

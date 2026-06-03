@@ -3,7 +3,7 @@
 import logging
 from urllib.parse import quote
 
-from linkedin.exceptions import AuthenticationError
+from linkedin_cli.exceptions import AuthenticationError
 
 logger = logging.getLogger(__name__)
 

@@ -42,7 +42,7 @@ def seed_profiles(session, kit_config: dict):
     from crm.models import Lead
 
     from linkedin.db.deals import create_freemium_deal
-    from linkedin.url_utils import public_id_to_url
+    from linkedin_cli.url_utils import public_id_to_url
 
     public_ids = kit_config.get("seed_profiles", [])
     if not public_ids:

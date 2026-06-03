@@ -3,8 +3,8 @@
 import logging
 from datetime import datetime, timezone
 
-from linkedin.api.client import PlaywrightLinkedinAPI
-from linkedin.api.messaging import fetch_conversations, fetch_messages, encode_urn
+from linkedin_cli.api.client import PlaywrightLinkedinAPI
+from linkedin_cli.api.messaging import fetch_conversations, fetch_messages, encode_urn
 
 logger = logging.getLogger(__name__)
 

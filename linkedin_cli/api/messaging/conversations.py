@@ -4,8 +4,8 @@ import logging
 
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
-from linkedin.api.client import PlaywrightLinkedinAPI
-from linkedin.api.messaging.utils import encode_urn, check_response
+from linkedin_cli.api.client import PlaywrightLinkedinAPI
+from linkedin_cli.api.messaging.utils import encode_urn, check_response
 
 logger = logging.getLogger(__name__)
 

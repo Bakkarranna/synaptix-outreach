@@ -6,8 +6,8 @@ import os
 import uuid
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
-from linkedin.api.client import PlaywrightLinkedinAPI
-from linkedin.api.messaging.utils import check_response
+from linkedin_cli.api.client import PlaywrightLinkedinAPI
+from linkedin_cli.api.messaging.utils import check_response
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +77,7 @@ def send_message(
 if __name__ == "__main__":
     from crm.models import Lead
     from linkedin.browser.registry import cli_parser, cli_session
-    from linkedin.actions.conversations import find_conversation_urn, find_conversation_urn_via_navigation
+    from linkedin_cli.actions.conversations import find_conversation_urn, find_conversation_urn_via_navigation
 
     parser = cli_parser("Send a message via Voyager Messaging API")
     parser.add_argument("--profile", required=True, help="Public identifier of target profile")

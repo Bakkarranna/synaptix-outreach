@@ -5,8 +5,8 @@ from urllib.parse import unquote, urlparse, urljoin
 
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
-from linkedin.conf import BROWSER_NAV_TIMEOUT_MS, DUMP_PAGES, FIXTURE_PAGES_DIR, HUMAN_TYPE_MIN_DELAY_MS, HUMAN_TYPE_MAX_DELAY_MS
-from linkedin.exceptions import CheckpointChallengeError, SkipProfile
+from linkedin_cli.conf import BROWSER_NAV_TIMEOUT_MS, DUMP_PAGES, FIXTURE_PAGES_DIR, HUMAN_TYPE_MIN_DELAY_MS, HUMAN_TYPE_MAX_DELAY_MS
+from linkedin_cli.exceptions import CheckpointChallengeError, SkipProfile
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ def goto_page(session,
 
 def extract_in_urls(page):
     """Extract all /in/ profile URLs from the current page."""
-    from linkedin.url_utils import url_to_public_id
+    from linkedin_cli.url_utils import url_to_public_id
 
     seen = set()
     urls = []

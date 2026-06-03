@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from linkedin.api.voyager import parse_linkedin_voyager_response
+from linkedin_cli.api.voyager import parse_linkedin_voyager_response
 
 
 @pytest.fixture

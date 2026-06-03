@@ -3,7 +3,7 @@
 import pytest
 from playwright.sync_api import sync_playwright
 
-from linkedin.conf import FIXTURE_PAGES_DIR
+from linkedin_cli.conf import FIXTURE_PAGES_DIR
 
 
 @pytest.fixture(scope="session")

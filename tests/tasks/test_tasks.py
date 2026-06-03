@@ -11,8 +11,8 @@ from linkedin.db.deals import set_profile_state
 from linkedin.db.leads import create_enriched_lead, promote_lead_to_deal
 from linkedin.models import ActionLog, Task
 from linkedin.ml.qualifier import BayesianQualifier
-from linkedin.enums import ProfileState
-from linkedin.exceptions import SkipProfile, ReachedConnectionLimit
+from linkedin_cli.enums import ProfileState
+from linkedin_cli.exceptions import SkipProfile, ReachedConnectionLimit
 from linkedin.tasks.connect import ConnectStrategy, handle_connect
 from linkedin.tasks.check_pending import handle_check_pending
 from linkedin.tasks.follow_up import handle_follow_up
@@ -99,9 +99,9 @@ class TestHandleConnect:
         return {"public_identifier": "alice", "url": "https://www.linkedin.com/in/alice/", "profile": SAMPLE_PROFILE}
 
     @patch("linkedin.tasks.connect.strategy_for")
-    @patch("linkedin.actions.search.visit_profile")
-    @patch("linkedin.actions.connect.send_connection_request")
-    @patch("linkedin.actions.status.get_connection_status")
+    @patch("linkedin_cli.actions.search.visit_profile")
+    @patch("linkedin_cli.actions.connect.send_connection_request")
+    @patch("linkedin_cli.actions.status.get_connection_status")
     def test_sends_connection_and_records(self, mock_status, mock_send, mock_visit, mock_strategy, fake_session):
         _make_qualified(fake_session)
         mock_strategy.return_value = _mock_strategy(self._candidate())
@@ -115,9 +115,9 @@ class TestHandleConnect:
         assert ActionLog.objects.filter(action_type=ActionLog.ActionType.CONNECT).count() == 1
 
     @patch("linkedin.tasks.connect.strategy_for")
-    @patch("linkedin.actions.search.visit_profile")
-    @patch("linkedin.actions.connect.send_connection_request")
-    @patch("linkedin.actions.status.get_connection_status")
+    @patch("linkedin_cli.actions.search.visit_profile")
+    @patch("linkedin_cli.actions.connect.send_connection_request")
+    @patch("linkedin_cli.actions.status.get_connection_status")
     def test_pending_stamps_next_check(self, mock_status, mock_send, mock_visit, mock_strategy, fake_session):
         """Connect → PENDING: state hook should stamp next_check_pending_at, no follow-up Task."""
         _make_qualified(fake_session)
@@ -133,7 +133,7 @@ class TestHandleConnect:
         assert not Task.objects.filter(task_type=Task.TaskType.CHECK_PENDING).exists()
 
     @patch("linkedin.tasks.connect.strategy_for")
-    @patch("linkedin.actions.status.get_connection_status")
+    @patch("linkedin_cli.actions.status.get_connection_status")
     def test_marks_preexisting_connected(self, mock_status, mock_strategy, fake_session):
         _make_qualified(fake_session)
         mock_strategy.return_value = _mock_strategy(self._candidate())
@@ -147,7 +147,7 @@ class TestHandleConnect:
         assert not Task.objects.filter(task_type=Task.TaskType.FOLLOW_UP).exists()
 
     @patch("linkedin.tasks.connect.strategy_for")
-    @patch("linkedin.actions.status.get_connection_status")
+    @patch("linkedin_cli.actions.status.get_connection_status")
     def test_handles_rate_limit(self, mock_status, mock_strategy, fake_session):
         _make_qualified(fake_session)
         mock_strategy.return_value = _mock_strategy(self._candidate())
@@ -159,9 +159,9 @@ class TestHandleConnect:
         assert ActionLog.ActionType.CONNECT in fake_session.linkedin_profile._exhausted
 
     @patch("linkedin.tasks.connect.strategy_for")
-    @patch("linkedin.actions.search.visit_profile")
-    @patch("linkedin.actions.connect.send_connection_request")
-    @patch("linkedin.actions.status.get_connection_status")
+    @patch("linkedin_cli.actions.search.visit_profile")
+    @patch("linkedin_cli.actions.connect.send_connection_request")
+    @patch("linkedin_cli.actions.status.get_connection_status")
     def test_handles_skip_profile(self, mock_status, mock_send, mock_visit, mock_strategy, fake_session):
         _make_qualified(fake_session)
         mock_strategy.return_value = _mock_strategy(self._candidate())
@@ -203,7 +203,7 @@ class TestHandleCheckPending:
     def _db(self, db):
         pass
 
-    @patch("linkedin.actions.status.get_connection_status")
+    @patch("linkedin_cli.actions.status.get_connection_status")
     def test_transitions_due_deal_to_connected(self, mock_status, fake_session):
         mock_status.return_value = ProfileState.CONNECTED
         _make_pending_due(fake_session)
@@ -215,11 +215,11 @@ class TestHandleCheckPending:
         # Lazy model: no follow_up task is auto-enqueued on the transition.
         assert not Task.objects.filter(task_type=Task.TaskType.FOLLOW_UP).exists()
 
-    @patch("linkedin.actions.status.get_connection_status")
+    @patch("linkedin_cli.actions.status.get_connection_status")
     def test_stays_pending_doubles_backoff_and_restamps(self, mock_status, fake_session):
         mock_status.return_value = ProfileState.PENDING
         _make_pending_due(fake_session)
-        from linkedin.url_utils import public_id_to_url
+        from linkedin_cli.url_utils import public_id_to_url
         Deal.objects.filter(lead__linkedin_url=public_id_to_url("alice")).update(backoff_hours=72)
 
         before = timezone.now()
@@ -239,7 +239,7 @@ class TestHandleCheckPending:
         # No exceptions; no new tasks created.
         assert Task.objects.exclude(pk=task.pk).count() == 0
 
-    @patch("linkedin.actions.status.get_connection_status")
+    @patch("linkedin_cli.actions.status.get_connection_status")
     def test_ignores_not_yet_due_pending(self, mock_status, fake_session):
         """A PENDING deal whose next_check is in the future should not be picked."""
         _make_qualified(fake_session, "alice")
@@ -261,7 +261,7 @@ class TestHandleCheckPending:
 class TestHandleFollowUp:
     @patch("linkedin.db.chat.sync_conversation")
     @patch("linkedin.db.summaries.materialize_profile_summary_if_missing")
-    @patch("linkedin.actions.message.send_raw_message", return_value=True)
+    @patch("linkedin_cli.actions.message.send_raw_message", return_value=True)
     @patch("linkedin.agents.follow_up.run_follow_up_agent")
     def test_send_message_records_action(self, mock_agent, mock_send, mock_materialize, mock_sync, fake_session):
         mock_agent.return_value = FollowUpDecision(
@@ -286,7 +286,7 @@ class TestHandleFollowUp:
         assert ActionLog.objects.filter(action_type=ActionLog.ActionType.FOLLOW_UP).count() == 1
 
     @patch("linkedin.db.summaries.materialize_profile_summary_if_missing")
-    @patch("linkedin.actions.message.send_raw_message", return_value=False)
+    @patch("linkedin_cli.actions.message.send_raw_message", return_value=False)
     @patch("linkedin.agents.follow_up.run_follow_up_agent")
     def test_send_failure_resets_to_qualified(self, mock_agent, mock_send, mock_materialize, fake_session):
         mock_agent.return_value = FollowUpDecision(

@@ -27,7 +27,7 @@ class TestGetProfile:
             public_identifier="alice",
         )
 
-        with patch("linkedin.api.client.PlaywrightLinkedinAPI") as MockAPI:
+        with patch("linkedin_cli.api.client.PlaywrightLinkedinAPI") as MockAPI:
             MockAPI.return_value.get_profile.return_value = (FAKE_PROFILE, {})
             result = lead.get_profile(fake_session)
             lead.get_profile(fake_session)
@@ -46,7 +46,7 @@ class TestGetProfile:
         )
         assert lead.urn is None
 
-        with patch("linkedin.api.client.PlaywrightLinkedinAPI") as MockAPI:
+        with patch("linkedin_cli.api.client.PlaywrightLinkedinAPI") as MockAPI:
             MockAPI.return_value.get_profile.return_value = (FAKE_PROFILE, {})
             lead.get_profile(fake_session)
 
@@ -62,7 +62,7 @@ class TestGetProfile:
             public_identifier="alice",
         )
 
-        with patch("linkedin.api.client.PlaywrightLinkedinAPI") as MockAPI:
+        with patch("linkedin_cli.api.client.PlaywrightLinkedinAPI") as MockAPI:
             MockAPI.return_value.get_profile.return_value = (None, {})
             assert lead.get_profile(fake_session) is None
 
@@ -75,7 +75,7 @@ class TestGetProfile:
             public_identifier="alice",
         )
 
-        with patch("linkedin.api.client.PlaywrightLinkedinAPI") as MockAPI:
+        with patch("linkedin_cli.api.client.PlaywrightLinkedinAPI") as MockAPI:
             MockAPI.return_value.get_profile.side_effect = IOError("timeout")
             with pytest.raises(IOError):
                 lead.get_profile(fake_session)
@@ -92,7 +92,7 @@ class TestGetUrn:
             urn="urn:li:fsd_profile:ABC123",
         )
 
-        with patch("linkedin.api.client.PlaywrightLinkedinAPI") as MockAPI:
+        with patch("linkedin_cli.api.client.PlaywrightLinkedinAPI") as MockAPI:
             assert lead.get_urn(fake_session) == "urn:li:fsd_profile:ABC123"
             MockAPI.assert_not_called()
 
@@ -105,7 +105,7 @@ class TestGetUrn:
             public_identifier="alice",
         )
 
-        with patch("linkedin.api.client.PlaywrightLinkedinAPI") as MockAPI:
+        with patch("linkedin_cli.api.client.PlaywrightLinkedinAPI") as MockAPI:
             MockAPI.return_value.get_profile.return_value = (FAKE_PROFILE, {})
             assert lead.get_urn(fake_session) == "urn:li:fsd_profile:ABC123"
 
@@ -142,7 +142,7 @@ class TestGetEmbedding:
 
         fake_emb = np.ones(384, dtype=np.float32)
 
-        with patch("linkedin.api.client.PlaywrightLinkedinAPI") as MockAPI, \
+        with patch("linkedin_cli.api.client.PlaywrightLinkedinAPI") as MockAPI, \
              patch("linkedin.ml.embeddings.embed_text", return_value=fake_emb):
             MockAPI.return_value.get_profile.return_value = (FAKE_PROFILE, {})
             result = lead.get_embedding(fake_session)
@@ -159,7 +159,7 @@ class TestGetEmbedding:
             public_identifier="alice",
         )
 
-        with patch("linkedin.api.client.PlaywrightLinkedinAPI") as MockAPI:
+        with patch("linkedin_cli.api.client.PlaywrightLinkedinAPI") as MockAPI:
             MockAPI.return_value.get_profile.side_effect = IOError("timeout")
             with pytest.raises(IOError):
                 lead.get_embedding(fake_session)
