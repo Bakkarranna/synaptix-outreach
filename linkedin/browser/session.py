@@ -55,13 +55,17 @@ class AccountSession:
         """Authenticated user's profile dict, fetched once per session.
 
         The dict isn't persisted to DB (we dropped ``Lead.profile_data``),
-        so the first access per session triggers a Voyager call; the
-        ``cached_property`` keeps it warm for the rest of the session.
+        so the first access per session triggers a Voyager call via the
+        ``linkedin_cli`` self-discovery primitive; the ``cached_property``
+        keeps it warm for the rest of the session. CRM-side persistence
+        (the disqualified ``self_lead``) is layered on in ``register_self_lead``.
         """
-        from linkedin.setup.self_profile import discover_self_profile
+        from linkedin_cli.setup.self_profile import discover_self_profile
+        from linkedin.db.leads import register_self_lead
 
-        self.ensure_browser()
-        return discover_self_profile(self)
+        profile = discover_self_profile(self)
+        register_self_lead(self, profile)
+        return profile
 
     def wait(self, min_delay=MIN_DELAY, max_delay=MAX_DELAY):
         random_sleep(min_delay, max_delay)

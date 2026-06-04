@@ -180,3 +180,24 @@ def _cache_urn_from_profile(lead, profile: Dict[str, Any]):
     if urn and lead.urn != urn:
         lead.urn = urn
         lead.save(update_fields=["urn"])
+
+
+def register_self_lead(session, profile: Dict[str, Any]):
+    """Persist the logged-in member's own profile as a disqualified Lead.
+
+    The CRM-side layer over ``linkedin_cli``'s self-discovery primitive: marks
+    the real profile disqualified (so auto-discovery never targets it) and links
+    it as ``linkedin_profile.self_lead``. Idempotent per profile.
+    """
+    from crm.models import Lead
+
+    public_id = profile["public_identifier"]
+    lead, _ = Lead.objects.update_or_create(
+        public_identifier=public_id,
+        defaults={"linkedin_url": public_id_to_url(public_id), "disqualified": True},
+    )
+    _cache_urn_from_profile(lead, profile)
+
+    session.linkedin_profile.self_lead = lead
+    session.linkedin_profile.save(update_fields=["self_lead"])
+    logger.info("Registered self-profile as disqualified Lead: %s", public_id)
