@@ -12,7 +12,8 @@ import logging
 
 from termcolor import colored
 
-from linkedin_cli.browser.login import dismiss_comply_gate, launch_browser, playwright_login
+from linkedin_cli.auth import authenticate
+from linkedin_cli.browser.login import dismiss_comply_gate, launch_browser
 from linkedin_cli.browser.nav import goto_page
 
 logger = logging.getLogger(__name__)
@@ -41,7 +42,7 @@ def start_browser_session(session):
 
     if not storage_state:
         lp = session.linkedin_profile
-        playwright_login(session, lp.linkedin_username, lp.linkedin_password)
+        authenticate(session, username=lp.linkedin_username, password=lp.linkedin_password)
         _save_cookies(session)
         logger.info(colored("Login successful – session saved", "green", attrs=["bold"]))
     else:

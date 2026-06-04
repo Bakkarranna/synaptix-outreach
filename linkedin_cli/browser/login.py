@@ -1,7 +1,6 @@
 # linkedin/browser/login.py
 import logging
 import time
-from urllib.parse import unquote
 
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
@@ -15,7 +14,7 @@ from linkedin_cli.conf import (
     BROWSER_SLOW_MO,
     CHECKPOINT_RESOLVE_TIMEOUT_S,
 )
-from linkedin_cli.exceptions import CheckpointChallengeError
+from linkedin_cli.page_state import PageState, classify_page
 
 CHECKPOINT_POLL_S = 5
 
@@ -95,17 +94,22 @@ def await_checkpoint_clear(page, timeout_s: int = CHECKPOINT_RESOLVE_TIMEOUT_S) 
     logger.error(colored(banner, "red", attrs=["bold"]))
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
-        if "/checkpoint/" not in unquote(page.url):
+        if classify_page(page) is not PageState.CHECKPOINT:
             logger.info(colored("Checkpoint cleared — continuing", "green", attrs=["bold"]))
             return True
         time.sleep(CHECKPOINT_POLL_S)
     return False
 
 
-def playwright_login(session, username, password):
-    """Fill LinkedIn's login form (credentials supplied by the caller) and clear any checkpoint."""
+def submit_login_form(session, username, password):
+    """Fill and submit LinkedIn's login form (credentials supplied by the caller).
+
+    Does *not* assert the outcome — the caller (the auth flow's ``@transition``)
+    re-reads the page to decide what the submit produced: the feed, a checkpoint,
+    or, on rejected credentials, the login page again.
+    """
     page = session.page
-    logger.info(colored("Fresh login sequence starting", "cyan") + f" for {session}")
+    logger.info(colored("Submitting login form", "cyan") + f" for {session}")
 
     goto_page(
         session,
@@ -119,20 +123,9 @@ def playwright_login(session, username, password):
     human_type(resolve_locator(page, PASSWORD_LOCATORS), password)
     session.wait()
 
-    submit = resolve_locator(page, SUBMIT_LOCATORS)
-    submit.click()
+    resolve_locator(page, SUBMIT_LOCATORS).click()
     dismiss_comply_gate(page)
     page.wait_for_load_state("domcontentloaded", timeout=BROWSER_LOGIN_TIMEOUT_MS)
-
-    current = unquote(page.url)
-    if "/checkpoint/" in current:
-        # Give the user a chance to clear it by hand in the live browser.
-        # Escalate (the daemon exits) only if the challenge is still there.
-        if not await_checkpoint_clear(page):
-            raise CheckpointChallengeError(current)
-        current = unquote(page.url)
-    if "/feed" not in current:
-        raise RuntimeError(f"Login failed – expected '/feed' | got '{current}'")
 
 
 def launch_browser(storage_state=None):

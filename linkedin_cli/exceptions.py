@@ -23,6 +23,17 @@ class ReachedConnectionLimit(Exception):
     pass
 
 
+class IllegalPageTransition(Exception):
+    """An action ran from, or produced, a page state its @transition contract forbids.
+
+    Raised by the ``transition`` decorator (see ``page_state``) when the live
+    page violates the action's declared precondition (``when``) or postcondition
+    (``then``) — e.g. submitting credentials and landing back on the login page
+    (rejected creds) instead of the feed or a checkpoint.
+    """
+    pass
+
+
 class CheckpointChallengeError(Exception):
     """LinkedIn flagged the account with a security checkpoint.
 

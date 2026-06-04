@@ -72,25 +72,30 @@ def injected_session(monkeypatch):
     return session
 
 
-def _run(argv, capsys):
-    code = cli.main(argv)
+def test_whoami_human_default(injected_session, capsys):
+    """Default output is the brief human summary, not JSON."""
+    code = cli.main(["whoami", "--session", "work"])
     out = capsys.readouterr().out.strip()
-    return code, json.loads(out)
-
-
-def test_whoami_happy_path(injected_session, capsys):
-    code, payload = _run(["whoami", "--session", "work"], capsys)
     assert code == 0
-    assert payload == {"self": {"public_identifier": "me-self", "urn": "urn:li:fsd_profile:ME", "full_name": "Me Self"}}
+    assert out == "Me Self (me-self)"
     assert injected_session.closed  # session always released
 
 
-def test_known_error_becomes_structured_json(injected_session, capsys):
+def test_whoami_json_emits_full_dict(injected_session, capsys):
+    """--json emits the verb's full result dict on stdout."""
+    code = cli.main(["whoami", "--json", "--session", "work"])
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert code == 0
+    assert payload == {"self": {"public_identifier": "me-self", "urn": "urn:li:fsd_profile:ME", "full_name": "Me Self"}}
+
+
+def test_known_error_goes_to_stderr(injected_session, capsys):
     injected_session._raise = AuthenticationError("session expired")
-    code, payload = _run(["whoami", "--session", "work"], capsys)
+    code = cli.main(["whoami", "--session", "work"])
+    captured = capsys.readouterr()
     assert code == 1
-    assert payload["error"]["type"] == "authentication"
-    assert "session expired" in payload["error"]["message"]
+    assert captured.out.strip() == ""                      # stdout carries only results
+    assert "error: authentication: session expired" in captured.err
     assert injected_session.closed
 
 
@@ -103,6 +108,51 @@ def test_unknown_error_propagates(injected_session):
 
 def test_missing_session_is_usage_error(monkeypatch, capsys):
     monkeypatch.setattr(cli, "read_session", lambda name: None)
-    code, payload = _run(["profile", "alice", "--session", "nope"], capsys)
+    code = cli.main(["profile", "alice", "--session", "nope"])
+    captured = capsys.readouterr()
     assert code == 2
-    assert payload["error"]["type"] == "usage"
+    assert "no open session named 'nope'" in captured.err
+
+
+# ── human renderers (pure dict → brief summary) ────────────────────
+
+def test_human_state_is_the_bare_word():
+    assert cli._human_state({"public_identifier": "alice", "state": "Connected"}) == "Connected"
+
+
+def test_human_sent():
+    assert cli._human_sent({"sent": True}) == "sent"
+    assert cli._human_sent({"sent": False}) == "not sent"
+
+
+def test_human_identity():
+    assert cli._human_identity({"self": {"public_identifier": "alice-smith", "full_name": "Alice Smith"}}) \
+        == "Alice Smith (alice-smith)"
+
+
+def test_human_profile_is_a_brief_summary():
+    summary = cli._human_profile({
+        "full_name": "Alice Smith", "headline": "Engineer",
+        "location_name": "Berlin", "industry": {"name": "Software"},
+        "positions": [1, 2, 3], "educations": [1],
+    })
+    assert summary.splitlines() == [
+        "Alice Smith — Engineer",
+        "Berlin · Software",
+        "3 positions · 1 schools",
+        "(--json for the full record)",
+    ]
+
+
+def test_human_thread_empty_vs_messages():
+    assert cli._human_thread({"messages": None}) == "(no conversation)"
+    rendered = cli._human_thread({"messages": [
+        {"timestamp": "2026-05-01 14:03", "sender": "Alice", "text": "hi"}]})
+    assert rendered == "2026-05-01 14:03  Alice: hi"
+
+
+def test_render_json_vs_human(capsys):
+    cli._render("status", {"public_identifier": "alice", "state": "Pending"}, as_json=False)
+    assert capsys.readouterr().out.strip() == "Pending"
+    cli._render("status", {"public_identifier": "alice", "state": "Pending"}, as_json=True)
+    assert json.loads(capsys.readouterr().out.strip()) == {"public_identifier": "alice", "state": "Pending"}

@@ -1,9 +1,27 @@
 """linkedin-cli — drive LinkedIn interactions inside a bound browser session.
 
 ``session open`` launches + binds a persistent browser (the session owner); the
-verbs connect to it and emit structured JSON on **stdout** (human logs go to
-**stderr**, so piping stdout stays clean). One session = one account; pick it
-with ``--session <name>``.
+verbs connect to it and drive LinkedIn. One session = one account; pick it with
+``--session <name>`` (or ``$LINKEDIN_CLI_SESSION``).
+
+Output contract — design decisions, kept here so they travel with the package
+when ``linkedin_cli`` is split into its own repo:
+
+* **Every verb produces a dict** — its canonical result. That one dict is both
+  the ``--json`` payload and the source the human renderer summarises, so the
+  two views can never drift.
+* **Human-readable by default; ``--json`` on every verb for the full dict.**
+  Per clig.dev ("humans first", "keep it brief, err toward less output"), the
+  default is a short, scannable per-verb summary (``status`` → ``Connected``,
+  ``profile`` → a few lines); ``--json`` emits the whole dict for machines.
+* **No ``--out``/file flag — print to stdout, let the caller redirect.** To save
+  a result: ``linkedin-cli profile alice --json > alice.json``. This matches the
+  composability convention (clig.dev; ``kubectl -o``, ``aws --output``,
+  ``gh --json``) and keeps the tool free of file-lifecycle concerns.
+* **stdout carries only the result; logs and errors go to stderr.** Errors are an
+  ``error: <type>: <message>`` line + non-zero exit (``type`` mirrors
+  ``exceptions.py``). A verb that ran is exit 0 — ``message`` reports send success
+  in its dict (``sent``), not via the exit code.
 
 This module is the composition root: it owns policy (e.g. interaction pacing)
 and injects it into the session — the session/action layers read no config.
@@ -16,7 +34,6 @@ import logging
 import os
 import signal
 import sys
-from urllib.parse import unquote
 
 from linkedin_cli.enums import ProfileState
 from linkedin_cli.exceptions import (
@@ -35,8 +52,6 @@ logger = logging.getLogger("linkedin_cli")
 DEFAULT_MIN_PACE_S = 5.0
 DEFAULT_MAX_PACE_S = 8.0
 
-LINKEDIN_FEED_URL = "https://www.linkedin.com/feed/"
-
 # Exception → contract error `type`, in match order.
 _ERROR_TYPES = [
     (CheckpointChallengeError, "checkpoint_challenge"),
@@ -49,11 +64,15 @@ _ERROR_TYPES = [
 
 # ── output helpers ─────────────────────────────────────────────────
 
-def _emit(obj) -> None:
-    """Write one JSON object to stdout (the only thing that touches stdout)."""
-    json.dump(obj, sys.stdout, ensure_ascii=False, default=str)
-    sys.stdout.write("\n")
+def _out(text: str) -> None:
+    """Print a result line to stdout (the only thing that touches stdout)."""
+    sys.stdout.write(f"{text}\n")
     sys.stdout.flush()
+
+
+def _err(text: str) -> None:
+    """Print a log/error line to stderr."""
+    print(text, file=sys.stderr)
 
 
 def _error_type(exc: Exception) -> str | None:
@@ -69,6 +88,75 @@ def _self_block(profile: dict) -> dict:
         "urn": profile.get("urn"),
         "full_name": profile.get("full_name"),
     }
+
+
+# ── human-readable rendering (the non-`--json` default) ─────────────
+#
+# clig.dev: "keep it brief", "err toward less output". Each verb gets a short,
+# scannable summary of its result dict; `--json` always emits the full dict.
+
+def _human_identity(result: dict) -> str:
+    member = result.get("self", result)
+    return f"{member.get('full_name')} ({member.get('public_identifier')})"
+
+
+def _human_state(result: dict) -> str:
+    return result.get("state", "")
+
+
+def _human_sent(result: dict) -> str:
+    return "sent" if result.get("sent") else "not sent"
+
+
+def _human_profile(result: dict) -> str:
+    industry = result.get("industry") or {}
+    subtitle = " · ".join(x for x in (
+        result.get("location_name"),
+        industry.get("name") if isinstance(industry, dict) else None,
+    ) if x)
+    lines = [" — ".join(x for x in (result.get("full_name"), result.get("headline")) if x)]
+    if subtitle:
+        lines.append(subtitle)
+    lines.append(f"{len(result.get('positions') or [])} positions · "
+                 f"{len(result.get('educations') or [])} schools")
+    lines.append("(--json for the full record)")
+    return "\n".join(lines)
+
+
+def _human_thread(result: dict) -> str:
+    messages = result.get("messages")
+    if not messages:
+        return "(no conversation)"
+    return "\n".join(
+        f"{m.get('timestamp', '')}  {m.get('sender', '')}: {m.get('text', '')}"
+        for m in messages
+    )
+
+
+def _human_closed(result: dict) -> str:
+    return f"closed {result.get('name')}"
+
+
+_HUMAN = {
+    "login": _human_identity,
+    "whoami": _human_identity,
+    "status": _human_state,
+    "connect": _human_state,
+    "message": _human_sent,
+    "profile": _human_profile,
+    "thread": _human_thread,
+    "session-close": _human_closed,
+}
+
+
+def _render(command: str, result: dict, as_json: bool) -> None:
+    """Print *result*: the full dict as JSON if ``--json``, else a brief summary."""
+    if as_json:
+        _out(json.dumps(result, ensure_ascii=False, default=str))
+        return
+    renderer = _HUMAN.get(command)
+    _out(renderer(result) if renderer
+         else "\n".join(f"{k}: {v}" for k, v in result.items()))
 
 
 def _handle_to_profile(handle: str) -> dict:
@@ -92,15 +180,9 @@ def _scrape(session, handle: str) -> dict:
 # ── verbs ──────────────────────────────────────────────────────────
 
 def _verb_login(session, args) -> dict:
-    session.ensure_browser()
-    session.page.goto(LINKEDIN_FEED_URL)
-    if "/feed" not in unquote(session.page.url):
-        if not session.username:
-            raise AuthenticationError(
-                "Not logged in and no LINKEDIN_USERNAME/LINKEDIN_PASSWORD provided"
-            )
-        from linkedin_cli.browser.login import playwright_login
-        playwright_login(session, session.username, session.password)
+    from linkedin_cli.auth import authenticate
+
+    authenticate(session)
     return {"account": args.name, "self": _self_block(session.self_profile)}
 
 
@@ -179,10 +261,10 @@ def _cmd_session_open(args) -> int:
 def _cmd_session_close(args) -> int:
     record = read_session(args.name)
     if not record:
-        _emit({"error": {"type": "usage", "message": f"No open session named {args.name!r}"}})
+        _err(f"error: usage: no open session named {args.name!r}")
         return 2
     os.kill(record["pid"], signal.SIGTERM)
-    _emit({"name": args.name, "closed": True})
+    _render("session-close", {"name": args.name, "closed": True}, args.json)
     return 0
 
 
@@ -191,9 +273,8 @@ def _cmd_session_close(args) -> int:
 def _run_verb(args) -> int:
     record = read_session(args.name)
     if not record:
-        _emit({"error": {"type": "usage", "message":
-               f"No open session named {args.name!r} — run "
-               f"`linkedin-cli session open --session {args.name}`"}})
+        _err(f"error: usage: no open session named {args.name!r} — run "
+             f"`linkedin-cli session open --session {args.name}`")
         return 2
 
     session = PlaywrightCliSession(
@@ -206,13 +287,13 @@ def _run_verb(args) -> int:
     )
     try:
         session.ensure_browser()
-        _emit(_VERBS[args.verb](session, args))
+        _render(args.verb, _VERBS[args.verb](session, args), args.json)
         return 0
     except Exception as exc:  # noqa: BLE001 — map known errors, re-raise the rest
         error_type = _error_type(exc)
         if error_type is None:
             raise
-        _emit({"error": {"type": error_type, "message": str(exc)}})
+        _err(f"error: {error_type}: {exc}")
         return 1
     finally:
         session.close()
@@ -227,6 +308,10 @@ def build_parser() -> argparse.ArgumentParser:
         default=os.environ.get("LINKEDIN_CLI_SESSION", "default"),
         help="Bound session name (default: $LINKEDIN_CLI_SESSION or 'default')",
     )
+    common.add_argument(
+        "--json", action="store_true",
+        help="Emit the full result as JSON instead of a human-readable summary",
+    )
 
     parser = argparse.ArgumentParser(prog="linkedin-cli", description=__doc__)
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -238,17 +323,32 @@ def build_parser() -> argparse.ArgumentParser:
     session_sub.add_parser("close", parents=[common], help="Signal the session launcher to shut down")
 
     # verbs
-    sub.add_parser("login", parents=[common], help="Authenticate the session and discover the logged-in member")
-    sub.add_parser("whoami", parents=[common], help="Identity of the already-authenticated session")
-    p_profile = sub.add_parser("profile", parents=[common], help="Scrape a profile → structured JSON")
-    p_profile.add_argument("handle", help="Profile URL or public identifier")
+    handle_help = "Profile URL or public identifier (e.g. alice-smith)"
+
+    sub.add_parser("login", parents=[common],
+                   help="Log the session in (fill the form, clear a checkpoint) and report the logged-in member")
+    sub.add_parser("whoami", parents=[common],
+                   help="Report who the session is logged in as — no login, no checkpoint")
+
+    p_profile = sub.add_parser("profile", parents=[common],
+                               help="Scrape a member's full profile: headline, positions, education, location")
+    p_profile.add_argument("handle", help=handle_help)
     p_profile.add_argument("--raw", action="store_true", help="Also emit the untouched Voyager blob under _raw")
-    for verb in ("status", "connect", "thread"):
-        sub.add_parser(verb, parents=[common], help=f"{verb} a profile").add_argument(
-            "handle", help="Profile URL or public identifier")
-    p_message = sub.add_parser("message", parents=[common], help="Send a message")
-    p_message.add_argument("handle", help="Profile URL or public identifier")
-    p_message.add_argument("--text", required=True, help="Message body")
+
+    sub.add_parser("status", parents=[common],
+                   help="Report the connection state with the member: Connected, Pending, or Qualified"
+                   ).add_argument("handle", help=handle_help)
+    sub.add_parser("connect", parents=[common],
+                   help="Send a connection request (no note); no-op if already Connected or Pending"
+                   ).add_argument("handle", help=handle_help)
+    sub.add_parser("thread", parents=[common],
+                   help="Dump the conversation with the member as a list of messages (newest last)"
+                   ).add_argument("handle", help=handle_help)
+
+    p_message = sub.add_parser("message", parents=[common],
+                               help="Send a direct message to the member")
+    p_message.add_argument("handle", help=handle_help)
+    p_message.add_argument("--text", required=True, help="Message body to send")
     return parser
 
 
