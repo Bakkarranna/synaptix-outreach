@@ -42,7 +42,7 @@ class AccountSession:
 
     def ensure_browser(self):
         """Launch or recover browser + login if needed. Call before using .page"""
-        from linkedin_cli.browser.login import start_browser_session
+        from linkedin.browser.launch import start_browser_session
 
         if not self.page or self.page.is_closed():
             logger.debug("Launching/recovering browser for %s", self)
@@ -73,7 +73,7 @@ class AccountSession:
 
     def reauthenticate(self):
         """Force a fresh login: close browser, clear saved cookies, re-launch."""
-        from linkedin_cli.browser.login import start_browser_session
+        from linkedin.browser.launch import start_browser_session
 
         logger.warning("Re-authenticating %s — clearing saved session", self)
         self.close()
@@ -83,7 +83,7 @@ class AccountSession:
 
     def _maybe_refresh_cookies(self):
         """Re-login if the li_at auth cookie in the saved DB state is expired."""
-        from linkedin_cli.browser.login import start_browser_session
+        from linkedin.browser.launch import start_browser_session
 
         self.linkedin_profile.refresh_from_db(fields=["cookie_data"])
         cookie_data = self.linkedin_profile.cookie_data

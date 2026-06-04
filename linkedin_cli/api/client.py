@@ -40,7 +40,7 @@ class PlaywrightLinkedinAPI:
 
     def __init__(
             self,
-            session: "AccountSession",
+            session: "LinkedInSession",
             timeout_ms: int = VOYAGER_REQUEST_TIMEOUT_MS,
     ):
         self.session = session

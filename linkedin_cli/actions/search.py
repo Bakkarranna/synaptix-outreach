@@ -12,7 +12,7 @@ SELECTORS = {
 }
 
 
-def _go_to_profile(session: "AccountSession", url: str, public_identifier: str):
+def _go_to_profile(session: "LinkedInSession", url: str, public_identifier: str):
     if f"/in/{public_identifier}" in session.page.url:
         return
     logger.debug("Direct navigation → %s", public_identifier)
@@ -42,7 +42,7 @@ def _detect_profile_redirect(session, old_public_id: str) -> str | None:
     return None
 
 
-def visit_profile(session: "AccountSession", profile: Dict[str, Any]):
+def visit_profile(session: "LinkedInSession", profile: Dict[str, Any]):
     public_identifier = profile.get("public_identifier")
 
     # Ensure browser is alive before doing anything
@@ -60,7 +60,7 @@ def visit_profile(session: "AccountSession", profile: Dict[str, Any]):
     return extract_in_urls(session.page)
 
 
-def _initiate_search(session: "AccountSession", keyword: str):
+def _initiate_search(session: "LinkedInSession", keyword: str):
     """Navigate directly to LinkedIn People search results for *keyword*."""
     page = session.page
     params = urlencode({"keywords": keyword, "origin": "GLOBAL_SEARCH_HEADER"})
@@ -74,7 +74,7 @@ def _initiate_search(session: "AccountSession", keyword: str):
     )
 
 
-def _paginate_to_next_page(session: "AccountSession", page_num: int):
+def _paginate_to_next_page(session: "LinkedInSession", page_num: int):
     page = session.page
     current = urlparse(page.url)
     params = parse_qs(current.query)
@@ -90,7 +90,7 @@ def _paginate_to_next_page(session: "AccountSession", page_num: int):
     )
 
 
-def search_people(session: "AccountSession", keyword: str, page: int = 1):
+def search_people(session: "LinkedInSession", keyword: str, page: int = 1):
     """Search LinkedIn People by keyword; return the /in/ URLs on the result page."""
     session.ensure_browser()
     _initiate_search(session, keyword)
@@ -100,7 +100,7 @@ def search_people(session: "AccountSession", keyword: str, page: int = 1):
     return extract_in_urls(session.page)
 
 
-def _simulate_human_search(session: "AccountSession", profile: Dict[str, Any]) -> bool:
+def _simulate_human_search(session: "LinkedInSession", profile: Dict[str, Any]) -> bool:
     full_name = profile.get("full_name")
     public_identifier = profile.get("public_identifier")
 

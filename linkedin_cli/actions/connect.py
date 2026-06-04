@@ -35,7 +35,7 @@ SELECTORS = {
 
 
 def send_connection_request(
-        session: "AccountSession",
+        session: "LinkedInSession",
         profile: Dict[str, Any],
 ) -> ProfileState:
     """

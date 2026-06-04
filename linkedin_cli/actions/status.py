@@ -88,7 +88,7 @@ def _has_connect_in_more(session, top_card) -> bool:
 # ── Public entry point ─────────────────────────────────────────────
 
 def get_connection_status(
-        session: "AccountSession",
+        session: "LinkedInSession",
         profile: Dict[str, Any],
 ) -> ProfileState:
     """Detect connection status via API with UI fallback.

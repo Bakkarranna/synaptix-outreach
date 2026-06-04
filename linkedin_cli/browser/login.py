@@ -22,7 +22,6 @@ CHECKPOINT_POLL_S = 5
 logger = logging.getLogger(__name__)
 
 LINKEDIN_LOGIN_URL = "https://www.linkedin.com/login"
-LINKEDIN_FEED_URL = "https://www.linkedin.com/feed/"
 
 EMAIL_LOCATORS = [
     lambda p: p.get_by_role("textbox", name="Email or phone"),
@@ -103,17 +102,9 @@ def await_checkpoint_clear(page, timeout_s: int = CHECKPOINT_RESOLVE_TIMEOUT_S) 
     return False
 
 
-def playwright_login(session, username: str | None = None, password: str | None = None):
-    """Fill LinkedIn's login form and clear any checkpoint.
-
-    Credentials are taken from *username*/*password* when given (the standalone
-    CLI path); otherwise they fall back to the session's Django
-    ``linkedin_profile`` (the in-process daemon path).
-    """
+def playwright_login(session, username, password):
+    """Fill LinkedIn's login form (credentials supplied by the caller) and clear any checkpoint."""
     page = session.page
-    if username is None:
-        lp = session.linkedin_profile
-        username, password = lp.linkedin_username, lp.linkedin_password
     logger.info(colored("Fresh login sequence starting", "cyan") + f" for {session}")
 
     goto_page(
@@ -154,44 +145,3 @@ def launch_browser(storage_state=None):
     Stealth().apply_stealth_sync(context)
     page = context.new_page()
     return page, context, browser, playwright
-
-
-def _save_cookies(session):
-    """Persist Playwright storage state (cookies) to the DB."""
-    state = session.context.storage_state()
-    session.linkedin_profile.cookie_data = state
-    session.linkedin_profile.save(update_fields=["cookie_data"])
-
-
-def start_browser_session(session: "AccountSession"):
-    logger.debug("Configuring browser for %s", session)
-
-    session.linkedin_profile.refresh_from_db(fields=["cookie_data"])
-    cookie_data = session.linkedin_profile.cookie_data
-
-    storage_state = cookie_data if cookie_data else None
-    if storage_state:
-        logger.info("Loading saved session for %s", session)
-
-    session.page, session.context, session.browser, session.playwright = launch_browser(storage_state=storage_state)
-
-    if not storage_state:
-        playwright_login(session)
-        _save_cookies(session)
-        logger.info(colored("Login successful – session saved", "green", attrs=["bold"]))
-    else:
-        session.page.goto(LINKEDIN_FEED_URL)
-        dismiss_comply_gate(session.page)
-        goto_page(
-            session,
-            action=lambda: None,
-            expected_url_pattern="/feed",
-            timeout=BROWSER_DEFAULT_TIMEOUT_MS,
-            error_message="Saved session invalid",
-        )
-
-    # "domcontentloaded" — "load" waits for every subresource (analytics
-    # beacons, lazy media) and on LinkedIn that event may never fire,
-    # hanging the daemon for the duration of the BROWSER_DEFAULT_TIMEOUT.
-    session.page.wait_for_load_state("domcontentloaded")
-    logger.info(colored("Browser ready", "green", attrs=["bold"]))

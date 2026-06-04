@@ -103,7 +103,7 @@ def human_type(locator, text: str, min_delay: int = HUMAN_TYPE_MIN_DELAY_MS, max
     locator.type(text, delay=random.randint(min_delay, max_delay))
 
 
-def dump_page_html(session: "AccountSession", profile: dict, category: str = "connect"):
+def dump_page_html(session: "LinkedInSession", profile: dict, category: str = "connect"):
     if not DUMP_PAGES:
         return
     dest = FIXTURE_PAGES_DIR / category
