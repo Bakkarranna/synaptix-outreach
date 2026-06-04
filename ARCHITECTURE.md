@@ -112,7 +112,7 @@ Three apps in `INSTALLED_APPS`:
 - **`ml/hub.py`** — HuggingFace kit loader (`fetch_kit()`).
 - **`browser/session.py`** — `AccountSession` (a `linkedin_cli.session.LinkedInSession`): linkedin_profile, page, context, browser, playwright. `campaigns` cached_property (list, via Campaign.users M2M). `ensure_browser()` launches/recovers browser via `linkedin.browser.launch.start_browser_session`. `self_profile` cached_property — scrapes via the `linkedin_cli` self-discovery primitive on first access (no DB cache; one extra scrape per daemon restart) and persists the disqualified self-lead via `db.leads.register_self_lead`. Cookie expiry check via `_maybe_refresh_cookies()`. `reauthenticate()` forces fresh login.
 - **`browser/registry.py`** — `get_or_create_session()`, `get_first_active_profile()`, `resolve_profile()`, `cli_parser()`/`cli_session()` (Django bootstrap for `follow_up.py`'s `__main__`).
-- **`browser/launch.py`** — `start_browser_session()` + `_save_cookies()`: the daemon's launch/persistence orchestration — launch the stealthed browser (via `linkedin_cli.browser.login.launch_browser`), restore/persist cookies to the Django DB, run the login form (`playwright_login`), validate a saved session. The reusable browser/login *mechanics* live in `linkedin_cli`; this is the Django/DB glue.
+- **`browser/launch.py`** — `start_browser_session()` + `_save_cookies()`: the daemon's launch/persistence orchestration — launch the stealthed browser (via `linkedin_cli.browser.login.launch_browser`), restore/persist cookies to the Django DB, run the login flow (`linkedin_cli.auth.authenticate`), validate a saved session. The reusable browser/login *mechanics* live in `linkedin_cli`; this is the Django/DB glue.
 - **`db/leads.py`** — Lead CRUD, `get_leads_for_qualification()`, `disqualify_lead()`, `_cache_urn_from_profile()`, `register_self_lead()` (persists the logged-in member as a disqualified self-lead on top of the `linkedin_cli` self-discovery primitive).
 - **`db/deals.py`** — Deal/state ops, `set_profile_state()`, `increment_connect_attempts()`, `create_freemium_deal()`.
 - **`db/chat.py`** — `sync_conversation()`, `_sync_from_api()`, folds newly-synced messages into `Deal.chat_summary` via `update_chat_summary`.
@@ -153,12 +153,32 @@ the standalone CLI's `session open` launcher owns it for non-daemon use.
   `bind()` it, register the endpoint, block. The standalone session owner.
 - **`cli.py`** — verb CLI over bind+connect (`python -m linkedin_cli.cli`):
   `session open/close`, `login`, `whoami`, `profile`, `status`, `connect`,
-  `message`, `thread`. Minimal args in, JSON on stdout, logs on stderr; maps
-  `exceptions.py` → structured `error.type`. Owns interaction-pacing policy
-  (injected into the session).
+  `message`, `thread`. **Output contract** (documented in the module docstring so
+  it travels with the package): every verb produces a result dict; the default is
+  a brief human-readable summary on stdout, and `--json` (on every verb) emits the
+  full dict — redirect with `>` to save it (no `--out`; clig.dev composability).
+  stdout carries only the result; logs and errors go to stderr as
+  `error: <type>: <message>` + non-zero exit (`type` mirrors `exceptions.py`).
+  Owns interaction-pacing policy (injected into the session).
+- **`page_state.py`** — the page-state machine. `classify_page(page)` judges the
+  live page by **URL path only** (a `/login?session_redirect=…/feed/` redirect must
+  not read as the feed). `@transition(when=, then=)` is a contract decorator over an
+  action: it enforces the precondition state *and*, re-reading the page after the
+  action, that the result is in the allowed `then` set — raising `IllegalPageTransition`
+  otherwise (the postcondition is what a held-state FSM can't express). `PageFlow` is
+  the generic engine: `.transition` registers an action under its `when`; `.run()` is
+  the single observe→act loop that drives a session to the flow's goal.
+- **`auth.py`** — the auth flow, declared as `@auth_flow.transition` actions
+  (unknown/authwall/login/checkpoint → feed); no hand-written loop. `authenticate(session,
+  *, username=, password=)` stamps credentials and runs the flow to the feed. Shared by
+  the CLI `login` verb and the daemon (`linkedin/browser/launch.py`), so both drive one
+  enforced login path. Rejected credentials = landing back on `/login`, which the
+  `_from_login` contract forbids → surfaces as `AuthenticationError` (and enforces
+  never-resubmit).
 - **`browser/login.py`** — login form mechanics: locators,
-  `playwright_login(session, username, password)`, `dismiss_comply_gate()`,
-  `await_checkpoint_clear()`, `launch_browser()`.
+  `submit_login_form(session, username, password)` (fills + submits, asserts nothing —
+  the auth flow re-reads the page), `dismiss_comply_gate()`, `await_checkpoint_clear()`,
+  `launch_browser()`.
 - **`browser/nav.py`** — `goto_page()`, `human_type()`, `find_top_card()`, `dump_page_html()`.
 - **`actions/`** — `connect.py` (`send_connection_request`), `status.py`
   (`get_connection_status`), `message.py` (`send_raw_message`), `profile.py`
