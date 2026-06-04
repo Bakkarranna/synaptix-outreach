@@ -152,7 +152,7 @@ the standalone CLI's `session open` launcher owns it for non-daemon use.
 - **`launcher.py`** — `open_bound_session()`: launch a persistent browser,
   `bind()` it, register the endpoint, block. The standalone session owner.
 - **`cli.py`** — verb CLI over bind+connect (`python -m linkedin_cli.cli`):
-  `session open/close`, `login`, `whoami`, `profile`, `status`, `connect`,
+  `session open/close`, `login`, `whoami`, `search`, `profile`, `status`, `connect`,
   `message`, `thread`. **Output contract** (documented in the module docstring so
   it travels with the package): every verb produces a result dict; the default is
   a brief human-readable summary on stdout, and `--json` (on every verb) emits the
@@ -182,8 +182,10 @@ the standalone CLI's `session open` launcher owns it for non-daemon use.
 - **`browser/nav.py`** — `goto_page()`, `human_type()`, `find_top_card()`, `dump_page_html()`.
 - **`actions/`** — `connect.py` (`send_connection_request`), `status.py`
   (`get_connection_status`), `message.py` (`send_raw_message`), `profile.py`
-  (`scrape_profile`), `search.py` (`search_people`/`visit_profile` — library-only,
-  not a CLI verb), `conversations.py` (`get_conversation`).
+  (`scrape_profile`), `search.py` (`search_people` — returns a
+  `{query, page, network, profiles:[{public_identifier, url}]}` envelope, optional
+  `network` degree filter; backs the `search` verb and is used in-process by the
+  daemon — plus `visit_profile`), `conversations.py` (`get_conversation`).
 - **`api/client.py`** — `PlaywrightLinkedinAPI`: in-page `fetch()` for authentic
   headers; `get_profile()` with tenacity retry; `VOYAGER_REQUEST_TIMEOUT_MS`.
 - **`api/voyager.py`** — `LinkedInProfile` parse (`parse_linkedin_voyager_response()`,

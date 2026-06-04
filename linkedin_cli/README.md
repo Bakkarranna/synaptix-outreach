@@ -31,9 +31,13 @@ python -m linkedin_cli.cli session open --session work
 # 2. Drive it from other processes. Pick the session per-call or once via env:
 export LINKEDIN_CLI_SESSION=work
 python -m linkedin_cli.cli login            # creds from $LINKEDIN_USERNAME/$LINKEDIN_PASSWORD
+python -m linkedin_cli.cli search "San Francisco" --network first   # discover → handles
 python -m linkedin_cli.cli profile alice-smith
 python -m linkedin_cli.cli session close
 ```
+
+The discovery → outreach loop an agent runs: `search … --json` → handles →
+`profile` / `status` / `thread` / `message`.
 
 `playwright-cli attach work` can attach to the same browser (e.g. for a human to
 clear a checkpoint by hand in the live window).
@@ -61,6 +65,7 @@ The canonical statement lives in the `cli.py` module docstring; in short:
 |---|---|---|
 | `login` | `Alice Smith (alice-smith)` | `{account, self:{public_identifier, urn, full_name}}` |
 | `whoami` | `Alice Smith (alice-smith)` | `{self:{public_identifier, urn, full_name}}` |
+| `search <kw> [--network first/second/third] [--page N]` | matching handles, one per line | `{query, page, network, profiles:[{public_identifier, url}]}` |
 | `profile <id>` | name — headline / location · industry / N positions · M schools | full `LinkedInProfile` (positions[], educations[], geo, …); `--raw` adds `_raw` |
 | `status <id>` | `Connected` | `{public_identifier, state}` — `Connected`/`Pending`/`Qualified` |
 | `connect <id>` | `Pending` | `{public_identifier, state}` — no note; no-op if already Connected/Pending |
