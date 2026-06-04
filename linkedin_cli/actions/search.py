@@ -2,7 +2,7 @@ import logging
 from typing import Dict, Any
 from urllib.parse import urlparse, parse_qs, urlencode
 
-from linkedin_cli.browser.nav import goto_page, human_type, extract_in_urls
+from linkedin_cli.browser.nav import goto_page, extract_in_urls
 
 logger = logging.getLogger(__name__)
 
@@ -149,26 +149,3 @@ def _simulate_human_search(session: "AccountSession", profile: Dict[str, Any]) -
 
     logger.info("Target %s not found → falling back to direct URL", public_identifier)
     return False
-
-
-# ——————————————————————————————————————————————————————————————
-if __name__ == "__main__":
-    from linkedin.browser.registry import cli_parser, cli_session
-
-    parser = cli_parser("Navigate to a LinkedIn profile")
-    parser.add_argument("--profile", required=True, help="Public identifier of the target profile")
-    args = parser.parse_args()
-    session = cli_session(args)
-
-    test_profile = {
-        "url": f"https://www.linkedin.com/in/{args.profile}/",
-        "public_identifier": args.profile,
-    }
-
-    logger.info("Navigating to profile as %s → %s", session, args.profile)
-
-    visit_profile(session, test_profile)
-
-    logger.info("Search complete! Final URL → %s", session.page.url)
-    input("Press Enter to close browser...")
-    session.close()

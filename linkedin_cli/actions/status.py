@@ -110,21 +110,3 @@ def get_connection_status(
 
     # degree 2/3 or None — let the UI decide
     return _inspect_ui(session, profile)
-
-
-if __name__ == "__main__":
-    from linkedin.browser.registry import cli_parser, cli_session
-
-    parser = cli_parser("Check LinkedIn connection status")
-    parser.add_argument("--profile", required=True, help="Public identifier of the target profile")
-    args = parser.parse_args()
-    session = cli_session(args)
-
-    test_profile = {
-        "url": f"https://www.linkedin.com/in/{args.profile}/",
-        "public_identifier": args.profile,
-    }
-
-    logger.info("Checking connection status as %s → %s", session, args.profile)
-    status = get_connection_status(session, test_profile)
-    logger.info("Connection status → %s", status.value)

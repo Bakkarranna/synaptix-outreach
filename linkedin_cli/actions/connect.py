@@ -116,29 +116,3 @@ def _click_without_note(session):
     send_btn.first.click(force=True)
     session.wait()
     logger.debug("Connection request submitted (no note)")
-
-
-if __name__ == "__main__":
-    from linkedin.browser.registry import cli_parser, cli_session
-    from linkedin_cli.actions.status import get_connection_status
-
-    parser = cli_parser("Send a LinkedIn connection request")
-    parser.add_argument("--profile", required=True, help="Public identifier of the target profile")
-    args = parser.parse_args()
-    session = cli_session(args)
-
-    test_profile = {
-        "url": f"https://www.linkedin.com/in/{args.profile}/",
-        "public_identifier": args.profile,
-    }
-
-    logger.info("Testing connection request as %s → %s", session, args.profile)
-
-    connection_status = get_connection_status(session, test_profile)
-    logger.info("Pre-check status → %s", connection_status.value)
-
-    if connection_status in (ProfileState.CONNECTED, ProfileState.PENDING):
-        logger.info("Skipping – already %s", connection_status.value)
-    else:
-        status = send_connection_request(session=session, profile=test_profile)
-        logger.info("Finished → Status: %s", status.value)

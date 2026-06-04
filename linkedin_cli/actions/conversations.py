@@ -130,28 +130,3 @@ def get_conversation(session, target_urn: str, mailbox_urn: str) -> list[dict] |
 
     raw = fetch_messages(api, conversation_urn)
     return parse_messages(raw)
-
-
-if __name__ == "__main__":
-    from crm.models import Lead
-    from linkedin.browser.registry import cli_parser, cli_session
-
-    parser = cli_parser("Retrieve LinkedIn conversation history")
-    parser.add_argument("--profile", required=True, help="Public identifier of target profile")
-    args = parser.parse_args()
-    session = cli_session(args)
-
-    logger.info("Fetching conversation as %s → %s", session, args.profile)
-    lead = Lead.objects.get(public_identifier=args.profile)
-    target_urn = lead.get_urn(session)
-    mailbox_urn = session.self_profile["urn"]
-    messages = get_conversation(session, target_urn, mailbox_urn)
-
-    if messages is None:
-        logger.error("No conversation found with %s", args.profile)
-    elif not messages:
-        logger.warning("Conversation found but no messages parsed")
-    else:
-        logger.info("--- Conversation with %s (%d messages) ---", args.profile, len(messages))
-        for msg in messages:
-            logger.info("[%s] %s: %s", msg['timestamp'], msg['sender'], msg['text'])

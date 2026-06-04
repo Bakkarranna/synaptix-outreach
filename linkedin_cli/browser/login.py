@@ -103,9 +103,17 @@ def await_checkpoint_clear(page, timeout_s: int = CHECKPOINT_RESOLVE_TIMEOUT_S) 
     return False
 
 
-def playwright_login(session: "AccountSession"):
+def playwright_login(session, username: str | None = None, password: str | None = None):
+    """Fill LinkedIn's login form and clear any checkpoint.
+
+    Credentials are taken from *username*/*password* when given (the standalone
+    CLI path); otherwise they fall back to the session's Django
+    ``linkedin_profile`` (the in-process daemon path).
+    """
     page = session.page
-    lp = session.linkedin_profile
+    if username is None:
+        lp = session.linkedin_profile
+        username, password = lp.linkedin_username, lp.linkedin_password
     logger.info(colored("Fresh login sequence starting", "cyan") + f" for {session}")
 
     goto_page(
@@ -115,9 +123,9 @@ def playwright_login(session: "AccountSession"):
         error_message="Failed to load login page",
     )
 
-    human_type(resolve_locator(page, EMAIL_LOCATORS), lp.linkedin_username)
+    human_type(resolve_locator(page, EMAIL_LOCATORS), username)
     session.wait()
-    human_type(resolve_locator(page, PASSWORD_LOCATORS), lp.linkedin_password)
+    human_type(resolve_locator(page, PASSWORD_LOCATORS), password)
     session.wait()
 
     submit = resolve_locator(page, SUBMIT_LOCATORS)
@@ -187,16 +195,3 @@ def start_browser_session(session: "AccountSession"):
     # hanging the daemon for the duration of the BROWSER_DEFAULT_TIMEOUT.
     session.page.wait_for_load_state("domcontentloaded")
     logger.info(colored("Browser ready", "green", attrs=["bold"]))
-
-
-if __name__ == "__main__":
-    from linkedin.browser.registry import cli_parser, cli_session
-
-    parser = cli_parser("Start a LinkedIn browser session")
-    args = parser.parse_args()
-    session = cli_session(args)
-    session.ensure_browser()
-
-    start_browser_session(session=session)
-    logger.info("Logged in! Close browser manually.")
-    session.page.pause()

@@ -151,39 +151,3 @@ def _send_message_via_api(session, profile: Dict[str, Any], message: str) -> boo
     except Exception as e:
         logger.error("API send failed for %s → %s", public_identifier, e)
         return False
-
-
-if __name__ == "__main__":
-    from linkedin.browser.registry import cli_parser, cli_session
-
-    parser = cli_parser("Debug LinkedIn messaging search results")
-    parser.add_argument("--name", required=True, help="Full name to search for")
-    args = parser.parse_args()
-    session = cli_session(args)
-    session.ensure_browser()
-
-    logger.info("Searching for '%s' ...", args.name)
-
-    goto_page(
-        session,
-        action=lambda: session.page.goto(LINKEDIN_MESSAGING_URL),
-        expected_url_pattern="/messaging",
-        timeout=30_000,
-        error_message="Error opening messaging",
-    )
-
-    conn_input = _find(session.page, "connections_input").first
-    conn_input.fill("")
-    session.wait(0.5, 1)
-    human_type(conn_input, args.name, min_delay=10, max_delay=50)
-    session.wait(3, 4)
-
-    rows = _find(session.page, "search_result_row")
-    count = rows.count()
-    logger.info("=== Found %d result rows ===", count)
-    for i in range(min(count, 3)):
-        row = rows.nth(i)
-        logger.debug("--- Row %d inner_text ---", i)
-        logger.debug(row.inner_text(timeout=5_000))
-        logger.debug("--- Row %d outer_html ---", i)
-        logger.debug(row.evaluate("el => el.outerHTML"))
