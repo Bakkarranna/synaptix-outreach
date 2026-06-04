@@ -133,6 +133,14 @@ def _human_thread(result: dict) -> str:
     )
 
 
+def _human_search(result: dict) -> str:
+    profiles = result.get("profiles") or []
+    if not profiles:
+        return "(no results)"
+    header = f"{len(profiles)} result(s) on page {result.get('page', 1)}:"
+    return "\n".join([header] + [f"  {p['public_identifier']}" for p in profiles])
+
+
 def _human_closed(result: dict) -> str:
     return f"closed {result.get('name')}"
 
@@ -145,6 +153,7 @@ _HUMAN = {
     "message": _human_sent,
     "profile": _human_profile,
     "thread": _human_thread,
+    "search": _human_search,
     "session-close": _human_closed,
 }
 
@@ -237,6 +246,13 @@ def _verb_thread(session, args) -> dict:
     return {"public_identifier": profile.get("public_identifier"), "messages": messages}
 
 
+def _verb_search(session, args) -> dict:
+    from linkedin_cli.actions.search import NETWORK_CODES, search_people
+
+    codes = [NETWORK_CODES[n] for n in (args.network or [])]
+    return search_people(session, args.keywords, page=args.page, network=codes or None)
+
+
 _VERBS = {
     "login": _verb_login,
     "whoami": _verb_whoami,
@@ -245,6 +261,7 @@ _VERBS = {
     "connect": _verb_connect,
     "message": _verb_message,
     "thread": _verb_thread,
+    "search": _verb_search,
 }
 
 
@@ -349,6 +366,13 @@ def build_parser() -> argparse.ArgumentParser:
                                help="Send a direct message to the member")
     p_message.add_argument("handle", help=handle_help)
     p_message.add_argument("--text", required=True, help="Message body to send")
+
+    p_search = sub.add_parser("search", parents=[common],
+                              help="Search People by keyword; list matching profile handles")
+    p_search.add_argument("keywords", help="Search keywords, e.g. 'San Francisco'")
+    p_search.add_argument("--network", action="append", choices=["first", "second", "third"],
+                          help="Filter by connection degree (repeatable): first / second / third")
+    p_search.add_argument("--page", type=int, default=1, help="Result page (default: 1)")
     return parser
 
 

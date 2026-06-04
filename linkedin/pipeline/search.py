@@ -49,6 +49,6 @@ def run_search(session) -> str | None:
     kw.save()
 
     logger.info(colored("\u25b6 search", "magenta", attrs=["bold"]) + " keyword=%r", kw.keyword)
-    urls = search_people(session, kw.keyword)
+    urls = [p["url"] for p in search_people(session, kw.keyword)["profiles"]]
     discover_and_enrich(session, urls)
     return kw.keyword

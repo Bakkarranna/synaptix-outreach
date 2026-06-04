@@ -1,8 +1,12 @@
+import json
 import logging
 from typing import Dict, Any
 from urllib.parse import urlparse, parse_qs, urlencode
 
 from linkedin_cli.browser.nav import goto_page, extract_in_urls
+
+# LinkedIn connection-degree filter codes for People search (`network` facet).
+NETWORK_CODES = {"first": "F", "second": "S", "third": "O"}
 
 logger = logging.getLogger(__name__)
 
@@ -60,15 +64,25 @@ def visit_profile(session: "LinkedInSession", profile: Dict[str, Any]):
     return extract_in_urls(session.page)
 
 
+def _search_url(keyword: str, page: int = 1, network=None) -> str:
+    """Build a People-search results URL, optionally filtered by connection degree.
+
+    *network* is an optional list of degree codes — ``F`` (1st), ``S`` (2nd),
+    ``O`` (3rd+) — passed to LinkedIn's ``network`` facet as a JSON array.
+    """
+    params = {"keywords": keyword, "origin": "FACETED_SEARCH"}
+    if network:
+        params["network"] = json.dumps(list(network))
+    if page > 1:
+        params["page"] = page
+    return "https://www.linkedin.com/search/results/people/?" + urlencode(params)
+
+
 def _initiate_search(session: "LinkedInSession", keyword: str):
     """Navigate directly to LinkedIn People search results for *keyword*."""
-    page = session.page
-    params = urlencode({"keywords": keyword, "origin": "GLOBAL_SEARCH_HEADER"})
-    url = f"https://www.linkedin.com/search/results/people/?{params}"
-
     goto_page(
         session,
-        action=lambda: page.goto(url),
+        action=lambda: session.page.goto(_search_url(keyword)),
         expected_url_pattern="/search/results/people/",
         error_message="Failed to reach People search results",
     )
@@ -90,14 +104,35 @@ def _paginate_to_next_page(session: "LinkedInSession", page_num: int):
     )
 
 
-def search_people(session: "LinkedInSession", keyword: str, page: int = 1):
-    """Search LinkedIn People by keyword; return the /in/ URLs on the result page."""
-    session.ensure_browser()
-    _initiate_search(session, keyword)
-    if page > 1:
-        _paginate_to_next_page(session, page)
+def search_people(session: "LinkedInSession", keyword: str, page: int = 1, network=None) -> dict:
+    """Search LinkedIn People; return the result page as a structured envelope.
 
-    return extract_in_urls(session.page)
+    *network* optionally filters by connection degree (a list of `F`/`S`/`O`
+    codes). Results carry only ``{public_identifier, url}`` — no `urn`; a
+    follow-up `profile` scrape per url resolves the rest. Returns::
+
+        {"query": ..., "page": ..., "network": [...]|None,
+         "profiles": [{"public_identifier": ..., "url": ...}, ...]}
+    """
+    from linkedin_cli.url_utils import url_to_public_id
+
+    session.ensure_browser()
+    goto_page(
+        session,
+        action=lambda: session.page.goto(_search_url(keyword, page, network)),
+        expected_url_pattern="/search/results/people/",
+        error_message="Failed to reach People search results",
+    )
+
+    profiles, seen = [], set()
+    for url in extract_in_urls(session.page):
+        public_id = url_to_public_id(url)
+        if public_id and public_id not in seen:
+            seen.add(public_id)
+            profiles.append({"public_identifier": public_id, "url": url})
+
+    return {"query": keyword, "page": page,
+            "network": list(network) if network else None, "profiles": profiles}
 
 
 def _simulate_human_search(session: "LinkedInSession", profile: Dict[str, Any]) -> bool:

@@ -156,3 +156,40 @@ def test_render_json_vs_human(capsys):
     assert capsys.readouterr().out.strip() == "Pending"
     cli._render("status", {"public_identifier": "alice", "state": "Pending"}, as_json=True)
     assert json.loads(capsys.readouterr().out.strip()) == {"public_identifier": "alice", "state": "Pending"}
+
+
+def test_human_search_lists_handles():
+    rendered = cli._human_search({"page": 1, "profiles": [
+        {"public_identifier": "alice", "url": "u"}, {"public_identifier": "bob", "url": "u"}]})
+    assert rendered.splitlines() == ["2 result(s) on page 1:", "  alice", "  bob"]
+    assert cli._human_search({"profiles": []}) == "(no results)"
+
+
+def test_verb_search_maps_network_words_to_codes(injected_session, monkeypatch):
+    captured = {}
+
+    def fake_search_people(session, keywords, page=1, network=None):
+        captured.update(keywords=keywords, page=page, network=network)
+        return {"query": keywords, "page": page, "network": network, "profiles": []}
+
+    monkeypatch.setattr("linkedin_cli.actions.search.search_people", fake_search_people)
+    code = cli.main(["search", "head of growth", "--network", "first", "--page", "2", "--session", "work"])
+    assert code == 0
+    assert captured == {"keywords": "head of growth", "page": 2, "network": ["F"]}
+
+
+# ── search URL building (actions.search._search_url) ───────────────
+
+def test_search_url_keyword_only():
+    from linkedin_cli.actions.search import _search_url
+    url = _search_url("San Francisco")
+    assert url.startswith("https://www.linkedin.com/search/results/people/?")
+    assert "keywords=San+Francisco" in url
+    assert "network" not in url and "page" not in url
+
+
+def test_search_url_with_network_and_page():
+    from linkedin_cli.actions.search import _search_url
+    url = _search_url("ceo", page=3, network=["F", "S"])
+    assert "network=%5B%22F%22%2C+%22S%22%5D" in url  # JSON ["F", "S"], url-encoded
+    assert "page=3" in url
