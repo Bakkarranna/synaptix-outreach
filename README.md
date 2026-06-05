@@ -165,6 +165,31 @@ Then open:
 
 ---
 
+## 🤖 Drive LinkedIn from Your Own LLM
+
+OpenOutreach's LinkedIn layer is also published as a standalone, Django-free package —
+[**`linkedin-agent-cli`**](https://github.com/eracle/linkedin-cli) — so you can let *your own*
+LLM agent drive LinkedIn directly, no OpenOutreach install required. Every verb prints a human
+summary or the full result dict with `--json`, and errors go to stderr with stable types — a
+clean tool-use contract any agent (or any language) can call:
+
+```bash
+pip install linkedin-agent-cli
+python -m playwright install chromium
+
+linkedin-cli session open --session work   # launch + bind a browser (this process owns it)
+linkedin-cli login   --session work         # authenticate in that session
+linkedin-cli search "head of growth" --network first --json   # → handles your LLM can parse
+linkedin-cli profile alice-smith --json                       # → full profile dict
+linkedin-cli message alice-smith --session work --text "Hi Alice"
+```
+
+Point your agent at the `--json` output and the per-verb `--help`; see the
+[`linkedin-cli` README](https://github.com/eracle/linkedin-cli#readme) for the full verb surface
+and output contract.
+
+---
+
 ## 📖 How the ML Pipeline Works
 
 The daemon runs a continuous **task queue** backed by a persistent `Task` model. Three task types self-schedule follow-on work:
