@@ -29,7 +29,7 @@ Docker `start` script handles only Xvfb/VNC setup, then `exec python manage.py r
 
 `OnboardConfig` — pure dataclass with all onboarding fields. Two constructors:
 - `OnboardConfig.from_json(path)` — from JSON file (cloud / non-interactive).
-- `collect_from_wizard()` — interactive questionary wizard (needs TTY), only asks for `missing_keys()`.
+- `collect_from_wizard()` — interactive questionary wizard (needs TTY), only asks for `missing_keys()`. Backed by the vendored `onboarding_wizard.py` (step engine) + `onboarding_prompts.py` (`SELF_HOSTED_QUESTIONS`) — no external `openoutreach` dependency.
 
 Single write path: `apply(config)` — idempotent, creates missing Campaign, LinkedInProfile, env vars, and legal acceptance. Four components:
 

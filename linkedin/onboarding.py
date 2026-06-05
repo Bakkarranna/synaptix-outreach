@@ -102,8 +102,8 @@ def collect_from_wizard() -> OnboardConfig:
 
     Raises SystemExit if the user cancels.
     """
-    from openoutreach.prompts import SELF_HOSTED_QUESTIONS
-    from openoutreach.wizard import ask
+    from linkedin.onboarding_prompts import SELF_HOSTED_QUESTIONS
+    from linkedin.onboarding_wizard import ask
 
     skip = _ALL_KEYS - missing_keys()
     questions = [q for q in SELF_HOSTED_QUESTIONS if q.key not in skip]
