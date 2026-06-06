@@ -299,7 +299,7 @@ def run_daemon(session):
         len(campaigns),
     )
 
-    cloud_promo = _CloudPromoRotator(interval=60)
+    # cloud_promo = _CloudPromoRotator(interval=60)  # tmp disabled — see below
     heartbeat = Heartbeat()
     rhythm = _HumanRhythmBreak(heartbeat)
 
@@ -384,5 +384,7 @@ def run_daemon(session):
             continue
 
         task.mark_completed()
-        cloud_promo.maybe_log()
+        # TODO(tmp): Cloud/CLI promo disabled — still advertises the retired
+        # openoutreach CLI (GH issue). Re-enable with email-first messaging.
+        # cloud_promo.maybe_log()
         rhythm.maybe_break()
