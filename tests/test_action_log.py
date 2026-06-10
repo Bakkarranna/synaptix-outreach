@@ -4,7 +4,7 @@ from datetime import timedelta
 import pytest
 from django.utils import timezone
 
-from linkedin.models import ActionLog
+from openoutreach.linkedin.models import ActionLog
 
 
 @pytest.mark.django_db
@@ -99,7 +99,7 @@ class TestDynamicLimitChanges:
         assert not lp.can_execute(ActionLog.ActionType.CONNECT)
 
         # Raise the limit in DB
-        from linkedin.models import LinkedInProfile
+        from openoutreach.linkedin.models import LinkedInProfile
         LinkedInProfile.objects.filter(pk=lp.pk).update(connect_daily_limit=10)
 
         # can_execute calls refresh_from_db, so it should pick up the new limit

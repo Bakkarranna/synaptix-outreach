@@ -4,11 +4,11 @@ from unittest.mock import patch
 
 import numpy as np
 
-from linkedin.db.deals import set_profile_state
-from linkedin.db.leads import create_enriched_lead, promote_lead_to_deal
-from linkedin.ml.qualifier import BayesianQualifier
+from openoutreach.core.db.deals import set_profile_state
+from openoutreach.linkedin.db.leads import create_enriched_lead, promote_lead_to_deal
+from openoutreach.linkedin.ml.qualifier import BayesianQualifier
 from linkedin_cli.enums import ProfileState
-from linkedin.pipeline.ready_pool import promote_to_ready, find_ready_candidate
+from openoutreach.linkedin.pipeline.ready_pool import promote_to_ready, find_ready_candidate
 
 
 SAMPLE_PROFILE = {
@@ -38,7 +38,7 @@ class TestPromoteToReady:
         scorer = BayesianQualifier(seed=42)
 
         with patch(
-            "crm.models.lead.Lead.get_embedding",
+            "openoutreach.crm.models.lead.Lead.get_embedding",
             return_value=np.ones(384),
         ), patch.object(
             scorer, "predict_probs", return_value=np.array([0.95, 0.80]),
@@ -47,7 +47,7 @@ class TestPromoteToReady:
 
         assert count == 1
 
-        from crm.models import Deal
+        from openoutreach.crm.models import Deal
         alice_deal = Deal.objects.get(lead__linkedin_url="https://www.linkedin.com/in/alice/")
         bob_deal = Deal.objects.get(lead__linkedin_url="https://www.linkedin.com/in/bob/")
         assert alice_deal.state == ProfileState.READY_TO_CONNECT
@@ -59,7 +59,7 @@ class TestPromoteToReady:
         scorer = BayesianQualifier(seed=42)
 
         with patch(
-            "crm.models.lead.Lead.get_embedding",
+            "openoutreach.crm.models.lead.Lead.get_embedding",
             return_value=np.ones(384),
         ), patch.object(
             scorer, "predict_probs", return_value=None,

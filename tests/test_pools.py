@@ -4,8 +4,8 @@ from unittest.mock import patch, MagicMock, PropertyMock
 
 import numpy as np
 
-from linkedin.ml.qualifier import BayesianQualifier
-from linkedin.pipeline.pools import (
+from openoutreach.linkedin.ml.qualifier import BayesianQualifier
+from openoutreach.linkedin.pipeline.pools import (
     find_candidate,
     _needs_search,
     search_source,
@@ -118,12 +118,12 @@ class TestPositivePoolEmpty:
 
 class TestSearchSource:
     def test_yields_keywords(self):
-        with patch("linkedin.pipeline.pools.run_search", side_effect=["kw1", "kw2", None]):
+        with patch("openoutreach.linkedin.pipeline.pools.run_search", side_effect=["kw1", "kw2", None]):
             results = list(search_source("session"))
         assert results == ["kw1", "kw2"]
 
     def test_stops_on_none(self):
-        with patch("linkedin.pipeline.pools.run_search", return_value=None):
+        with patch("openoutreach.linkedin.pipeline.pools.run_search", return_value=None):
             results = list(search_source("session"))
         assert results == []
 
@@ -135,10 +135,10 @@ class TestQualifySource:
         candidates = [_make_candidate(1, np.zeros(384, dtype=np.float32))]
 
         with (
-            patch("linkedin.pipeline.pools.fetch_qualification_candidates", return_value=candidates),
-            patch("linkedin.pipeline.pools._needs_search", return_value=False),
-            patch("linkedin.pipeline.pools.run_qualification", side_effect=["alice", None]),
-            patch("linkedin.pipeline.pools.run_search") as mock_search,
+            patch("openoutreach.linkedin.pipeline.pools.fetch_qualification_candidates", return_value=candidates),
+            patch("openoutreach.linkedin.pipeline.pools._needs_search", return_value=False),
+            patch("openoutreach.linkedin.pipeline.pools.run_qualification", side_effect=["alice", None]),
+            patch("openoutreach.linkedin.pipeline.pools.run_search") as mock_search,
         ):
             results = list(qualify_source("session", scorer))
 
@@ -151,11 +151,11 @@ class TestQualifySource:
         candidates = [_make_candidate(1, np.zeros(384, dtype=np.float32))]
 
         with (
-            patch("linkedin.pipeline.pools.fetch_qualification_candidates", return_value=candidates),
+            patch("openoutreach.linkedin.pipeline.pools.fetch_qualification_candidates", return_value=candidates),
             # Always empty — search exhausts (returns None) and loop breaks
-            patch("linkedin.pipeline.pools._needs_search", return_value=True),
-            patch("linkedin.pipeline.pools.run_qualification", side_effect=["alice", None]),
-            patch("linkedin.pipeline.pools.run_search", side_effect=["kw1", "kw2", None]) as mock_search,
+            patch("openoutreach.linkedin.pipeline.pools._needs_search", return_value=True),
+            patch("openoutreach.linkedin.pipeline.pools.run_qualification", side_effect=["alice", None]),
+            patch("openoutreach.linkedin.pipeline.pools.run_search", side_effect=["kw1", "kw2", None]) as mock_search,
         ):
             results = list(qualify_source("session", scorer))
 
@@ -175,10 +175,10 @@ class TestQualifySource:
             return call_count[0] <= 1
 
         with (
-            patch("linkedin.pipeline.pools.fetch_qualification_candidates", return_value=candidates),
-            patch("linkedin.pipeline.pools._needs_search", side_effect=pool_empty_side_effect),
-            patch("linkedin.pipeline.pools.run_qualification", side_effect=["alice", None]),
-            patch("linkedin.pipeline.pools.run_search", return_value="kw") as mock_search,
+            patch("openoutreach.linkedin.pipeline.pools.fetch_qualification_candidates", return_value=candidates),
+            patch("openoutreach.linkedin.pipeline.pools._needs_search", side_effect=pool_empty_side_effect),
+            patch("openoutreach.linkedin.pipeline.pools.run_qualification", side_effect=["alice", None]),
+            patch("openoutreach.linkedin.pipeline.pools.run_search", return_value="kw") as mock_search,
         ):
             results = list(qualify_source("session", scorer))
 
@@ -191,11 +191,11 @@ class TestQualifySource:
         candidates = [_make_candidate(1, np.zeros(384, dtype=np.float32))]
 
         with (
-            patch("linkedin.pipeline.pools.fetch_qualification_candidates",
+            patch("openoutreach.linkedin.pipeline.pools.fetch_qualification_candidates",
                   side_effect=[[], candidates, candidates]),
-            patch("linkedin.pipeline.pools._needs_search", return_value=False),
-            patch("linkedin.pipeline.pools.run_qualification", side_effect=["alice", None]),
-            patch("linkedin.pipeline.pools.run_search", return_value="kw1") as mock_search,
+            patch("openoutreach.linkedin.pipeline.pools._needs_search", return_value=False),
+            patch("openoutreach.linkedin.pipeline.pools.run_qualification", side_effect=["alice", None]),
+            patch("openoutreach.linkedin.pipeline.pools.run_search", return_value="kw1") as mock_search,
         ):
             results = list(qualify_source("session", scorer))
 
@@ -207,9 +207,9 @@ class TestQualifySource:
         scorer = BayesianQualifier(seed=42)
 
         with (
-            patch("linkedin.pipeline.pools.fetch_qualification_candidates", return_value=[]),
-            patch("linkedin.pipeline.pools.run_search", return_value=None),
-            patch("linkedin.pipeline.pools.run_qualification") as mock_qualify,
+            patch("openoutreach.linkedin.pipeline.pools.fetch_qualification_candidates", return_value=[]),
+            patch("openoutreach.linkedin.pipeline.pools.run_search", return_value=None),
+            patch("openoutreach.linkedin.pipeline.pools.run_qualification") as mock_qualify,
         ):
             results = list(qualify_source("session", scorer))
 
@@ -229,11 +229,11 @@ class TestGetCandidate:
         candidates = [_make_candidate(1, np.zeros(384, dtype=np.float32))]
 
         with (
-            patch("linkedin.pipeline.pools.find_ready_candidate", side_effect=[None, candidate]),
-            patch("linkedin.pipeline.pools.promote_to_ready", side_effect=[0, 1]),
-            patch("linkedin.pipeline.pools.fetch_qualification_candidates", return_value=candidates),
-            patch("linkedin.pipeline.pools._needs_search", return_value=False),
-            patch("linkedin.pipeline.pools.run_qualification", return_value="alice"),
+            patch("openoutreach.linkedin.pipeline.pools.find_ready_candidate", side_effect=[None, candidate]),
+            patch("openoutreach.linkedin.pipeline.pools.promote_to_ready", side_effect=[0, 1]),
+            patch("openoutreach.linkedin.pipeline.pools.fetch_qualification_candidates", return_value=candidates),
+            patch("openoutreach.linkedin.pipeline.pools._needs_search", return_value=False),
+            patch("openoutreach.linkedin.pipeline.pools.run_qualification", return_value="alice"),
         ):
             assert find_candidate(fake_session, scorer) == candidate
 
@@ -241,10 +241,10 @@ class TestGetCandidate:
         scorer = BayesianQualifier(seed=42)
 
         with (
-            patch("linkedin.pipeline.pools.find_ready_candidate", return_value=None),
-            patch("linkedin.pipeline.pools.promote_to_ready", return_value=0),
-            patch("linkedin.pipeline.pools.fetch_qualification_candidates", return_value=[]),
-            patch("linkedin.pipeline.pools.run_search", return_value=None),
+            patch("openoutreach.linkedin.pipeline.pools.find_ready_candidate", return_value=None),
+            patch("openoutreach.linkedin.pipeline.pools.promote_to_ready", return_value=0),
+            patch("openoutreach.linkedin.pipeline.pools.fetch_qualification_candidates", return_value=[]),
+            patch("openoutreach.linkedin.pipeline.pools.run_search", return_value=None),
         ):
             assert find_candidate(fake_session, scorer) is None
 
@@ -255,10 +255,10 @@ class TestGetCandidate:
         candidates = [_make_candidate(1, np.zeros(384, dtype=np.float32))]
 
         with (
-            patch("linkedin.pipeline.pools.find_ready_candidate", side_effect=[None, candidate]),
-            patch("linkedin.pipeline.pools.promote_to_ready", side_effect=[0, 1]),
-            patch("linkedin.pipeline.pools.fetch_qualification_candidates", return_value=candidates),
-            patch("linkedin.pipeline.pools._needs_search", return_value=False),
-            patch("linkedin.pipeline.pools.run_qualification", return_value="alice"),
+            patch("openoutreach.linkedin.pipeline.pools.find_ready_candidate", side_effect=[None, candidate]),
+            patch("openoutreach.linkedin.pipeline.pools.promote_to_ready", side_effect=[0, 1]),
+            patch("openoutreach.linkedin.pipeline.pools.fetch_qualification_candidates", return_value=candidates),
+            patch("openoutreach.linkedin.pipeline.pools._needs_search", return_value=False),
+            patch("openoutreach.linkedin.pipeline.pools.run_qualification", return_value="alice"),
         ):
             assert find_candidate(fake_session, scorer) == candidate

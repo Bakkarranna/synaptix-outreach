@@ -33,7 +33,7 @@ Tests are configured via `pytest.ini` in the project root:
 [pytest]
 pythonpath = .
 testpaths = tests
-DJANGO_SETTINGS_MODULE = linkedin.django_settings
+DJANGO_SETTINGS_MODULE = openoutreach.settings
 ```
 
 The `DJANGO_SETTINGS_MODULE` setting ensures Django models are available in all tests.

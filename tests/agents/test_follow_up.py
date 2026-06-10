@@ -36,7 +36,7 @@ def _msg(content, is_outgoing):
 
 class TestRenderSystemPrompt:
     def test_includes_three_summary_blocks(self, db, fake_session, deal_with_summaries):
-        from linkedin.agents.follow_up import _render_system_prompt
+        from openoutreach.core.agents.follow_up import _render_system_prompt
 
         # Stub session.self_profile so the prompt builder works without a browser.
         fake_session.self_profile = {"first_name": "Bob", "last_name": "Builder", "urn": "urn:li:fsd_profile:SELF"}
@@ -57,7 +57,7 @@ class TestRenderSystemPrompt:
         assert "Company:" not in prompt
 
     def test_handles_missing_summaries_gracefully(self, db, fake_session):
-        from linkedin.agents.follow_up import _render_system_prompt
+        from openoutreach.core.agents.follow_up import _render_system_prompt
 
         lead = LeadFactory(public_identifier="bob")
         deal = DealFactory(lead=lead, campaign=fake_session.campaign)
@@ -72,12 +72,12 @@ class TestRenderSystemPrompt:
 
 class TestLoadRecentMessages:
     def test_returns_last_n_in_chronological_order(self, db, fake_session):
-        from chat.models import ChatMessage
+        from openoutreach.chat.models import ChatMessage
         from django.contrib.contenttypes.models import ContentType
         from django.utils import timezone
         from datetime import timedelta
 
-        from linkedin.agents.follow_up import _load_recent_messages, RECENT_MESSAGES_WINDOW
+        from openoutreach.core.agents.follow_up import _load_recent_messages, RECENT_MESSAGES_WINDOW
 
         lead = LeadFactory(public_identifier="alice")
         deal = DealFactory(lead=lead, campaign=fake_session.campaign)

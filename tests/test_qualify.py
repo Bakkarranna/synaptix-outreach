@@ -7,8 +7,8 @@ from unittest.mock import patch, MagicMock
 import numpy as np
 import pytest
 
-from linkedin.pipeline.qualify import run_qualification
-from linkedin.ml.qualifier import BayesianQualifier
+from openoutreach.linkedin.pipeline.qualify import run_qualification
+from openoutreach.linkedin.ml.qualifier import BayesianQualifier
 
 
 def _make_trained_qualifier(seed=42):
@@ -21,7 +21,7 @@ def _make_trained_qualifier(seed=42):
 
 
 def _create_lead_with_embedding(lead_id, public_id):
-    from crm.models import Lead
+    from openoutreach.crm.models import Lead
     emb = np.ones(384, dtype=np.float32)
     return Lead.objects.create(
         pk=lead_id,
@@ -43,11 +43,11 @@ class TestQualifyAutoDecisions:
         _create_lead_with_embedding(1, "alice")
 
         with (
-            patch("linkedin.db.leads.get_leads_for_qualification", return_value=_fake_leads()),
-            patch("linkedin.pipeline.qualify._fetch_profile_text", return_value="engineer at acme"),
-            patch("linkedin.ml.qualifier.qualify_with_llm", return_value=(1, "Good fit")) as mock_llm,
+            patch("openoutreach.linkedin.db.leads.get_leads_for_qualification", return_value=_fake_leads()),
+            patch("openoutreach.linkedin.pipeline.qualify._fetch_profile_text", return_value="engineer at acme"),
+            patch("openoutreach.linkedin.ml.qualifier.qualify_with_llm", return_value=(1, "Good fit")) as mock_llm,
             patch.object(qualifier, "update"),
-            patch("linkedin.db.leads.promote_lead_to_deal"),
+            patch("openoutreach.linkedin.db.leads.promote_lead_to_deal"),
         ):
             run_qualification(session, qualifier)
             mock_llm.assert_called_once()
@@ -58,11 +58,11 @@ class TestQualifyAutoDecisions:
         _create_lead_with_embedding(1, "alice")
 
         with (
-            patch("linkedin.db.leads.get_leads_for_qualification", return_value=_fake_leads()),
-            patch("linkedin.pipeline.qualify._fetch_profile_text", return_value="engineer at acme"),
-            patch("linkedin.ml.qualifier.qualify_with_llm", return_value=(0, "Bad fit")) as mock_llm,
+            patch("openoutreach.linkedin.db.leads.get_leads_for_qualification", return_value=_fake_leads()),
+            patch("openoutreach.linkedin.pipeline.qualify._fetch_profile_text", return_value="engineer at acme"),
+            patch("openoutreach.linkedin.ml.qualifier.qualify_with_llm", return_value=(0, "Bad fit")) as mock_llm,
             patch.object(qualifier, "update"),
-            patch("linkedin.db.deals.create_disqualified_deal"),
+            patch("openoutreach.core.db.deals.create_disqualified_deal"),
         ):
             run_qualification(session, qualifier)
             mock_llm.assert_called_once()
@@ -73,13 +73,13 @@ class TestQualifyAutoDecisions:
         _create_lead_with_embedding(1, "alice")
 
         with (
-            patch("linkedin.db.leads.get_leads_for_qualification", return_value=_fake_leads()),
-            patch("linkedin.pipeline.qualify._fetch_profile_text", return_value="engineer at acme"),
-            patch("linkedin.ml.qualifier.qualify_with_llm", return_value=(1, "Good fit")),
+            patch("openoutreach.linkedin.db.leads.get_leads_for_qualification", return_value=_fake_leads()),
+            patch("openoutreach.linkedin.pipeline.qualify._fetch_profile_text", return_value="engineer at acme"),
+            patch("openoutreach.linkedin.ml.qualifier.qualify_with_llm", return_value=(1, "Good fit")),
             patch.object(qualifier, "update"),
-            patch("linkedin.db.leads.promote_lead_to_deal",
+            patch("openoutreach.linkedin.db.leads.promote_lead_to_deal",
                   side_effect=ValueError("no company_name")),
-            patch("linkedin.db.deals.create_disqualified_deal") as mock_disqualify,
+            patch("openoutreach.core.db.deals.create_disqualified_deal") as mock_disqualify,
         ):
             run_qualification(session, qualifier)
             mock_disqualify.assert_called_once()

@@ -189,22 +189,16 @@ Configure rate limits and behavior via Django Admin (LinkedInProfile + Campaign 
 │   ├── docker.md                    # Docker setup guide
 │   ├── templating.md                # Follow-up messaging guide
 │   └── testing.md                   # Testing strategy
-├── linkedin/
-│   ├── actions/                     # Browser actions (connect, message, status, search)
-│   ├── agents/                      # ReAct follow-up agent (multi-turn conversations)
-│   ├── api/                         # Voyager API client + parser + messaging package
-│   ├── browser/                     # Session management, login, navigation
-│   ├── conf.py                      # Configuration loading (.env + defaults)
-│   ├── daemon.py                    # Task queue worker loop
-│   ├── db/                          # CRM-backed CRUD (leads, deals, enrichment, chat)
-│   ├── django_settings.py           # Django/CRM settings (SQLite at db.sqlite3)
-│   ├── management/setup_crm.py      # Idempotent CRM bootstrap (Dept, Stages, Closing Reasons)
-│   ├── ml/                          # Bayesian qualifier (GPR), embeddings, profile text
-│   ├── models.py                    # Django models (Campaign, LinkedInProfile, Task, etc.)
-│   ├── onboarding.py                # Interactive onboarding (campaign, credentials, LLM config)
-│   ├── pipeline/                    # Candidate sourcing, qualification, pool management
-│   ├── setup/                       # GDPR, self-profile, freemium campaign setup
-│   └── tasks/                       # Task handlers (connect, check_pending, follow_up)
+├── openoutreach/                    # single source package; Django apps nested inside
+│   ├── settings.py                  # Django/CRM settings (SQLite at data/db.sqlite3)
+│   ├── core/                        # engine app: daemon, task queue + scheduler,
+│   │                                #   Campaign/SiteConfig/Task, LLM factory, onboarding,
+│   │                                #   follow-up agent, db helpers, management commands
+│   ├── linkedin/                    # LinkedIn channel app: browser, discovery pipeline,
+│   │                                #   ML qualifier, task handlers, channel models
+│   ├── emails/                      # email channel app (Layer 1 of the email-first pivot)
+│   ├── crm/                         # Lead + Deal models
+│   └── chat/                        # ChatMessage model
 ├── manage.py                         # Django management (no args defaults to rundaemon)
 ├── local.yml                        # Docker Compose
 └── Makefile                         # Shortcuts (setup, run, admin, test)

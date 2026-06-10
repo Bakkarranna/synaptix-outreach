@@ -9,11 +9,12 @@ from zoneinfo import ZoneInfo
 import pytest
 from django.utils import timezone
 
-from linkedin.db.deals import set_profile_state
-from linkedin.db.leads import create_enriched_lead, promote_lead_to_deal
+from openoutreach.core.db.deals import set_profile_state
+from openoutreach.linkedin.db.leads import create_enriched_lead, promote_lead_to_deal
 from linkedin_cli.enums import ProfileState
-from linkedin.models import ActionLog, Task
-from linkedin.tasks import scheduler
+from openoutreach.core.models import Task
+from openoutreach.linkedin.models import ActionLog
+from openoutreach.core import scheduler
 
 
 SAMPLE_PROFILE = {
@@ -28,25 +29,25 @@ SAMPLE_PROFILE = {
 
 
 class TestWorkingSecondsInWindow:
-    @patch("linkedin.tasks.scheduler.ENABLE_ACTIVE_HOURS", False)
+    @patch("openoutreach.core.scheduler.ENABLE_ACTIVE_HOURS", False)
     def test_disabled_returns_full_horizon(self):
         now = datetime(2026, 5, 10, 12, tzinfo=ZoneInfo("UTC"))
         assert scheduler.working_seconds_in_window(now, now + timedelta(hours=24)) == 24 * 3600
 
-    @patch("linkedin.tasks.scheduler.ENABLE_ACTIVE_HOURS", True)
-    @patch("linkedin.tasks.scheduler.ACTIVE_START_HOUR", 9)
-    @patch("linkedin.tasks.scheduler.ACTIVE_END_HOUR", 19)
-    @patch("linkedin.tasks.scheduler.ACTIVE_TIMEZONE", "UTC")
+    @patch("openoutreach.core.scheduler.ENABLE_ACTIVE_HOURS", True)
+    @patch("openoutreach.core.scheduler.ACTIVE_START_HOUR", 9)
+    @patch("openoutreach.core.scheduler.ACTIVE_END_HOUR", 19)
+    @patch("openoutreach.core.scheduler.ACTIVE_TIMEZONE", "UTC")
     def test_18h_start_with_9_to_19_window(self):
         # Start at 18:00 → 1h today (18-19) + 9h tomorrow (9-18, since horizon ends at 18:00) = 10h
         now = datetime(2026, 5, 10, 18, tzinfo=ZoneInfo("UTC"))
         seconds = scheduler.working_seconds_in_window(now, now + timedelta(hours=24))
         assert seconds == pytest.approx(10 * 3600, abs=1)
 
-    @patch("linkedin.tasks.scheduler.ENABLE_ACTIVE_HOURS", True)
-    @patch("linkedin.tasks.scheduler.ACTIVE_START_HOUR", 9)
-    @patch("linkedin.tasks.scheduler.ACTIVE_END_HOUR", 19)
-    @patch("linkedin.tasks.scheduler.ACTIVE_TIMEZONE", "UTC")
+    @patch("openoutreach.core.scheduler.ENABLE_ACTIVE_HOURS", True)
+    @patch("openoutreach.core.scheduler.ACTIVE_START_HOUR", 9)
+    @patch("openoutreach.core.scheduler.ACTIVE_END_HOUR", 19)
+    @patch("openoutreach.core.scheduler.ACTIVE_TIMEZONE", "UTC")
     def test_inside_window_returns_remaining_plus_next_day(self):
         # Start at 09:00 → 10h today + 10h tomorrow up to 19:00 (= start + 24h hits 09:00) = 14h
         # Actually: now=09:00, end=09:00 next day. Today: 9-19 = 10h. Next day: 9-9 = 0h. Total = 10h.
@@ -59,19 +60,19 @@ class TestWorkingSecondsInWindow:
 
 
 class TestPoissonSlotTimes:
-    @patch("linkedin.tasks.scheduler.ENABLE_ACTIVE_HOURS", False)
+    @patch("openoutreach.core.scheduler.ENABLE_ACTIVE_HOURS", False)
     def test_zero_returns_empty(self):
         now = timezone.now()
         assert scheduler.poisson_slot_times(now, 0) == []
 
-    @patch("linkedin.tasks.scheduler.ENABLE_ACTIVE_HOURS", False)
+    @patch("openoutreach.core.scheduler.ENABLE_ACTIVE_HOURS", False)
     def test_strictly_increasing(self):
         random.seed(42)
         now = timezone.now()
         times = scheduler.poisson_slot_times(now, 20)
         assert all(t2 > t1 for t1, t2 in zip(times, times[1:]))
 
-    @patch("linkedin.tasks.scheduler.ENABLE_ACTIVE_HOURS", False)
+    @patch("openoutreach.core.scheduler.ENABLE_ACTIVE_HOURS", False)
     def test_all_inside_horizon(self):
         random.seed(42)
         now = timezone.now()
@@ -80,10 +81,10 @@ class TestPoissonSlotTimes:
             times = scheduler.poisson_slot_times(now, 20)
             assert all(now <= t < end for t in times)
 
-    @patch("linkedin.tasks.scheduler.ENABLE_ACTIVE_HOURS", True)
-    @patch("linkedin.tasks.scheduler.ACTIVE_START_HOUR", 9)
-    @patch("linkedin.tasks.scheduler.ACTIVE_END_HOUR", 19)
-    @patch("linkedin.tasks.scheduler.ACTIVE_TIMEZONE", "UTC")
+    @patch("openoutreach.core.scheduler.ENABLE_ACTIVE_HOURS", True)
+    @patch("openoutreach.core.scheduler.ACTIVE_START_HOUR", 9)
+    @patch("openoutreach.core.scheduler.ACTIVE_END_HOUR", 19)
+    @patch("openoutreach.core.scheduler.ACTIVE_TIMEZONE", "UTC")
     def test_active_hours_constraint(self):
         random.seed(123)
         now = datetime(2026, 5, 10, 9, tzinfo=ZoneInfo("UTC"))
@@ -93,7 +94,7 @@ class TestPoissonSlotTimes:
                 local = t.astimezone(ZoneInfo("UTC"))
                 assert 9 <= local.hour < 19, f"slot {local} outside [9,19)"
 
-    @patch("linkedin.tasks.scheduler.ENABLE_ACTIVE_HOURS", False)
+    @patch("openoutreach.core.scheduler.ENABLE_ACTIVE_HOURS", False)
     def test_mean_spacing_within_tolerance(self):
         """Over 1000 trials, mean wall-clock spacing matches T/(N+1) within ±20%."""
         random.seed(7)
@@ -119,7 +120,7 @@ class TestOnDealStateEntered:
     def _make_deal(self, fake_session, state=ProfileState.QUALIFIED):
         create_enriched_lead(fake_session, "https://www.linkedin.com/in/alice/", SAMPLE_PROFILE)
         promote_lead_to_deal(fake_session, "alice")
-        from crm.models import Deal
+        from openoutreach.crm.models import Deal
         deal = Deal.objects.get(lead__public_identifier="alice", campaign=fake_session.campaign)
         deal.state = state
         deal.save(update_fields=["state"])
@@ -167,7 +168,7 @@ class TestOnDealStateEntered:
 
 @pytest.mark.django_db
 class TestPlanConnectWindow:
-    @patch("linkedin.tasks.scheduler.ENABLE_ACTIVE_HOURS", False)
+    @patch("openoutreach.core.scheduler.ENABLE_ACTIVE_HOURS", False)
     def test_creates_slots_for_remaining_daily(self, fake_session):
         fake_session.linkedin_profile.connect_daily_limit = 20
         fake_session.linkedin_profile.save(update_fields=["connect_daily_limit"])
@@ -179,7 +180,7 @@ class TestPlanConnectWindow:
         for t in tasks:
             assert t.payload == {"campaign_id": fake_session.campaign.pk}
 
-    @patch("linkedin.tasks.scheduler.ENABLE_ACTIVE_HOURS", False)
+    @patch("openoutreach.core.scheduler.ENABLE_ACTIVE_HOURS", False)
     def test_noop_when_pending_exists(self, fake_session):
         Task.objects.create(
             task_type=Task.TaskType.CONNECT,
@@ -191,7 +192,7 @@ class TestPlanConnectWindow:
         assert created == 0
         assert Task.objects.filter(task_type=Task.TaskType.CONNECT).count() == 1
 
-    @patch("linkedin.tasks.scheduler.ENABLE_ACTIVE_HOURS", False)
+    @patch("openoutreach.core.scheduler.ENABLE_ACTIVE_HOURS", False)
     def test_respects_today_executed(self, fake_session):
         fake_session.linkedin_profile.connect_daily_limit = 5
         fake_session.linkedin_profile.save(update_fields=["connect_daily_limit"])
@@ -202,7 +203,7 @@ class TestPlanConnectWindow:
         created = scheduler.plan_connect_window(fake_session, fake_session.campaign)
         assert created == 2  # 5 - 3
 
-    @patch("linkedin.tasks.scheduler.ENABLE_ACTIVE_HOURS", False)
+    @patch("openoutreach.core.scheduler.ENABLE_ACTIVE_HOURS", False)
     def test_leading_slot_fires_immediately(self, fake_session):
         fake_session.linkedin_profile.connect_daily_limit = 5
         fake_session.linkedin_profile.save(update_fields=["connect_daily_limit"])
@@ -219,7 +220,7 @@ class TestPlanConnectWindow:
 
 @pytest.mark.django_db
 class TestPlanFollowUpWindow:
-    @patch("linkedin.tasks.scheduler.ENABLE_ACTIVE_HOURS", False)
+    @patch("openoutreach.core.scheduler.ENABLE_ACTIVE_HOURS", False)
     def test_creates_slots_for_remaining_daily(self, fake_session):
         fake_session.linkedin_profile.follow_up_daily_limit = 25
         fake_session.linkedin_profile.save(update_fields=["follow_up_daily_limit"])
@@ -231,7 +232,7 @@ class TestPlanFollowUpWindow:
         for t in tasks:
             assert t.payload == {"campaign_id": fake_session.campaign.pk}
 
-    @patch("linkedin.tasks.scheduler.ENABLE_ACTIVE_HOURS", False)
+    @patch("openoutreach.core.scheduler.ENABLE_ACTIVE_HOURS", False)
     def test_noop_when_pending_exists(self, fake_session):
         Task.objects.create(
             task_type=Task.TaskType.FOLLOW_UP,
@@ -250,14 +251,14 @@ class TestPlanCheckPendingWindow:
         url = f"https://www.linkedin.com/in/{public_id}/"
         create_enriched_lead(fake_session, url, SAMPLE_PROFILE)
         promote_lead_to_deal(fake_session, public_id)
-        from crm.models import Deal
+        from openoutreach.crm.models import Deal
         deal = Deal.objects.get(lead__public_identifier=public_id, campaign=fake_session.campaign)
         deal.state = ProfileState.PENDING
         deal.next_check_pending_at = timezone.now() + timedelta(hours=due_offset_hours)
         deal.save(update_fields=["state", "next_check_pending_at"])
         return deal
 
-    @patch("linkedin.tasks.scheduler.ENABLE_ACTIVE_HOURS", False)
+    @patch("openoutreach.core.scheduler.ENABLE_ACTIVE_HOURS", False)
     def test_counts_due_deals(self, fake_session):
         for i in range(7):
             self._make_due_pending(fake_session, f"due{i}")
@@ -267,8 +268,8 @@ class TestPlanCheckPendingWindow:
         for t in Task.objects.filter(task_type=Task.TaskType.CHECK_PENDING):
             assert t.payload == {"campaign_id": fake_session.campaign.pk}
 
-    @patch("linkedin.tasks.scheduler.ENABLE_ACTIVE_HOURS", False)
-    @patch("linkedin.tasks.scheduler.CHECK_PENDING_DAILY_CAP", 4)
+    @patch("openoutreach.core.scheduler.ENABLE_ACTIVE_HOURS", False)
+    @patch("openoutreach.core.scheduler.CHECK_PENDING_DAILY_CAP", 4)
     def test_respects_daily_cap(self, fake_session):
         for i in range(10):
             self._make_due_pending(fake_session, f"due{i}")
@@ -276,7 +277,7 @@ class TestPlanCheckPendingWindow:
         created = scheduler.plan_check_pending_window(fake_session, fake_session.campaign)
         assert created == 4
 
-    @patch("linkedin.tasks.scheduler.ENABLE_ACTIVE_HOURS", False)
+    @patch("openoutreach.core.scheduler.ENABLE_ACTIVE_HOURS", False)
     def test_includes_due_within_24h(self, fake_session):
         self._make_due_pending(fake_session, "due_now", due_offset_hours=-1)
         self._make_due_pending(fake_session, "due_soon", due_offset_hours=12)
@@ -285,7 +286,7 @@ class TestPlanCheckPendingWindow:
         created = scheduler.plan_check_pending_window(fake_session, fake_session.campaign)
         assert created == 2  # due_now + due_soon (due_later is past 24h horizon)
 
-    @patch("linkedin.tasks.scheduler.ENABLE_ACTIVE_HOURS", False)
+    @patch("openoutreach.core.scheduler.ENABLE_ACTIVE_HOURS", False)
     def test_noop_when_pending_exists(self, fake_session):
         self._make_due_pending(fake_session, "alice")
         Task.objects.create(

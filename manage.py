@@ -11,7 +11,7 @@ Usage:
 import os
 import sys
 
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "linkedin.django_settings")
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "openoutreach.settings")
 
 
 if __name__ == "__main__":

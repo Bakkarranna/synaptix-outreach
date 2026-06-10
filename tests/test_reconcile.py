@@ -3,11 +3,11 @@ import pytest
 from unittest.mock import patch
 from django.utils import timezone
 
-from linkedin.db.deals import set_profile_state
-from linkedin.db.leads import create_enriched_lead, promote_lead_to_deal
-from linkedin.models import Task
+from openoutreach.core.db.deals import set_profile_state
+from openoutreach.linkedin.db.leads import create_enriched_lead, promote_lead_to_deal
+from openoutreach.core.models import Task
 from linkedin_cli.enums import ProfileState
-from linkedin.tasks.scheduler import reconcile
+from openoutreach.core.scheduler import reconcile
 
 
 SAMPLE_PROFILE = {
@@ -33,7 +33,7 @@ def _make_connected(session, public_id="alice"):
 
 
 @pytest.mark.django_db
-@patch("linkedin.tasks.scheduler.ENABLE_ACTIVE_HOURS", False)
+@patch("openoutreach.core.scheduler.ENABLE_ACTIVE_HOURS", False)
 class TestReconcile:
     @pytest.fixture(autouse=True)
     def _db(self, db):
@@ -67,7 +67,7 @@ class TestReconcile:
         _make_pending(fake_session, "alice")
         # set_profile_state(PENDING) stamps next_check_pending_at = now + 24h.
         # Pull it back to now so plan_check_pending_window picks it up.
-        from crm.models import Deal
+        from openoutreach.crm.models import Deal
         Deal.objects.filter(lead__public_identifier="alice").update(
             next_check_pending_at=timezone.now(),
         )

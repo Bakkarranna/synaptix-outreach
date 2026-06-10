@@ -1,12 +1,12 @@
 # tests/db/test_profiles.py
 import pytest
 
-from linkedin.db.deals import (
+from openoutreach.core.db.deals import (
     set_profile_state,
     get_qualified_profiles,
     create_disqualified_deal,
 )
-from linkedin.db.leads import (
+from openoutreach.linkedin.db.leads import (
     create_enriched_lead,
     promote_lead_to_deal,
     get_leads_for_qualification,
@@ -88,7 +88,7 @@ class TestLeadExists:
 @pytest.mark.django_db
 class TestCreateEnrichedLead:
     def test_creates_lead_and_caches_urn(self, fake_session):
-        from crm.models import Lead
+        from openoutreach.crm.models import Lead
         pk = create_enriched_lead(
             fake_session,
             "https://www.linkedin.com/in/alice/",
@@ -100,7 +100,7 @@ class TestCreateEnrichedLead:
         assert lead.urn == "urn:li:fsd_profile:ABC123"
 
     def test_persists_embedding(self, fake_session):
-        from crm.models import Lead
+        from openoutreach.crm.models import Lead
         create_enriched_lead(
             fake_session,
             "https://www.linkedin.com/in/alice/",
@@ -123,7 +123,7 @@ class TestCreateEnrichedLead:
         assert pk2 is None
 
     def test_no_deal_created(self, fake_session):
-        from crm.models import Deal
+        from openoutreach.crm.models import Deal
         create_enriched_lead(
             fake_session,
             "https://www.linkedin.com/in/alice/",
@@ -135,7 +135,7 @@ class TestCreateEnrichedLead:
 @pytest.mark.django_db
 class TestPromoteLeadToDeal:
     def test_creates_deal(self, fake_session):
-        from crm.models import Deal
+        from openoutreach.crm.models import Deal
         create_enriched_lead(
             fake_session,
             "https://www.linkedin.com/in/alice/",
@@ -161,7 +161,7 @@ class TestGetLeadsForQualification:
 
     def test_excludes_disqualified(self, fake_session):
         """disqualified=True (self-profile) leads are excluded."""
-        from crm.models import Lead
+        from openoutreach.crm.models import Lead
         create_enriched_lead(
             fake_session,
             "https://www.linkedin.com/in/alice/",
@@ -198,7 +198,7 @@ class TestGetLeadsForQualification:
 @pytest.mark.django_db
 class TestSetProfileState:
     def test_set_state_on_deal(self, fake_session):
-        from crm.models import Deal
+        from openoutreach.crm.models import Deal
         create_enriched_lead(
             fake_session,
             "https://www.linkedin.com/in/alice/",
@@ -246,7 +246,7 @@ class TestGetQualifiedProfiles:
 @pytest.mark.django_db
 class TestCreateDisqualifiedDeal:
     def test_creates_failed_deal(self, fake_session):
-        from crm.models import Deal, Outcome
+        from openoutreach.crm.models import Deal, Outcome
         create_enriched_lead(
             fake_session,
             "https://www.linkedin.com/in/alice/",
@@ -286,7 +286,7 @@ class TestCreateDisqualifiedDeal:
 class TestMultiCampaignQualification:
     def _make_other_session(self, fake_session):
         """Create a second campaign/session."""
-        from linkedin.models import Campaign
+        from openoutreach.core.models import Campaign
         from tests.conftest import FakeAccountSession
 
         campaign2 = Campaign.objects.create(name="Other Campaign")

@@ -4,7 +4,7 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
-from linkedin.management.setup_crm import setup_crm
+from openoutreach.core.management.setup_crm import setup_crm
 from tests.factories import UserFactory
 
 
@@ -24,7 +24,7 @@ def _mock_embeddings(request):
     if "no_embed_mock" in request.keywords:
         yield
     else:
-        with patch("linkedin.ml.embeddings.embed_text", return_value=np.ones(384)):
+        with patch("openoutreach.linkedin.ml.embeddings.embed_text", return_value=np.ones(384)):
             yield
 
 
@@ -43,7 +43,7 @@ class FakeAccountSession:
 
     @property
     def campaigns(self):
-        from linkedin.models import Campaign
+        from openoutreach.core.models import Campaign
         return Campaign.objects.filter(users=self.django_user)
 
     def ensure_browser(self):
@@ -53,7 +53,8 @@ class FakeAccountSession:
 @pytest.fixture
 def fake_session(db):
     """An AccountSession-like object backed by the Django test DB."""
-    from linkedin.models import Campaign, LinkedInProfile
+    from openoutreach.core.models import Campaign
+    from openoutreach.linkedin.models import LinkedInProfile
 
     user = UserFactory(username="testuser")
 

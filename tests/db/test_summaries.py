@@ -58,19 +58,19 @@ def deal_with_lead(db, fake_session):
 
 class TestExtractFacts:
     def test_empty_input_returns_empty_list(self, db):
-        from linkedin.db.summaries import extract_facts
+        from openoutreach.core.db.summaries import extract_facts
 
         assert extract_facts("", seller_name="Diego") == []
         assert extract_facts("   \n  ", seller_name="Diego") == []
 
     def test_invokes_llm_with_structured_output(self, db):
-        from linkedin.db.summaries import extract_facts
+        from openoutreach.core.db.summaries import extract_facts
 
         captured: dict = {}
         model = _capturing_function_model(
             captured, {"facts": ["Works at Acme.", "Based in Berlin."]},
         )
-        with patch("linkedin.llm.get_llm_model", return_value=model):
+        with patch("openoutreach.core.llm.get_llm_model", return_value=model):
             facts = extract_facts(
                 "Alice works at Acme. She lives in Berlin.",
                 seller_name="Diego",
@@ -93,21 +93,21 @@ class TestExtractFacts:
 
 class TestMaterializeProfileSummary:
     def test_noop_when_already_built(self, db, deal_with_lead):
-        from linkedin.db.summaries import materialize_profile_summary_if_missing
+        from openoutreach.core.db.summaries import materialize_profile_summary_if_missing
 
         deal_with_lead.profile_summary = {"facts": ["already built"]}
         deal_with_lead.save(update_fields=["profile_summary"])
 
-        with patch("linkedin.db.summaries.extract_facts") as mock_extract:
+        with patch("openoutreach.core.db.summaries.extract_facts") as mock_extract:
             materialize_profile_summary_if_missing(deal_with_lead, None)
 
         mock_extract.assert_not_called()
 
     def test_builds_via_rescrape_and_persists(self, db, fake_session, deal_with_lead):
-        from linkedin.db.summaries import materialize_profile_summary_if_missing
+        from openoutreach.core.db.summaries import materialize_profile_summary_if_missing
 
         with patch.object(deal_with_lead.lead, "get_profile", return_value=FAKE_PROFILE) as mock_refresh, \
-             patch("linkedin.db.summaries.extract_facts",
+             patch("openoutreach.core.db.summaries.extract_facts",
                    return_value=["Senior Engineer at Acme.", "URN ABC123."]) as mock_extract:
             materialize_profile_summary_if_missing(deal_with_lead, fake_session)
 
@@ -119,10 +119,10 @@ class TestMaterializeProfileSummary:
         }
 
     def test_empty_profile_logs_and_skips(self, db, fake_session, deal_with_lead, caplog):
-        from linkedin.db.summaries import materialize_profile_summary_if_missing
+        from openoutreach.core.db.summaries import materialize_profile_summary_if_missing
 
         with patch.object(deal_with_lead.lead, "get_profile", return_value=None), \
-             patch("linkedin.db.summaries.extract_facts") as mock_extract:
+             patch("openoutreach.core.db.summaries.extract_facts") as mock_extract:
             materialize_profile_summary_if_missing(deal_with_lead, fake_session)
 
         mock_extract.assert_not_called()
@@ -140,9 +140,9 @@ class TestUpdateChatSummary:
         return m
 
     def test_noop_on_empty_messages(self, db, deal_with_lead):
-        from linkedin.db.summaries import update_chat_summary
+        from openoutreach.core.db.summaries import update_chat_summary
 
-        with patch("linkedin.db.summaries.extract_facts") as mock_extract:
+        with patch("openoutreach.core.db.summaries.extract_facts") as mock_extract:
             update_chat_summary(deal_with_lead, [], **self.BINDING)
 
         mock_extract.assert_not_called()
@@ -151,16 +151,16 @@ class TestUpdateChatSummary:
 
     def test_first_pass_includes_both_sides_labeled(self, db, deal_with_lead):
         """Both sides are sent to extraction with [Me]/[Lead] tags for disambiguation."""
-        from linkedin.db.summaries import update_chat_summary
+        from openoutreach.core.db.summaries import update_chat_summary
 
         msgs = [
             self._msg("Hi, are you the founder?", is_outgoing=True),
             self._msg("Yeah, I founded Acme last year.", is_outgoing=False),
         ]
         new_facts = ["Lead founded Acme last year."]
-        with patch("linkedin.db.summaries.extract_facts",
+        with patch("openoutreach.core.db.summaries.extract_facts",
                    return_value=new_facts) as mock_extract, \
-             patch("linkedin.db.summaries.reconcile_facts",
+             patch("openoutreach.core.db.summaries.reconcile_facts",
                    return_value=new_facts) as mock_reconcile:
             update_chat_summary(deal_with_lead, iter(msgs), **self.BINDING)
 
@@ -175,14 +175,14 @@ class TestUpdateChatSummary:
 
     def test_all_outgoing_burst_is_noop(self, db, deal_with_lead):
         """A one-sided seller-only burst must not pollute chat_summary with our pitch."""
-        from linkedin.db.summaries import update_chat_summary
+        from openoutreach.core.db.summaries import update_chat_summary
 
         msgs = [
             self._msg("Ciao Andrea, sono Diego di Sunnyplans...", is_outgoing=True),
             self._msg("Hai visto il mio messaggio?", is_outgoing=True),
         ]
-        with patch("linkedin.db.summaries.extract_facts") as mock_extract, \
-             patch("linkedin.db.summaries.reconcile_facts") as mock_reconcile:
+        with patch("openoutreach.core.db.summaries.extract_facts") as mock_extract, \
+             patch("openoutreach.core.db.summaries.reconcile_facts") as mock_reconcile:
             update_chat_summary(deal_with_lead, msgs, **self.BINDING)
 
         mock_extract.assert_not_called()
@@ -192,15 +192,15 @@ class TestUpdateChatSummary:
 
     def test_second_pass_reconciles_via_mem0_prompt(self, db, deal_with_lead):
         """A second sync routes through reconcile_facts → mem0 UPDATE prompt."""
-        from linkedin.db.summaries import update_chat_summary
+        from openoutreach.core.db.summaries import update_chat_summary
 
         deal_with_lead.chat_summary = {"facts": ["Lead is the founder."]}
         deal_with_lead.save(update_fields=["chat_summary"])
 
         msgs = [self._msg("We have budget.", is_outgoing=False)]
-        with patch("linkedin.db.summaries.extract_facts",
+        with patch("openoutreach.core.db.summaries.extract_facts",
                    return_value=["Lead has budget."]), \
-             patch("linkedin.db.summaries.reconcile_facts",
+             patch("openoutreach.core.db.summaries.reconcile_facts",
                    return_value=["Lead is the founder.", "Lead has budget."]) as mock_reconcile:
             update_chat_summary(deal_with_lead, msgs, **self.BINDING)
 
@@ -213,10 +213,10 @@ class TestUpdateChatSummary:
         }
 
     def test_blank_messages_treated_as_empty(self, db, deal_with_lead):
-        from linkedin.db.summaries import update_chat_summary
+        from openoutreach.core.db.summaries import update_chat_summary
 
         msgs = [self._msg("   ", is_outgoing=True), self._msg("", is_outgoing=False)]
-        with patch("linkedin.db.summaries.extract_facts") as mock_extract:
+        with patch("openoutreach.core.db.summaries.extract_facts") as mock_extract:
             update_chat_summary(deal_with_lead, msgs, **self.BINDING)
 
         mock_extract.assert_not_called()
@@ -228,9 +228,9 @@ class TestReconcileFacts:
     BINDING = {"seller_name": "Diego"}
 
     def test_empty_new_facts_returns_existing_unchanged(self, db):
-        from linkedin.db.summaries import reconcile_facts
+        from openoutreach.core.db.summaries import reconcile_facts
 
-        with patch("linkedin.llm.get_llm_model") as mock_factory:
+        with patch("openoutreach.core.llm.get_llm_model") as mock_factory:
             result = reconcile_facts(["fact a", "fact b"], [], **self.BINDING)
 
         assert result == ["fact a", "fact b"]
@@ -238,14 +238,14 @@ class TestReconcileFacts:
 
     def test_contradiction_drops_stale_fact(self, db):
         """LLM returns DELETE for the stale fact + ADD for the new one — both applied."""
-        from linkedin.db.summaries import reconcile_facts
+        from openoutreach.core.db.summaries import reconcile_facts
 
         actions = [
             {"id": "0", "text": "Lead has no budget.", "event": "DELETE"},
             {"id": "1", "text": "Lead has budget.", "event": "ADD"},
         ]
         model = _text_function_model(json.dumps({"memory": actions}))
-        with patch("linkedin.llm.get_llm_model", return_value=model):
+        with patch("openoutreach.core.llm.get_llm_model", return_value=model):
             result = reconcile_facts(
                 ["Lead has no budget."],
                 ["Lead has budget."],
@@ -255,14 +255,14 @@ class TestReconcileFacts:
         assert result == ["Lead has budget."]
 
     def test_update_event_replaces_in_place(self, db):
-        from linkedin.db.summaries import reconcile_facts
+        from openoutreach.core.db.summaries import reconcile_facts
 
         actions = [
             {"id": "0", "text": "Lead is CTO at Acme.", "event": "UPDATE",
              "old_memory": "Lead is an engineer at Acme."},
         ]
         model = _text_function_model(json.dumps({"memory": actions}))
-        with patch("linkedin.llm.get_llm_model", return_value=model):
+        with patch("openoutreach.core.llm.get_llm_model", return_value=model):
             result = reconcile_facts(
                 ["Lead is an engineer at Acme."],
                 ["Lead is CTO at Acme."],
@@ -273,7 +273,7 @@ class TestReconcileFacts:
 
     def test_unknown_id_in_update_is_skipped(self, db, caplog):
         """LLM hallucinates an id that doesn't exist — log + skip, don't crash."""
-        from linkedin.db.summaries import reconcile_facts
+        from openoutreach.core.db.summaries import reconcile_facts
 
         actions = [
             {"id": "999", "text": "Hallucinated.", "event": "UPDATE"},
@@ -281,7 +281,7 @@ class TestReconcileFacts:
         ]
         model = _text_function_model(json.dumps({"memory": actions}))
         with caplog.at_level("WARNING"), \
-             patch("linkedin.llm.get_llm_model", return_value=model):
+             patch("openoutreach.core.llm.get_llm_model", return_value=model):
             result = reconcile_facts(["existing fact"], ["new fact"], **self.BINDING)
 
         assert "existing fact" in result
@@ -290,14 +290,14 @@ class TestReconcileFacts:
         assert any("UPDATE skipped" in r.message for r in caplog.records)
 
     def test_none_event_is_noop(self, db):
-        from linkedin.db.summaries import reconcile_facts
+        from openoutreach.core.db.summaries import reconcile_facts
 
         actions = [
             {"id": "0", "text": "Lead is the founder.", "event": "NONE"},
             {"id": "1", "text": "Lead replied politely.", "event": "ADD"},
         ]
         model = _text_function_model(json.dumps({"memory": actions}))
-        with patch("linkedin.llm.get_llm_model", return_value=model):
+        with patch("openoutreach.core.llm.get_llm_model", return_value=model):
             result = reconcile_facts(
                 ["Lead is the founder."],
                 ["Lead replied politely."],
@@ -308,7 +308,7 @@ class TestReconcileFacts:
 
     def test_markdown_wrapped_json_is_parsed(self, db):
         """Provider that wraps JSON in ```json ... ``` should still parse via fallback."""
-        from linkedin.db.summaries import reconcile_facts
+        from openoutreach.core.db.summaries import reconcile_facts
 
         wrapped = (
             "```json\n"
@@ -316,21 +316,21 @@ class TestReconcileFacts:
             "```"
         )
         model = _text_function_model(wrapped)
-        with patch("linkedin.llm.get_llm_model", return_value=model):
+        with patch("openoutreach.core.llm.get_llm_model", return_value=model):
             result = reconcile_facts([], ["Lead is in Berlin."], **self.BINDING)
 
         assert result == ["Lead is in Berlin."]
 
     def test_reasoning_model_think_block_is_stripped(self, db):
         """Reasoning model output with <think> blocks before the JSON parses cleanly."""
-        from linkedin.db.summaries import reconcile_facts
+        from openoutreach.core.db.summaries import reconcile_facts
 
         wrapped = (
             "<think>The user wants me to add this fact about location.</think>\n"
             '{"memory": [{"id": "0", "text": "Lead is in Berlin.", "event": "ADD"}]}'
         )
         model = _text_function_model(wrapped)
-        with patch("linkedin.llm.get_llm_model", return_value=model):
+        with patch("openoutreach.core.llm.get_llm_model", return_value=model):
             result = reconcile_facts([], ["Lead is in Berlin."], **self.BINDING)
 
         assert result == ["Lead is in Berlin."]

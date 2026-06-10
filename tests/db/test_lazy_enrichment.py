@@ -20,7 +20,7 @@ FAKE_PROFILE = {
 class TestGetProfile:
     def test_live_scrape_every_call(self, fake_session):
         """`get_profile` is a thin live scrape — no DB caching."""
-        from crm.models import Lead
+        from openoutreach.crm.models import Lead
 
         lead = Lead.objects.create(
             linkedin_url="https://www.linkedin.com/in/alice/",
@@ -38,7 +38,7 @@ class TestGetProfile:
 
     def test_populates_urn_from_scrape(self, fake_session):
         """First successful scrape promotes `urn` onto the Lead row."""
-        from crm.models import Lead
+        from openoutreach.crm.models import Lead
 
         lead = Lead.objects.create(
             linkedin_url="https://www.linkedin.com/in/alice/",
@@ -55,7 +55,7 @@ class TestGetProfile:
 
     def test_returns_none_on_empty_scrape(self, fake_session):
         """An empty Voyager response surfaces as None (no exception)."""
-        from crm.models import Lead
+        from openoutreach.crm.models import Lead
 
         lead = Lead.objects.create(
             linkedin_url="https://www.linkedin.com/in/alice/",
@@ -68,7 +68,7 @@ class TestGetProfile:
 
     def test_crashes_on_api_failure(self, fake_session):
         """Lets API errors propagate (get_profile has its own retry)."""
-        from crm.models import Lead
+        from openoutreach.crm.models import Lead
 
         lead = Lead.objects.create(
             linkedin_url="https://www.linkedin.com/in/alice/",
@@ -84,7 +84,7 @@ class TestGetProfile:
 class TestGetUrn:
     def test_reads_cached_column_without_scraping(self, fake_session):
         """If `urn` is already cached on the row, no scrape happens."""
-        from crm.models import Lead
+        from openoutreach.crm.models import Lead
 
         lead = Lead.objects.create(
             linkedin_url="https://www.linkedin.com/in/alice/",
@@ -98,7 +98,7 @@ class TestGetUrn:
 
     def test_scrapes_when_column_is_null(self, fake_session):
         """Missing `urn` triggers a live scrape and caches the result."""
-        from crm.models import Lead
+        from openoutreach.crm.models import Lead
 
         lead = Lead.objects.create(
             linkedin_url="https://www.linkedin.com/in/alice/",
@@ -116,7 +116,7 @@ class TestGetUrn:
 class TestGetEmbedding:
     def test_returns_cached(self, fake_session, db):
         """Returns existing embedding without recomputing."""
-        from crm.models import Lead
+        from openoutreach.crm.models import Lead
 
         emb = np.ones(384, dtype=np.float32)
         lead = Lead.objects.create(
@@ -125,7 +125,7 @@ class TestGetEmbedding:
             embedding=emb.tobytes(),
         )
 
-        with patch("linkedin.ml.embeddings.embed_text") as mock:
+        with patch("openoutreach.linkedin.ml.embeddings.embed_text") as mock:
             result = lead.get_embedding(fake_session)
             mock.assert_not_called()
 
@@ -133,7 +133,7 @@ class TestGetEmbedding:
 
     def test_enriches_and_embeds(self, fake_session, db):
         """Fetches profile and computes embedding when both are missing."""
-        from crm.models import Lead
+        from openoutreach.crm.models import Lead
 
         lead = Lead.objects.create(
             linkedin_url="https://www.linkedin.com/in/alice/",
@@ -143,7 +143,7 @@ class TestGetEmbedding:
         fake_emb = np.ones(384, dtype=np.float32)
 
         with patch("linkedin_cli.api.client.PlaywrightLinkedinAPI") as MockAPI, \
-             patch("linkedin.ml.embeddings.embed_text", return_value=fake_emb):
+             patch("openoutreach.linkedin.ml.embeddings.embed_text", return_value=fake_emb):
             MockAPI.return_value.get_profile.return_value = (FAKE_PROFILE, {})
             result = lead.get_embedding(fake_session)
 
@@ -152,7 +152,7 @@ class TestGetEmbedding:
 
     def test_crashes_on_api_failure(self, fake_session, db):
         """Lets API errors propagate."""
-        from crm.models import Lead
+        from openoutreach.crm.models import Lead
 
         lead = Lead.objects.create(
             linkedin_url="https://www.linkedin.com/in/alice/",

@@ -7,7 +7,7 @@ from unittest.mock import patch, MagicMock
 import numpy as np
 import pytest
 
-from linkedin.ml.qualifier import BayesianQualifier, _binary_entropy
+from openoutreach.linkedin.ml.qualifier import BayesianQualifier, _binary_entropy
 
 
 def _make_trained_qualifier(n_pos=10, n_neg=10, seed=42):
@@ -120,7 +120,7 @@ class TestRankProfiles:
         assert qualifier.rank_profiles([], session=MagicMock()) == []
 
     def test_rank_profiles_orders_by_posterior(self, db):
-        from crm.models import Lead
+        from openoutreach.crm.models import Lead
 
         qualifier, pos_emb, neg_emb = _make_trained_qualifier()
         Lead.objects.create(
@@ -222,7 +222,7 @@ class TestExplainProfile:
         assert "no embedding" in explanation.lower()
 
     def test_explain_with_embedding(self, db):
-        from crm.models import Lead
+        from openoutreach.crm.models import Lead
 
         qualifier, pos_emb, _ = _make_trained_qualifier()
         Lead.objects.create(
@@ -237,7 +237,7 @@ class TestExplainProfile:
         assert "obs=" in explanation
 
     def test_explain_unfitted(self, db):
-        from crm.models import Lead
+        from openoutreach.crm.models import Lead
 
         qualifier = BayesianQualifier(seed=42)
         emb = np.ones(384, dtype=np.float32)

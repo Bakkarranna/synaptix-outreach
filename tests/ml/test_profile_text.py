@@ -1,5 +1,5 @@
 # tests/ml/test_profile_text.py
-from linkedin.ml.profile_text import build_profile_text
+from openoutreach.linkedin.ml.profile_text import build_profile_text
 
 
 class TestBuildProfileText:
