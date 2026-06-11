@@ -28,6 +28,18 @@ def _mock_embeddings(request):
             yield
 
 
+@pytest.fixture(autouse=True)
+def _mock_contact_capture(request):
+    """Stub the LinkedIn contact-info scrape so CONNECTED transitions don't hit a
+    live browser. Opt out with the `no_contact_capture_mock` marker — the dedicated
+    capture tests mock the lower linkedin_cli boundary to exercise the real method."""
+    if "no_contact_capture_mock" in request.keywords:
+        yield
+    else:
+        with patch("openoutreach.crm.models.lead.Lead.capture_contact_info", return_value=None):
+            yield
+
+
 class FakeAccountSession:
     """Minimal stand-in for AccountSession — exposes django_user + campaign."""
 

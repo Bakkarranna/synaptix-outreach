@@ -17,6 +17,13 @@ class Lead(models.Model):
     public_identifier = models.CharField(max_length=200, unique=True)
     urn = models.CharField(max_length=200, null=True, blank=True, unique=True, db_index=True)
     embedding = models.BinaryField(null=True, blank=True)
+    # Email enrichment — one field per source (roadmap: p1-e1 storage decision):
+    #   contact_info — raw LinkedIn contact-info overlay {email, emails, phone_numbers},
+    #                  captured once at CONNECTED; null = never scraped (idempotency flag).
+    #   api_email    — enrichment-API result (BetterContact); its writer lands with the
+    #                  finder slice (p1-e3). null = not found.
+    contact_info = models.JSONField(null=True, blank=True, default=None)
+    api_email = models.EmailField(null=True, blank=True, default=None)
     disqualified = models.BooleanField(default=False)
     creation_date = models.DateTimeField(default=timezone.now)
     update_date = models.DateTimeField(auto_now=True)
@@ -61,6 +68,30 @@ class Lead(models.Model):
                 self.save(update_fields=["urn"])
 
         return profile
+
+    def capture_contact_info(self, session) -> None:
+        """Scrape + persist the LinkedIn contact-info overlay once the lead is a
+        1st-degree connection.
+
+        Idempotent: a non-null ``contact_info`` — even an empty
+        ``{email: None, emails: [], phone_numbers: []}`` — means we already tried,
+        so a re-connect or a second campaign does not re-scrape. The raw overlay is
+        stored unfiltered (work-vs-personal cleaning is downstream, in dbt).
+
+        Errors are left to the caller: capture is driven from ``set_profile_state``
+        on the CONNECTED transition, which owns the best-effort guard
+        (``ProfileInaccessibleError``/``IOError`` swallowed; ``AuthenticationError``
+        propagates to the daemon's reauth handler).
+        """
+        if self.contact_info is not None:
+            return
+        from linkedin_cli.api.client import PlaywrightLinkedinAPI
+
+        session.ensure_browser()
+        api = PlaywrightLinkedinAPI(session=session)
+        contact, _raw = api.get_contact_info(public_identifier=self.public_identifier)
+        self.contact_info = contact
+        self.save(update_fields=["contact_info"])
 
     def get_urn(self, session) -> str:
         """LinkedIn URN. Reads cached column; falls back to a live scrape."""

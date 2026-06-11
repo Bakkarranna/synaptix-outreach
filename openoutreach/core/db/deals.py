@@ -72,6 +72,23 @@ def _existing_deal_or_lead(public_id: str, campaign):
 # ── State transitions ──
 
 
+def _capture_contact_info(lead, session) -> None:
+    """Best-effort LinkedIn contact-info capture when a lead first connects.
+
+    Fired on the CONNECTED transition — the moment LinkedIn exposes a 1st-degree
+    connection's email/phone. A failure here must never roll back the transition
+    or fail the task, so expected scrape/network errors are swallowed with a log;
+    ``AuthenticationError`` still propagates (the daemon's reauth handler owns it,
+    and capture is moot on a dead session).
+    """
+    from linkedin_cli.exceptions import ProfileInaccessibleError
+
+    try:
+        lead.capture_contact_info(session)
+    except (ProfileInaccessibleError, IOError) as exc:
+        logger.warning("contact-info capture failed for %s: %s", lead.public_identifier, exc)
+
+
 def set_profile_state(session, public_identifier: str, new_state: str, reason: str = "", outcome: str = ""):
     """Move the Deal to the corresponding state and enqueue the implied next task.
 
@@ -113,6 +130,9 @@ def set_profile_state(session, public_identifier: str, new_state: str, reason: s
         logger.debug("%s %s (unchanged)%s", public_identifier, label, suffix)
 
     on_deal_state_entered(deal)
+
+    if state_changed and ps == ProfileState.CONNECTED:
+        _capture_contact_info(deal.lead, session)
 
 
 # ── State queries ──
