@@ -48,11 +48,11 @@ def _too_soon_to_nudge(deal) -> bool:
     return timezone.now() - last.creation_date < required
 
 
-def _next_followup_deal(campaign):
-    """Oldest CONNECTED deal in *campaign* not on a nudge cooldown."""
+def _connected_deals(campaign):
+    """Open, non-disqualified CONNECTED deals in *campaign*, oldest first."""
     from openoutreach.crm.models import Deal
 
-    deals = (
+    return (
         Deal.objects.filter(
             campaign=campaign,
             state=ProfileState.CONNECTED,
@@ -62,7 +62,11 @@ def _next_followup_deal(campaign):
         .select_related("lead", "campaign")
         .order_by("update_date")
     )
-    for deal in deals:
+
+
+def _next_followup_deal(campaign):
+    """Oldest CONNECTED deal in *campaign* not on a nudge cooldown."""
+    for deal in _connected_deals(campaign):
         if not _too_soon_to_nudge(deal):
             return deal
     return None
@@ -82,7 +86,14 @@ def handle_follow_up(task, session, qualifiers):
 
     deal = _next_followup_deal(campaign)
     if deal is None:
-        logger.info("[%s] follow_up: no eligible CONNECTED deal — slot skipped", campaign)
+        connected = _connected_deals(campaign).count()
+        if connected:
+            logger.info(
+                "[%s] follow_up: %d connected lead(s), all within nudge cooldown — nothing due",
+                campaign, connected,
+            )
+        else:
+            logger.info("[%s] follow_up: no connected leads yet — nobody to follow up", campaign)
         return
 
     public_id = deal.lead.public_identifier
