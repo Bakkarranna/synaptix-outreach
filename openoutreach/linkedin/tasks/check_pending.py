@@ -14,7 +14,7 @@ from django.utils import timezone
 from termcolor import colored
 
 from openoutreach.core.db.deals import set_profile_state
-from linkedin_cli.enums import ProfileState
+from openoutreach.crm.models import DealState
 from linkedin_cli.exceptions import SkipProfile
 
 logger = logging.getLogger(__name__)
@@ -26,7 +26,7 @@ def _next_due_pending_deal(campaign):
     return (
         Deal.objects.filter(
             campaign=campaign,
-            state=ProfileState.PENDING,
+            state=DealState.PENDING,
             next_check_pending_at__lte=timezone.now(),
         )
         .select_related("lead", "campaign")
@@ -62,13 +62,14 @@ def handle_check_pending(task, session, qualifiers):
     profile_for_status = profile.get("profile") or profile
 
     try:
-        new_state = get_connection_status(session, profile_for_status)
+        # The library returns the observed UI state as a str; lift it into our enum.
+        new_state = DealState(get_connection_status(session, profile_for_status).value)
     except SkipProfile as e:
         logger.warning("Skipping %s: %s", public_id, e)
-        set_profile_state(session, public_id, ProfileState.FAILED.value)
+        set_profile_state(session, public_id, DealState.FAILED.value)
         return
 
-    if new_state == ProfileState.PENDING:
+    if new_state == DealState.PENDING:
         # Still pending — double the backoff before set_profile_state so the
         # state hook re-stamps next_check_pending_at with the doubled value.
         old = deal.backoff_hours or 0

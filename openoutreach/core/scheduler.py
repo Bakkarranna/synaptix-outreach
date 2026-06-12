@@ -44,7 +44,7 @@ from openoutreach.core.conf import (
     CHECK_PENDING_DAILY_CAP,
     ENABLE_ACTIVE_HOURS,
 )
-from linkedin_cli.enums import ProfileState
+from openoutreach.crm.models import DealState
 from openoutreach.core.models import Task
 
 logger = logging.getLogger(__name__)
@@ -226,7 +226,7 @@ def plan_check_pending_window(session, campaign) -> int:
     now = timezone.now()
     n_due = Deal.objects.filter(
         campaign_id=campaign.pk,
-        state=ProfileState.PENDING,
+        state=DealState.PENDING,
         next_check_pending_at__lte=now + timedelta(hours=24),
     ).count()
     n = min(n_due, CHECK_PENDING_DAILY_CAP)
@@ -260,8 +260,8 @@ def on_deal_state_entered(deal) -> None:
     """PENDING: stamp ``deal.next_check_pending_at = now + backoff_hours``.
     All other transitions are no-ops (CONNECTED tasks are created lazily
     by the planner, never by state changes)."""
-    state = ProfileState(deal.state)
-    if state != ProfileState.PENDING:
+    state = DealState(deal.state)
+    if state != DealState.PENDING:
         return
 
     backoff = deal.backoff_hours or CAMPAIGN_CONFIG["check_pending_recheck_after_hours"]

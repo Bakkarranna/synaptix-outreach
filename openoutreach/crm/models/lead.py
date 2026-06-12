@@ -183,7 +183,7 @@ class Lead(models.Model):
         """
         from openoutreach.crm.models import Outcome
         from openoutreach.crm.models.deal import Deal
-        from linkedin_cli.enums import ProfileState
+        from openoutreach.crm.models import DealState
 
         deals = Deal.objects.filter(
             campaign=campaign, lead_id__isnull=False,
@@ -191,7 +191,7 @@ class Lead(models.Model):
 
         label_by_lead: dict[int, int] = {}
         for lid, state, outcome in deals:
-            if state == ProfileState.FAILED:
+            if state == DealState.FAILED:
                 if outcome == Outcome.WRONG_FIT:
                     label_by_lead[lid] = 0
             else:

@@ -3,17 +3,18 @@ import logging
 from django.db import transaction
 from termcolor import colored
 
-from linkedin_cli.enums import ProfileState
+from openoutreach.crm.models import DealState
 
 logger = logging.getLogger(__name__)
 
 _STATE_LOG_STYLE = {
-    ProfileState.QUALIFIED: ("QUALIFIED", "green", []),
-    ProfileState.READY_TO_CONNECT: ("READY_TO_CONNECT", "yellow", ["bold"]),
-    ProfileState.PENDING: ("PENDING", "cyan", []),
-    ProfileState.CONNECTED: ("CONNECTED", "green", ["bold"]),
-    ProfileState.COMPLETED: ("COMPLETED", "green", ["bold"]),
-    ProfileState.FAILED: ("FAILED", "red", ["bold"]),
+    DealState.QUALIFIED: ("QUALIFIED", "green", []),
+    DealState.READY_TO_CONNECT: ("READY_TO_CONNECT", "yellow", ["bold"]),
+    DealState.PENDING: ("PENDING", "cyan", []),
+    DealState.CONNECTED: ("CONNECTED", "green", ["bold"]),
+    DealState.COMPLETED: ("COMPLETED", "green", ["bold"]),
+    DealState.FAILED: ("FAILED", "red", ["bold"]),
+    DealState.NO_EMAIL: ("NO_EMAIL", "yellow", []),
 }
 
 
@@ -43,7 +44,7 @@ def _deal_to_profile_dict(deal) -> dict:
     return base
 
 
-def _deals_at_state(session, state: ProfileState) -> list:
+def _deals_at_state(session, state: DealState) -> list:
     """Return profile dicts for all Deals at the given state in this campaign."""
     from openoutreach.crm.models import Deal
 
@@ -110,7 +111,7 @@ def set_profile_state(session, public_identifier: str, new_state: str, reason: s
     if not deal:
         raise ValueError(f"No Deal for {public_identifier} — cannot set state {new_state}")
 
-    ps = ProfileState(new_state)
+    ps = DealState(new_state)
     state_changed = (deal.state != ps)
 
     deal.state = ps
@@ -131,7 +132,7 @@ def set_profile_state(session, public_identifier: str, new_state: str, reason: s
 
     on_deal_state_entered(deal)
 
-    if state_changed and ps == ProfileState.CONNECTED:
+    if state_changed and ps == DealState.CONNECTED:
         _capture_contact_info(deal.lead, session)
 
 
@@ -139,11 +140,11 @@ def set_profile_state(session, public_identifier: str, new_state: str, reason: s
 
 
 def get_qualified_profiles(session) -> list:
-    return _deals_at_state(session, ProfileState.QUALIFIED)
+    return _deals_at_state(session, DealState.QUALIFIED)
 
 
 def get_ready_to_connect_profiles(session) -> list:
-    return _deals_at_state(session, ProfileState.READY_TO_CONNECT)
+    return _deals_at_state(session, DealState.READY_TO_CONNECT)
 
 
 def get_profile_dict_for_public_id(session, public_id: str) -> dict | None:
@@ -182,7 +183,7 @@ def create_disqualified_deal(session, public_id: str, reason: str = ""):
 
     deal = _create_deal(
         lead=lead,
-        state=ProfileState.FAILED,
+        state=DealState.FAILED,
         session=session,
         outcome=Outcome.WRONG_FIT,
         reason=reason,
@@ -205,7 +206,7 @@ def create_freemium_deal(session, public_id: str):
 
     deal = _create_deal(
         lead=lead,
-        state=ProfileState.QUALIFIED,
+        state=DealState.QUALIFIED,
         session=session,
     )
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 
 from linkedin_cli.url_utils import public_id_to_url, url_to_public_id
-from linkedin_cli.enums import ProfileState
+from openoutreach.crm.models import DealState
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +53,7 @@ def create_seed_leads(campaign, public_ids: list[str]) -> int:
         Deal.objects.create(
             lead=lead,
             campaign=campaign,
-            state=ProfileState.QUALIFIED,
+            state=DealState.QUALIFIED,
         )
         existing_seeds.add(public_id)
         created += 1

@@ -6,7 +6,7 @@ from typing import Dict, Any, Optional
 from django.db import transaction
 
 from linkedin_cli.url_utils import url_to_public_id, public_id_to_url
-from linkedin_cli.enums import ProfileState
+from openoutreach.crm.models import DealState
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +69,7 @@ def promote_lead_to_deal(session, public_id: str, reason: str = ""):
     deal = Deal.objects.create(
         lead=lead,
         campaign=session.campaign,
-        state=ProfileState.QUALIFIED,
+        state=DealState.QUALIFIED,
         reason=reason,
     )
 

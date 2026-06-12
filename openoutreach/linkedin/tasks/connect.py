@@ -14,9 +14,9 @@ from typing import Callable
 from termcolor import colored
 
 from openoutreach.core.db.deals import increment_connect_attempts, set_profile_state
+from openoutreach.crm.models import DealState
 from openoutreach.linkedin.db.leads import disqualify_lead
 from openoutreach.linkedin.models import ActionLog
-from linkedin_cli.enums import ProfileState
 from linkedin_cli.exceptions import ProfileInaccessibleError, ReachedConnectionLimit, SkipProfile
 
 logger = logging.getLogger(__name__)
@@ -89,24 +89,26 @@ def handle_connect(task, session, qualifiers):
     logger.info("[%s] %s (%s) — %s", campaign, public_id, stats, reason or "")
 
     try:
-        status = get_connection_status(session, profile)
+        # The library observes a UI state and returns it as a str; lift it into
+        # our funnel enum at the boundary.
+        status = DealState(get_connection_status(session, profile).value)
 
-        if status in (ProfileState.CONNECTED, ProfileState.PENDING):
+        if status in (DealState.CONNECTED, DealState.PENDING):
             # set_profile_state fires on_deal_state_entered, which stamps
             # next_check_pending_at on PENDING and no-ops on CONNECTED.
             set_profile_state(session, public_id, status.value)
             return
 
         # get_connection_status already navigated to the profile page
-        new_state = send_connection_request(session=session, profile=profile)
+        new_state = DealState(send_connection_request(session=session, profile=profile).value)
 
-        if new_state == ProfileState.QUALIFIED:
+        if new_state == DealState.QUALIFIED:
             # No Connect button found — track attempt, disqualify after MAX_CONNECT_ATTEMPTS
             attempts = increment_connect_attempts(session, public_id)
             if attempts >= MAX_CONNECT_ATTEMPTS:
                 reason = f"Unreachable: no Connect button after {attempts} attempts"
                 disqualify_lead(public_id)
-                set_profile_state(session, public_id, ProfileState.FAILED.value, reason=reason)
+                set_profile_state(session, public_id, DealState.FAILED.value, reason=reason)
                 logger.warning("Disqualified %s — %s", public_id, reason)
             else:
                 set_profile_state(session, public_id, new_state.value)
@@ -122,8 +124,8 @@ def handle_connect(task, session, qualifiers):
         session.linkedin_profile.mark_exhausted(ActionLog.ActionType.CONNECT)
     except ProfileInaccessibleError as e:
         logger.warning("Profile inaccessible — marking FAILED: %s", e)
-        set_profile_state(session, public_id, ProfileState.FAILED.value,
+        set_profile_state(session, public_id, DealState.FAILED.value,
                           reason=f"Profile inaccessible: {e}")
     except SkipProfile as e:
         logger.warning("Skipping %s: %s", public_id, e)
-        set_profile_state(session, public_id, ProfileState.FAILED.value)
+        set_profile_state(session, public_id, DealState.FAILED.value)

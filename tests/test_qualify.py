@@ -98,3 +98,42 @@ class TestQualifyAutoDecisions:
         ):
             run_qualification(session, qualifier)
             mock_promote.return_value.lead.resolve_api_email.assert_called_once_with()
+
+    def test_genuine_email_miss_parks_no_email(self, db):
+        """A genuine finder miss (False) parks the Deal in NO_EMAIL."""
+        from openoutreach.crm.models import DealState
+
+        qualifier = _make_trained_qualifier()
+        session = MagicMock()
+        _create_lead_with_embedding(1, "alice")
+
+        with (
+            patch("openoutreach.linkedin.db.leads.get_leads_for_qualification", return_value=_fake_leads()),
+            patch("openoutreach.linkedin.pipeline.qualify._fetch_profile_text", return_value="engineer at acme"),
+            patch("openoutreach.linkedin.ml.qualifier.qualify_with_llm", return_value=(1, "Good fit")),
+            patch.object(qualifier, "update"),
+            patch("openoutreach.linkedin.db.leads.promote_lead_to_deal") as mock_promote,
+            patch("openoutreach.core.db.deals.set_profile_state") as mock_set_state,
+        ):
+            mock_promote.return_value.lead.resolve_api_email.return_value = False
+            run_qualification(session, qualifier)
+            mock_set_state.assert_called_once()
+            assert mock_set_state.call_args.args[2] == DealState.NO_EMAIL.value
+
+    def test_finder_unavailable_leaves_qualified(self, db):
+        """A finder that couldn't run (None) leaves the Deal QUALIFIED — no parking."""
+        qualifier = _make_trained_qualifier()
+        session = MagicMock()
+        _create_lead_with_embedding(1, "alice")
+
+        with (
+            patch("openoutreach.linkedin.db.leads.get_leads_for_qualification", return_value=_fake_leads()),
+            patch("openoutreach.linkedin.pipeline.qualify._fetch_profile_text", return_value="engineer at acme"),
+            patch("openoutreach.linkedin.ml.qualifier.qualify_with_llm", return_value=(1, "Good fit")),
+            patch.object(qualifier, "update"),
+            patch("openoutreach.linkedin.db.leads.promote_lead_to_deal") as mock_promote,
+            patch("openoutreach.core.db.deals.set_profile_state") as mock_set_state,
+        ):
+            mock_promote.return_value.lead.resolve_api_email.return_value = None
+            run_qualification(session, qualifier)
+            mock_set_state.assert_not_called()

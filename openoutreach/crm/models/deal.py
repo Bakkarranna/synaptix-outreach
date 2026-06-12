@@ -2,7 +2,26 @@ from django.db import models
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
-from linkedin_cli.enums import ProfileState
+
+class DealState(models.TextChoices):
+    """OpenOutreach-owned funnel state for a Deal.
+
+    OpenOutreach owns these values, not linkedin_cli. The library's connect/status
+    verbs only *observe* three of them off the LinkedIn UI — QUALIFIED, PENDING,
+    CONNECTED — and hand them back as plain strings over the CLI boundary; every
+    other state is written only here: READY_TO_CONNECT (passed the GP threshold),
+    COMPLETED/FAILED (outcome), and NO_EMAIL (enrichment found no address — the
+    deal is held out of the connect pool without advancing the LinkedIn state
+    machine). String values match the library's UI states so lifting a returned
+    string into this enum is a plain ``DealState(value)`` lookup at the boundary.
+    """
+    QUALIFIED = "Qualified"
+    READY_TO_CONNECT = "Ready to Connect"
+    PENDING = "Pending"
+    CONNECTED = "Connected"
+    COMPLETED = "Completed"
+    FAILED = "Failed"
+    NO_EMAIL = "No Email"
 
 
 class Outcome(models.TextChoices):
@@ -30,8 +49,8 @@ class Deal(models.Model):
     )
     state = models.CharField(
         max_length=20,
-        choices=[(s.value, s.value) for s in ProfileState],
-        default=ProfileState.QUALIFIED,
+        choices=DealState.choices,
+        default=DealState.QUALIFIED,
     )
     outcome = models.CharField(
         max_length=20,

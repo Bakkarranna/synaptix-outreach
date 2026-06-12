@@ -8,7 +8,7 @@ from datetime import timedelta
 from django.utils import timezone
 from termcolor import colored
 
-from linkedin_cli.enums import ProfileState
+from openoutreach.crm.models import DealState
 from openoutreach.linkedin.models import ActionLog
 
 logger = logging.getLogger(__name__)
@@ -55,7 +55,7 @@ def _connected_deals(campaign):
     return (
         Deal.objects.filter(
             campaign=campaign,
-            state=ProfileState.CONNECTED,
+            state=DealState.CONNECTED,
             outcome="",
             lead__disqualified=False,
         )
@@ -111,7 +111,7 @@ def handle_follow_up(task, session, qualifiers):
         logger.info("[%s] follow_up message for %s: %s", campaign, public_id, decision.message)
         sent = send_raw_message(session, profile, decision.message)
         if not sent:
-            set_profile_state(session, public_id, ProfileState.QUALIFIED.value)
+            set_profile_state(session, public_id, DealState.QUALIFIED.value)
             logger.warning("follow_up for %s: send failed — moving to QUALIFIED for re-connection", public_id)
             return
         session.linkedin_profile.record_action(
@@ -128,7 +128,7 @@ def handle_follow_up(task, session, qualifiers):
         deal.save()
 
     elif decision.action == "mark_completed":
-        set_profile_state(session, public_id, ProfileState.COMPLETED.value, outcome=decision.outcome)
+        set_profile_state(session, public_id, DealState.COMPLETED.value, outcome=decision.outcome)
         logger.info("[%s] follow_up completed for %s: outcome=%s", campaign, public_id, decision.outcome)
 
     elif decision.action == "wait":

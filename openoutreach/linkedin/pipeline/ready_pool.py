@@ -12,7 +12,7 @@ from openoutreach.core.db.deals import (
     set_profile_state,
 )
 from openoutreach.linkedin.ml.qualifier import BayesianQualifier
-from linkedin_cli.enums import ProfileState
+from openoutreach.crm.models import DealState
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +51,7 @@ def promote_to_ready(session, qualifier: BayesianQualifier, threshold: float) ->
         if prob > threshold:
             pid = p.get("public_identifier", "?")
             logger.info("%s READY_TO_CONNECT (P(f>0.5)=%.3f)", pid, prob)
-            set_profile_state(session, p["public_identifier"], ProfileState.READY_TO_CONNECT.value)
+            set_profile_state(session, p["public_identifier"], DealState.READY_TO_CONNECT.value)
             promoted += 1
 
     return promoted
