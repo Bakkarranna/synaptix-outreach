@@ -27,6 +27,9 @@ class SiteConfig(models.Model):
     ai_model = models.CharField(max_length=200, blank=True, default="")
     llm_api_base = models.CharField(max_length=500, blank=True, default="")
 
+    # BetterContact email-finder key; blank disables enrichment (see emails/finder.py).
+    finder_api_key = models.CharField(max_length=500, blank=True, default="")
+
     class Meta:
         verbose_name = "Site Configuration"
         verbose_name_plural = "Site Configuration"

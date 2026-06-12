@@ -103,7 +103,7 @@ Five apps in `INSTALLED_APPS`, all nested under the `openoutreach/` package (see
 
 - **`core`** — Engine: SiteConfig, Campaign (with users M2M), Task models; daemon, scheduler, LLM factory, onboarding, follow-up agent.
 - **`linkedin`** — LinkedIn channel: LinkedInProfile, SearchKeyword, ActionLog models; browser, discovery pipeline, ML qualification, task handlers.
-- **`emails`** — Email channel (Layer 1 of the email-first pivot; models land with the finder/sender slices).
+- **`emails`** — Email channel (Layer 1 of the email-first pivot). `finder.py` resolves a work email for a qualified lead on demand (`resolve_email`); `bettercontact.py` is the one provider (submit→poll over the BetterContact API). Sender + tasks land in later slices.
 - **`crm`** — Lead (with embedding) and Deal models (in `crm/models/lead.py` and `crm/models/deal.py`). Also defines `Outcome` enum.
 - **`chat`** — `ChatMessage` model (GenericForeignKey to any object, content, owner, answer_to threading, topic).
 
@@ -112,7 +112,7 @@ plus table renames (`linkedin_campaign` → `core_campaign` etc., `core.0002_ren
 
 ## CRM Data Model
 
-- **SiteConfig** (`core/models.py`) — Singleton (pk=1). `llm_provider` (TextChoices: openai/anthropic/google/groq/mistral/cohere/openai_compatible), `llm_api_key`, `ai_model`, `llm_api_base`. Accessed via `SiteConfig.load()`; `core/llm.py:get_llm_model()` is the single factory that turns it into a `pydantic_ai.models.Model`.
+- **SiteConfig** (`core/models.py`) — Singleton (pk=1). `llm_provider` (TextChoices: openai/anthropic/google/groq/mistral/cohere/openai_compatible), `llm_api_key`, `ai_model`, `llm_api_base`, `finder_api_key` (BetterContact email-finder key; blank disables enrichment — see `emails/finder.py`). Accessed via `SiteConfig.load()`; `core/llm.py:get_llm_model()` is the single factory that turns it into a `pydantic_ai.models.Model`.
 - **Campaign** (`core/models.py`) — `name` (unique), `users` (M2M to User), `product_docs`, `campaign_objective`, `booking_link`, `is_freemium`, `action_fraction`, `seed_public_ids` (JSONField).
 - **LinkedInProfile** (`linkedin/models.py`) — 1:1 with User. `self_lead` FK to Lead (nullable, set on first self-profile discovery). Credentials, rate limits (`connect_daily_limit`, `follow_up_daily_limit` — daily-only; LinkedIn's own weekly ceiling surfaces at the handler boundary via `ReachedConnectionLimit`). Methods: `can_execute`/`record_action`/`mark_exhausted`. In-memory `_exhausted` dict for daily rate limit caching.
 - **SearchKeyword** (`linkedin/models.py`) — FK to Campaign. `keyword`, `used`, `used_at`. Unique on `(campaign, keyword)`.
@@ -237,7 +237,7 @@ the standalone CLI's `session open` launcher owns it for non-daemon use.
 
 ## Configuration
 
-- **`SiteConfig`** (DB singleton) — `llm_provider` (required, defaults to `openai`; choices: `openai`/`anthropic`/`google`/`groq`/`mistral`/`cohere`/`openai_compatible`), `llm_api_key` (required), `ai_model` (required), `llm_api_base` (required only for `openai_compatible`). Editable via Django Admin.
+- **`SiteConfig`** (DB singleton) — `llm_provider` (required, defaults to `openai`; choices: `openai`/`anthropic`/`google`/`groq`/`mistral`/`cohere`/`openai_compatible`), `llm_api_key` (required), `ai_model` (required), `llm_api_base` (required only for `openai_compatible`), `finder_api_key` (optional — BetterContact email-finder key; blank disables enrichment). Editable via Django Admin.
 - **`conf.py` schedule** — `ENABLE_ACTIVE_HOURS` (`False`), `ACTIVE_START_HOUR` (9), `ACTIVE_END_HOUR` (19), `ACTIVE_TIMEZONE` (system-local IANA name, falls back to "UTC"). Daemon sleeps outside this window. No weekend/rest-day handling — humans use LinkedIn 7 days a week.
 - **`conf.py` planner cap** — `CHECK_PENDING_DAILY_CAP` (100). Maximum `check_pending` slots planned per 24h window per campaign; overflow rolls into the next planning cycle.
 - **`conf.py:CAMPAIGN_CONFIG`** — `min_ready_to_connect_prob` (0.9), `min_positive_pool_prob` (0.20), `check_pending_recheck_after_hours` (24), `qualification_n_mc_samples` (100), `enrich_min_delay_seconds` (6), `enrich_max_delay_seconds` (10), `enrich_max_per_page` (10), `burst_min_seconds` (2700), `burst_max_seconds` (3900), `break_min_seconds` (600), `break_max_seconds` (1200), `min_action_interval` (120), `embedding_model` ("BAAI/bge-small-en-v1.5").
