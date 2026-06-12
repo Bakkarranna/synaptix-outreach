@@ -110,12 +110,13 @@ def _save_qualification_result(session, qualifier: BayesianQualifier, lead_id: i
 
     if label == 1:
         try:
-            promote_lead_to_deal(session, public_id, reason=reason)
+            deal = promote_lead_to_deal(session, public_id, reason=reason)
         except ValueError as e:
             logger.warning("Cannot promote %s: %s \u2014 disqualifying", public_id, e)
             create_disqualified_deal(session, public_id, reason=str(e))
             return
         logger.info("%s %s: %s", public_id, colored("QUALIFIED", "green", attrs=["bold"]), reason)
+        deal.lead.resolve_api_email()
     else:
         create_disqualified_deal(session, public_id, reason=reason)
 

@@ -163,3 +163,47 @@ class TestGetEmbedding:
             MockAPI.return_value.get_profile.side_effect = IOError("timeout")
             with pytest.raises(IOError):
                 lead.get_embedding(fake_session)
+
+
+class TestResolveApiEmail:
+    """Lead.resolve_api_email — finder lookup gated behind a one-time cache."""
+
+    def _lead(self, **kwargs):
+        from openoutreach.crm.models import Lead
+
+        return Lead.objects.create(
+            linkedin_url="https://www.linkedin.com/in/bob/",
+            public_identifier="bob",
+            **kwargs,
+        )
+
+    def test_hit_persists_email(self, db):
+        from openoutreach.crm.models import Lead
+        from openoutreach.emails.finder import FinderQuery, FinderResult
+
+        lead = self._lead()
+        with patch(
+            "openoutreach.emails.finder.resolve_email",
+            return_value=FinderResult(email="bob@acme.com", status="valid"),
+        ) as resolve:
+            lead.resolve_api_email()
+
+        resolve.assert_called_once_with(FinderQuery(linkedin_url="https://www.linkedin.com/in/bob/"))
+        assert Lead.objects.get(pk=lead.pk).api_email == "bob@acme.com"
+
+    def test_miss_leaves_null(self, db):
+        from openoutreach.crm.models import Lead
+
+        lead = self._lead()
+        with patch("openoutreach.emails.finder.resolve_email", return_value=None):
+            lead.resolve_api_email()
+
+        assert Lead.objects.get(pk=lead.pk).api_email is None
+
+    def test_already_resolved_is_noop(self, db):
+        lead = self._lead(api_email="old@acme.com")
+        with patch("openoutreach.emails.finder.resolve_email") as resolve:
+            lead.resolve_api_email()
+
+        resolve.assert_not_called()
+        assert lead.api_email == "old@acme.com"

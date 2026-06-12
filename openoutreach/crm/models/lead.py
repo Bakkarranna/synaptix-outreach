@@ -93,6 +93,22 @@ class Lead(models.Model):
         self.contact_info = contact
         self.save(update_fields=["contact_info"])
 
+    def resolve_api_email(self) -> None:
+        """Resolve + persist a work email via the finder, once the lead qualifies.
+
+        Cached on a hit (``api_email`` set, never re-resolved). A miss leaves it
+        null and is free to retry — BetterContact bills only usable hits. A
+        no-op when no finder key is configured; never raises on a finder miss.
+        """
+        if self.api_email:
+            return
+        from openoutreach.emails.finder import FinderQuery, resolve_email
+
+        result = resolve_email(FinderQuery(linkedin_url=self.linkedin_url))
+        if result:
+            self.api_email = result.email
+            self.save(update_fields=["api_email"])
+
     def get_urn(self, session) -> str:
         """LinkedIn URN. Reads cached column; falls back to a live scrape."""
         if self.urn:
