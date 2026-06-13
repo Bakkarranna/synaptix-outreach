@@ -30,10 +30,8 @@ def _build_send_profile(deal) -> dict:
 def _too_soon_to_nudge(deal) -> bool:
     """Wait ``unanswered_count * MIN_DAYS_PER_UNANSWERED`` days between nudges."""
     from openoutreach.chat.models import ChatMessage
-    from django.contrib.contenttypes.models import ContentType
 
-    ct = ContentType.objects.get_for_model(type(deal.lead))
-    messages = ChatMessage.objects.filter(content_type=ct, object_id=deal.lead_id)
+    messages = ChatMessage.objects.filter(deal=deal)
 
     last = messages.order_by("-creation_date").first()
     if last is None or not last.is_outgoing:

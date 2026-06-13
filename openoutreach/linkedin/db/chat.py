@@ -4,14 +4,21 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def _get_lead_and_ct(public_identifier: str):
-    """Return (lead, content_type) for a public identifier."""
-    from django.contrib.contenttypes.models import ContentType
-    from openoutreach.crm.models import Lead
+def _get_lead_and_deal(session, public_identifier: str):
+    """Return (lead, deal) for a public identifier in the active campaign.
+
+    The conversation is owned by the Deal (per lead+campaign), so sync needs it.
+    Returns (lead, None) when no Deal exists yet — the caller skips the upsert.
+    """
+    from openoutreach.crm.models import Deal, Lead
 
     lead = Lead.objects.get(public_identifier=public_identifier)
-    ct = ContentType.objects.get_for_model(lead)
-    return lead, ct
+    deal = (
+        Deal.objects.filter(lead=lead, campaign=session.campaign)
+        .select_related("lead")
+        .first()
+    )
+    return lead, deal
 
 
 def sync_conversation(session, public_identifier: str) -> list[dict]:
@@ -21,28 +28,28 @@ def sync_conversation(session, public_identifier: str) -> list[dict]:
     from the DB (always the source of truth after sync). Newly-synced messages
     are also folded into the campaign Deal's `chat_summary` (mem0-style facts).
     """
-    lead, ct = _get_lead_and_ct(public_identifier)
-    new_messages = _sync_from_api(session, public_identifier, lead, ct)
-    _update_deal_chat_summary(session, lead, new_messages)
+    lead, deal = _get_lead_and_deal(session, public_identifier)
+    if deal is None:
+        logger.debug("sync: no deal for %s in %s — skipping", public_identifier, session.campaign)
+        return []
 
-    return _read_from_db(public_identifier)
+    new_messages = _sync_from_api(session, public_identifier, deal)
+    _update_deal_chat_summary(session, deal, new_messages)
+
+    return _read_from_db(deal)
 
 
-def _update_deal_chat_summary(session, lead, new_messages):
+def _update_deal_chat_summary(session, deal, new_messages):
     """Fold newly-synced ChatMessages into the campaign Deal's chat_summary."""
     if not new_messages:
         return
-    from openoutreach.crm.models import Deal
     from openoutreach.core.db.summaries import seller_name_from, update_chat_summary
 
-    deal = Deal.objects.filter(lead=lead, campaign=session.campaign).first()
-    if not deal:
-        return
     update_chat_summary(deal, new_messages, seller_name=seller_name_from(session))
 
 
-def _sync_from_api(session, public_identifier: str, lead, ct) -> list:
-    """Fetch messages from Voyager API and upsert into DB.
+def _sync_from_api(session, public_identifier: str, deal) -> list:
+    """Fetch messages from Voyager API and upsert into DB, scoped to `deal`.
 
     Returns the list of newly-created ``ChatMessage`` rows (in arrival order),
     so callers can incrementally update derived caches like ``chat_summary``.
@@ -57,6 +64,7 @@ def _sync_from_api(session, public_identifier: str, lead, ct) -> list:
     session.ensure_browser()
     api = PlaywrightLinkedinAPI(session=session)
 
+    lead = deal.lead
     target_urn = lead.get_urn(session)
     mailbox_urn = session.self_profile["urn"]
 
@@ -82,12 +90,11 @@ def _sync_from_api(session, public_identifier: str, lead, ct) -> list:
 
         is_outgoing = parsed["sender_host_urn"] == self_urn
 
-        # Upsert by linkedin_urn
+        # Upsert by (deal, linkedin_urn): the conversation is per-deal.
         obj, created = ChatMessage.objects.update_or_create(
+            deal=deal,
             linkedin_urn=parsed["entityUrn"],
             defaults={
-                "content_type": ct,
-                "object_id": lead.pk,
                 "content": parsed["text"],
                 "is_outgoing": is_outgoing,
                 "owner": session.django_user,
@@ -105,16 +112,13 @@ def _sync_from_api(session, public_identifier: str, lead, ct) -> list:
     return new_messages
 
 
-def _read_from_db(public_identifier: str) -> list[dict]:
-    """Read all ChatMessages for a lead, sorted chronologically."""
+def _read_from_db(deal) -> list[dict]:
+    """Read all ChatMessages for a deal, sorted chronologically."""
     from openoutreach.chat.models import ChatMessage
 
-    lead, ct = _get_lead_and_ct(public_identifier)
-    lead_name = lead.public_identifier or "them"
+    lead_name = deal.lead.public_identifier or "them"
 
-    messages = ChatMessage.objects.filter(
-        content_type=ct, object_id=lead.pk,
-    ).select_related("owner").order_by("creation_date")
+    messages = ChatMessage.objects.filter(deal=deal).select_related("owner").order_by("creation_date")
 
     result = []
     for msg in messages:

@@ -1,6 +1,4 @@
 from django.conf import settings
-from django.contrib.contenttypes.models import ContentType
-from django.contrib.contenttypes.fields import GenericForeignKey
 from django.db import models
 from django.template.defaultfilters import truncatechars
 from django.utils import timezone
@@ -9,15 +7,24 @@ from django.urls import reverse
 
 
 class ChatMessage(models.Model):
-    
+
     class Meta:
         verbose_name = _("message")
         verbose_name_plural = _("messages")
-            
-    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
-    object_id = models.PositiveIntegerField(db_index=True)
-    content_object = GenericForeignKey('content_type', 'object_id')
-    
+        constraints = [
+            models.UniqueConstraint(
+                fields=["deal", "linkedin_urn"],
+                name="uniq_deal_linkedin_urn",
+            ),
+        ]
+
+    deal = models.ForeignKey(
+        "crm.Deal",
+        on_delete=models.CASCADE,
+        related_name="messages",
+        verbose_name=_("Deal"),
+    )
+
     content = models.TextField(
         blank=True, default='',
         verbose_name=_("Message")
@@ -51,9 +58,9 @@ class ChatMessage(models.Model):
         verbose_name=_("Creation date")
     )
     linkedin_urn = models.CharField(
-        max_length=300, unique=True,
+        max_length=300,
         verbose_name=_("LinkedIn message URN"),
-        help_text=_("entityUrn from Voyager API, used for dedup"),
+        help_text=_("entityUrn from Voyager API, used for dedup (per deal)"),
     )
     is_outgoing = models.BooleanField(
         default=True,

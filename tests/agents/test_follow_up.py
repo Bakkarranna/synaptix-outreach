@@ -73,7 +73,6 @@ class TestRenderSystemPrompt:
 class TestLoadRecentMessages:
     def test_returns_last_n_in_chronological_order(self, db, fake_session):
         from openoutreach.chat.models import ChatMessage
-        from django.contrib.contenttypes.models import ContentType
         from django.utils import timezone
         from datetime import timedelta
 
@@ -81,12 +80,11 @@ class TestLoadRecentMessages:
 
         lead = LeadFactory(public_identifier="alice")
         deal = DealFactory(lead=lead, campaign=fake_session.campaign)
-        ct = ContentType.objects.get_for_model(lead)
 
         base = timezone.now()
         for i in range(RECENT_MESSAGES_WINDOW + 3):
             ChatMessage.objects.create(
-                content_type=ct, object_id=lead.pk,
+                deal=deal,
                 content=f"msg-{i}",
                 is_outgoing=(i % 2 == 0),
                 owner=fake_session.django_user,

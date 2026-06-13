@@ -120,14 +120,12 @@ def _log_chat_facts(public_id: str, deal) -> None:
 
 
 def _load_recent_messages(deal, limit: int = RECENT_MESSAGES_WINDOW) -> list:
-    """Last `limit` ChatMessages for `deal.lead`, in chronological order."""
+    """Last `limit` ChatMessages for `deal`, in chronological order."""
     from openoutreach.chat.models import ChatMessage
-    from django.contrib.contenttypes.models import ContentType
 
-    ct = ContentType.objects.get_for_model(deal.lead.__class__)
     qs = (
         ChatMessage.objects
-        .filter(content_type=ct, object_id=deal.lead_id)
+        .filter(deal=deal)
         .order_by("-creation_date", "-pk")[:limit]
     )
     return list(reversed(list(qs)))
