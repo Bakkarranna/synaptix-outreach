@@ -5,10 +5,12 @@
 Pre-built production images are published to GitHub Container Registry on every push to `master`.
 
 ```bash
-docker run --pull always -it -p 6080:6080 -p 5900:5900 -v openoutreach_db:/app/data ghcr.io/eracle/openoutreach:latest
+docker run --pull always -it -e ENABLE_VNC=true -p 6080:6080 -p 5900:5900 -v openoutreach_db:/app/data ghcr.io/eracle/openoutreach:latest
 ```
 
 Watch the live browser (and clear any LinkedIn checkpoint) at **http://localhost:6080/vnc.html**.
+
+> **`-e ENABLE_VNC=true` is required for the viewer.** The VNC stack (Xvfb + x11vnc + noVNC) is installed in the image but only started when `ENABLE_VNC=true`. Without it, `x11vnc` (5900) and the noVNC web server (6080) never start, so publishing the ports with `-p` leaves nothing listening. The compose setup (`local.yml`) sets this for you; plain `docker run` does not.
 
 The interactive onboarding will guide you through LinkedIn credentials, LLM API key, and campaign setup on first run. All data (CRM database, cookies, model blobs, embeddings) persists in the `openoutreach_db` Docker volume.
 
@@ -33,7 +35,9 @@ Prefer a native VNC client? One is also exposed on `localhost:5900`. On Linux wi
 vinagre vnc://127.0.0.1:5900
 ```
 
-> Both ports must be published for the viewers to work — see the `-p 6080:6080 -p 5900:5900` flags in the run command below.
+> Both ports must be published *and* `ENABLE_VNC=true` must be set for the viewers to work — see the `-e ENABLE_VNC=true -p 6080:6080 -p 5900:5900` flags in the run command above.
+
+> **Seeing `SyntaxError: ... does not provide an export named 'encodeUTF8'`?** That's a stale browser cache of noVNC assets from an older image, not a container bug. Hard-reload the page (Ctrl+Shift+R) or open it in a private window.
 
 ### Stopping & Restarting
 
@@ -45,7 +49,7 @@ docker ps
 docker stop <container-id>
 
 # Restart (data persists in the openoutreach_db volume)
-docker run --pull always -it -p 6080:6080 -p 5900:5900 -v openoutreach_db:/app/data ghcr.io/eracle/openoutreach:latest
+docker run --pull always -it -e ENABLE_VNC=true -p 6080:6080 -p 5900:5900 -v openoutreach_db:/app/data ghcr.io/eracle/openoutreach:latest
 ```
 
 ---
