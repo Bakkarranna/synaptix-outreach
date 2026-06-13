@@ -18,7 +18,7 @@ openoutreach/
                      #   follow-up agent, db/ helpers, management commands, vendored mem0
   linkedin/          # channel app (label: linkedin) — browser/, pipeline/, ml/,
                      #   LinkedInProfile/SearchKeyword/ActionLog models, task handlers, setup/
-  emails/            # channel app (label: emails) — email outreach (finder, sender; Layer 1 WIP)
+  emails/            # channel app (label: emails) — email outreach (finder, Mailbox, icemail import, smtp auth, nudge; sender Layer 1 WIP)
   crm/               # app (label: crm) — Lead, Deal
   chat/              # app (label: chat) — ChatMessage
 ```
@@ -103,7 +103,7 @@ Five apps in `INSTALLED_APPS`, all nested under the `openoutreach/` package (see
 
 - **`core`** — Engine: SiteConfig, Campaign (with users M2M), Task models; daemon, scheduler, LLM factory, onboarding, follow-up agent.
 - **`linkedin`** — LinkedIn channel: LinkedInProfile, SearchKeyword, ActionLog models; browser, discovery pipeline, ML qualification, task handlers.
-- **`emails`** — Email channel (Layer 1 of the email-first pivot). `finder.py` resolves a work email for a qualified lead on demand (`resolve_email`); `bettercontact.py` is the one provider (submit→poll over the BetterContact API). Sender + tasks land in later slices.
+- **`emails`** — Email channel (Layer 1 of the email-first pivot). `finder.py` resolves a work email for a qualified lead on demand (`resolve_email`); `bettercontact.py` is the one provider (submit→poll over the BetterContact API). **`Mailbox`** model (one SMTP inbox; host/port default to IceMail's Google boxes `smtp.gmail.com:587`); **`icemail.py`** `parse_mailboxes()` reads the `Email`/`Password` columns from a pasted *Export Mailboxes* block; **`smtp.py`** `verify_auth()` is the auth-only login check (no test send during warmup); **`nudge.py`** is the per-launch setup prompt (`email_state()` machine + GLF copy + `import_mailboxes()` = parse→store→auth-check). Sender + EMAIL task land in later slices; the send-loop schema (`EmailSender` pool, `Deal.mailbox`, per-box daily cap) is deferred until the sender exists.
 - **`crm`** — Lead (with embedding) and Deal models (in `crm/models/lead.py` and `crm/models/deal.py`). Also defines `Outcome` enum.
 - **`chat`** — `ChatMessage` model (FK to the owning Deal, content, owner, answer_to threading, topic).
 

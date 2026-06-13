@@ -14,6 +14,7 @@ class Command(BaseCommand):
         self._configure_logging(verbose=options["verbosity"] >= 2)
         self._ensure_db()
         self._ensure_onboarded()
+        self._nudge_email_setup()
         session = self._create_session()
         self._ensure_newsletter(session)
 
@@ -51,6 +52,12 @@ class Command(BaseCommand):
                 f"Run with an interactive terminal to complete onboarding."
             )
             sys.exit(1)
+
+    def _nudge_email_setup(self):
+        """Prompt (TTY) or log (headless) the next email-setup step. Deferrable —
+        never blocks the LinkedIn discovery leg."""
+        from openoutreach.emails.nudge import prompt_email_setup
+        prompt_email_setup()
 
     def _create_session(self):
         from openoutreach.linkedin.browser.registry import get_first_active_profile, get_or_create_session
