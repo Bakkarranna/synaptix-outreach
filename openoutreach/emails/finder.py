@@ -50,6 +50,7 @@ def resolve_email(query: FinderQuery) -> FinderResult | None:
     if not api_key:
         raise FinderUnavailable("no finder API key configured")
 
+    logger.info("finder: looking up work email for %s …", query.linkedin_url)
     result = bettercontact.find_email(api_key, query)
     if result:
         logger.info("finder: resolved %s for %s", result.email, query.linkedin_url)

@@ -89,7 +89,7 @@ class Command(BaseCommand):
             return
 
         from openoutreach.linkedin.api.newsletter import ensure_newsletter_subscription
-        from openoutreach.linkedin.setup.gdpr import apply_gdpr_newsletter_override
+        from openoutreach.linkedin.setup.geo import apply_gdpr_newsletter_override
         from linkedin_cli.url_utils import public_id_to_url
 
         profile = session.self_profile

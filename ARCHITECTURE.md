@@ -155,7 +155,7 @@ Paths below are relative to `openoutreach/`.
 - **`core/agents/follow_up.py`** — Follow-up agent. Single LLM call with structured output (`FollowUpDecision`). Conversation is read in Python and injected into the prompt. No tool-calling loop.
 - **`linkedin/api/newsletter.py`** — `subscribe_to_newsletter()` via Brevo form, `ensure_newsletter_subscription()`. No config parsing — subscribe_newsletter is a BooleanField. (The LinkedIn-platform `api/` — `client`, `voyager`, `messaging/` — moved to `linkedin_cli`.)
 - **`linkedin/setup/freemium.py`** — `import_freemium_campaign()`, `seed_profiles()`.
-- **`linkedin/setup/gdpr.py`** — `apply_gdpr_newsletter_override()`.
+- **`linkedin/setup/geo.py`** — country-code jurisdiction lines: `is_gdpr_protected()`/`apply_gdpr_newsletter_override()` (broad email-opt-in set, drives newsletter) and `is_eea_located()`/`EEA_UK_CH` (narrow EEA/UK/CH collection-regime set, gates contacts-store contribution + forced give-back).
 - **`linkedin/setup/seeds.py`** — User-provided seed profiles: parse URLs, create Leads + QUALIFIED Deals.
 - **`core/management/setup_crm.py`** — Idempotent CRM bootstrap (Site creation).
 - **`admin.py`** (per app) — Django Admin: `core/admin.py` (SiteConfig, Campaign, Task), `linkedin/admin.py` (LinkedInProfile, SearchKeyword, ActionLog), `chat/admin.py` (ChatMessage).

@@ -32,6 +32,9 @@ def find_email(api_key: str, query: FinderQuery) -> FinderResult | None:
     with _session(api_key) as session:
         try:
             request_id = _submit(session, query)
+            if request_id:
+                logger.info("finder: submitted to BetterContact (req %s), polling every %ds (up to %ds) …",
+                            request_id, _POLL_INTERVAL_S, _POLL_TIMEOUT_S)
             row = _poll(session, request_id) if request_id else None
         except (requests.RequestException, TimeoutError) as exc:
             raise FinderUnavailable(f"BetterContact unreachable: {exc}") from exc
