@@ -117,7 +117,7 @@ def pipeline_stats() -> dict:
     }
 
 
-# ── Mailbox import (parse → store → auth-check; no console I/O) ───
+# ── Mailbox import (parse → auth-check → store; no console I/O) ───
 
 @dataclass
 class ImportReport:
@@ -127,15 +127,22 @@ class ImportReport:
 
 
 def import_mailboxes(pasted: str, daily_limit: int = DEFAULT_EMAIL_DAILY_LIMIT) -> ImportReport:
-    """Auth-check every mailbox in a pasted export block, storing only the ones
-    whose credentials log in. A row exists iff it authenticated — there is no
-    inactive state to carry. ``daily_limit`` is the warm-safe sends/day applied
-    to each imported box (set once at onboarding, like the LinkedIn limit).
+    """Parse an App-Passwords paste, then auth-check and store each box.
 
-    Raises ValueError if the paste has no recognizable header row.
+    Raises ValueError (from ``parse_mailboxes``) when the paste isn't the App
+    Passwords sheet; per-box auth failures are collected in the report, not raised.
+    """
+    return _store_mailboxes(parse_mailboxes(pasted), daily_limit)
+
+
+def _store_mailboxes(rows: list[tuple[str, str]], daily_limit: int) -> ImportReport:
+    """Auth-check each ``(email, app_password)`` and store only the ones that log in.
+
+    A row exists iff it authenticated — there is no inactive state to carry.
+    ``daily_limit`` is the warm-safe sends/day applied to each stored box.
     """
     report = ImportReport()
-    for email, password in parse_mailboxes(pasted):
+    for email, password in rows:
         report.parsed += 1
         box = Mailbox(username=email, password=password, from_address=email)
         ok, reason = verify_auth(box.host, box.port, box.username, box.password)
@@ -209,16 +216,28 @@ def _collect_finder_key() -> None:
 
 
 def _collect_mailboxes() -> None:
-    pasted = _ask_for_paste()
-    if pasted is None:
-        return
-    daily_limit = _ask_for_daily_limit()
-    try:
-        report = import_mailboxes(pasted, daily_limit=daily_limit)
-    except ValueError as exc:
-        print(f"  {exc}")
-        return
-    _print_report(report)
+    """Paste the App Passwords sheet, set the per-box cap, then auth-check + store."""
+    rows = _ask_for_mailbox_rows()
+    if rows is None:
+        return  # user skipped
+    _print_report(_store_mailboxes(rows, _ask_for_daily_limit()))
+
+
+def _ask_for_mailbox_rows() -> list[tuple[str, str]] | None:
+    """Prompt for the App Passwords paste, re-asking on an unrecognized sheet.
+
+    Returns the parsed ``(email, app_password)`` rows, or None if the user skips.
+    A wrong sheet (e.g. the login-credentials one) prints why and loops, so they
+    can paste the right one without restarting.
+    """
+    while True:
+        pasted = _ask_for_paste()
+        if pasted is None:
+            return None
+        try:
+            return parse_mailboxes(pasted)
+        except ValueError as exc:
+            print(f"  {exc}\n")
 
 
 def _ask_for_daily_limit() -> int:
@@ -234,11 +253,19 @@ def _ask_for_daily_limit() -> int:
     return answer
 
 
+_PASTE_GUIDANCE = """\
+  Open the App Passwords tab in the IceMail XLS you downloaded (columns: Email,
+  App Password) — NOT the login-credentials tab. Copy its rows with the header,
+  paste below, then Ctrl+D to submit. (Enter = newline; No to skip.)
+"""
+
+
 def _ask_for_paste() -> str | None:
-    """Prompt for the pasted export; None if the user skips."""
+    """Prompt for the pasted App Passwords sheet; None if the user skips."""
+    print(_PASTE_GUIDANCE)
     answer = MultilineText(
         "mailboxes",
-        "Paste the IceMail Export Mailboxes sheet (with its header row)",
+        "Paste your IceMail App Passwords sheet",
         required=False,
     ).ask("")
     return None if not answer or answer == _BACK else answer
@@ -248,7 +275,7 @@ def _print_report(report: ImportReport) -> None:
     for email, reason in report.failures:
         print(f"  ✗ {email}: {reason}")
     if not report.parsed:
-        print("  No mailboxes found — include the header row (Email, Password, …).")
+        print("  No mailboxes found — include the header row (Email, App Password).")
         return
     print(f"  Parsed {report.parsed} mailbox(es); {report.stored} authenticated and saved.")
 

@@ -157,17 +157,21 @@ def test_headless_logs_pending_step_without_collecting():
 
 # ── Mailbox import ───────────────────────────────────────────────
 
+_APP_PW_SHEET = "Email\tApp Password\na@b.com\twqig ioha mdvd pece"
+
+
 def test_import_stores_box_when_auth_succeeds():
     with patch("openoutreach.emails.nudge.verify_auth", return_value=(True, "ok")):
-        report = nudge.import_mailboxes("Email\tPassword\na@b.com\tpw")
+        report = nudge.import_mailboxes(_APP_PW_SHEET)
     assert (report.parsed, report.stored, report.failures) == (1, 1, [])
     box = Mailbox.objects.get(username="a@b.com")
     assert box.from_address == "a@b.com"
+    assert box.password == "wqigiohamdvdpece"  # spaces stripped from the app password
 
 
 def test_import_skips_box_and_records_failure_on_auth_error():
     with patch("openoutreach.emails.nudge.verify_auth", return_value=(False, "auth rejected (534)")):
-        report = nudge.import_mailboxes("Email\tPassword\na@b.com\tpw")
+        report = nudge.import_mailboxes(_APP_PW_SHEET)
     assert report.stored == 0
     assert report.failures == [("a@b.com", "auth rejected (534)")]
     assert not Mailbox.objects.filter(username="a@b.com").exists()
@@ -176,7 +180,7 @@ def test_import_skips_box_and_records_failure_on_auth_error():
 def test_import_upserts_existing_mailbox_by_username():
     Mailbox.objects.create(username="a@b.com", password="old", from_address="a@b.com")
     with patch("openoutreach.emails.nudge.verify_auth", return_value=(True, "ok")):
-        nudge.import_mailboxes("Email\tPassword\na@b.com\tnewpw")
+        nudge.import_mailboxes(_APP_PW_SHEET)
     box = Mailbox.objects.get(username="a@b.com")
-    assert box.password == "newpw"
+    assert box.password == "wqigiohamdvdpece"
     assert Mailbox.objects.filter(username="a@b.com").count() == 1
