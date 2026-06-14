@@ -48,7 +48,8 @@ def handle_email(task, session, qualifiers):
 
     message_id = send_email(mailbox, deal.lead.api_email, draft.subject, draft.body)
     _record_sent_email(deal, mailbox, draft.subject, message_id)
-    logger.info("[%s] email sent to %s (%s): %s", campaign, public_id, deal.lead.api_email, draft.subject)
+    logger.info("[%s] email sent to %s (%s): %s\n%s",
+                campaign, public_id, deal.lead.api_email, draft.subject, draft.body)
 
 
 def _record_sent_email(deal, mailbox, subject, message_id) -> None:
