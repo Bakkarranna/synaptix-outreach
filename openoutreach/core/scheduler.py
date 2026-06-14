@@ -216,8 +216,14 @@ def plan_follow_up_window(session, campaign) -> int:
 
 def plan_check_pending_window(session, campaign) -> int:
     """Plan the next 24h of check_pending slots for *campaign*. Slot count
-    matches the PENDING deals whose backoff has expired (or expires
-    within the horizon), capped by ``CHECK_PENDING_DAILY_CAP``."""
+    matches the PENDING deals whose backoff has already expired (due now),
+    capped by ``CHECK_PENDING_DAILY_CAP``.
+
+    The "due now" bound must match the handler's own due filter
+    (``_next_due_pending_deal``): counting deals due later within the
+    horizon would plan an immediate slot the handler then finds nothing
+    to do for, leaving the queue empty and re-triggering reconcile in a
+    tight no-op spin."""
     from openoutreach.crm.models import Deal
 
     if _has_pending(Task.TaskType.CHECK_PENDING, campaign.pk):
@@ -227,7 +233,7 @@ def plan_check_pending_window(session, campaign) -> int:
     n_due = Deal.objects.filter(
         campaign_id=campaign.pk,
         state=DealState.PENDING,
-        next_check_pending_at__lte=now + timedelta(hours=24),
+        next_check_pending_at__lte=now,
     ).count()
     n = min(n_due, CHECK_PENDING_DAILY_CAP)
 
