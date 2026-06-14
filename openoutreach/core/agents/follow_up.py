@@ -10,11 +10,10 @@ import logging
 from datetime import datetime, timedelta
 from typing import Literal
 
-import jinja2
 from pydantic import BaseModel, Field, model_validator
 from pydantic_ai import Agent
 
-from openoutreach.core.conf import PROMPTS_DIR
+from openoutreach.core.agents.prompt import _format_facts
 from openoutreach.core.llm import get_llm_model, run_agent_sync
 
 logger = logging.getLogger(__name__)
@@ -29,13 +28,6 @@ class FollowUpDecision(BaseModel):
     message: str | None = Field(
         default=None,
         description="The message to send. Required when action='send_message'.",
-    )
-    subject: str | None = Field(
-        default=None,
-        description=(
-            "Email subject line — provide ONLY on the first email of a thread. "
-            "Leave empty for follow-ups (they reuse the thread subject) and for LinkedIn."
-        ),
     )
     outcome: Literal[
         "converted", "not_interested", "wrong_fit", "no_budget",
@@ -108,14 +100,6 @@ def _count_unanswered_outgoing(messages: list) -> int:
     return count
 
 
-def _format_facts(summary: dict | None) -> str:
-    """Render a `{facts: [...]}` summary blob as a bullet list."""
-    facts = (summary or {}).get("facts") or []
-    if not facts:
-        return "(none yet)"
-    return "\n".join(f"- {f}" for f in facts)
-
-
 def _log_chat_facts(public_id: str, deal) -> None:
     """Log the mem0 chat facts the agent is working with."""
     chat_facts = (deal.chat_summary or {}).get("facts", [])
@@ -126,42 +110,28 @@ def _log_chat_facts(public_id: str, deal) -> None:
     logger.info("\n".join(lines))
 
 
-def _load_recent_messages(deal, limit: int = RECENT_MESSAGES_WINDOW, channel: str | None = None) -> list:
+def _load_recent_messages(deal, limit: int = RECENT_MESSAGES_WINDOW) -> list:
     """Last `limit` ChatMessages for `deal`, in chronological order.
 
-    Scoped to `channel` when given so the email agent sees only the email
-    thread and the LinkedIn agent only the DM thread.
+    ChatMessages are LinkedIn DMs only; an email-routed deal never connected, so
+    this is empty for it — the email agent always composes a first touch.
     """
     from openoutreach.chat.models import ChatMessage
 
-    qs = ChatMessage.objects.filter(deal=deal)
-    if channel is not None:
-        qs = qs.filter(channel=channel)
-    qs = qs.order_by("-creation_date", "-pk")[:limit]
+    qs = ChatMessage.objects.filter(deal=deal).order_by("-creation_date", "-pk")[:limit]
     return list(reversed(list(qs)))
 
 
-def _render_system_prompt(session, deal, recent_messages: list, channel: str) -> str:
-    """Render the agent system prompt from the Jinja2 template."""
+def _render_system_prompt(session, deal, recent_messages: list) -> str:
+    """Render the LinkedIn follow-up prompt: shared base + the LinkedIn-only extras."""
     from django.utils import timezone
-
-    env = jinja2.Environment(loader=jinja2.FileSystemLoader(str(PROMPTS_DIR)))
-    template = env.get_template("follow_up_agent.j2")
-
-    campaign = deal.campaign
-    self_prof = session.self_profile
-    self_name = f"{self_prof.get('first_name', '')} {self_prof.get('last_name', '')}".strip() or session.django_user.username
+    from openoutreach.core.agents.prompt import base_context, render
 
     now = timezone.now()
-    return template.render(
-        channel=channel,
-        is_first_email=(channel == "email" and not recent_messages),
-        self_name=self_name,
+    return render(
+        "follow_up_agent.j2",
+        **base_context(session, deal),
         contact_email=session.linkedin_profile.linkedin_username,
-        product_docs=campaign.product_docs or "",
-        campaign_objective=campaign.campaign_objective or "",
-        booking_link=campaign.booking_link or "",
-        profile_summary=_format_facts(deal.profile_summary),
         chat_summary=_format_facts(deal.chat_summary),
         recent_messages=_format_recent_messages(recent_messages, now),
         today=now.strftime("%Y-%m-%d"),
@@ -170,25 +140,23 @@ def _render_system_prompt(session, deal, recent_messages: list, channel: str) ->
     )
 
 
-def run_follow_up_agent(session, deal, channel: str = "linkedin") -> FollowUpDecision:
-    """Read the conversation and return a structured follow-up decision.
+def run_follow_up_agent(session, deal) -> FollowUpDecision:
+    """Read the LinkedIn conversation and return a structured follow-up decision.
 
-    For LinkedIn, sync chat first (folding new messages into ``deal.chat_summary``).
-    For email there is no Voyager thread to sync — the agent reads the email
-    ChatMessage rows directly (inbound reply-reading is a later slice). Then
-    render the prompt from the Deal's persistent summaries plus a small recency
-    window of verbatim messages scoped to this channel, and ask the LLM to decide.
+    Syncs chat first (folding new messages into ``deal.chat_summary``), then renders
+    the prompt from the Deal's persistent summaries plus a small recency window of
+    verbatim messages, and asks the LLM to decide. Email is a separate, single-shot
+    path — see ``core.agents.email_opener.compose_opener_email``.
     """
     public_id = deal.lead.public_identifier
-    if channel == "linkedin":
-        from openoutreach.linkedin.db.chat import sync_conversation
+    from openoutreach.linkedin.db.chat import sync_conversation
 
-        sync_conversation(session, public_id)
-        deal.refresh_from_db(fields=["chat_summary", "profile_summary"])
-        _log_chat_facts(public_id, deal)
+    sync_conversation(session, public_id)
+    deal.refresh_from_db(fields=["chat_summary", "profile_summary"])
+    _log_chat_facts(public_id, deal)
 
-    recent = _load_recent_messages(deal, channel=channel)
-    system_prompt = _render_system_prompt(session, deal, recent, channel)
+    recent = _load_recent_messages(deal)
+    system_prompt = _render_system_prompt(session, deal, recent)
 
     agent = Agent(
         get_llm_model(),

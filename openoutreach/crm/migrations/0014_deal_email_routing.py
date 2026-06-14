@@ -17,6 +17,16 @@ class Migration(migrations.Migration):
         ),
         migrations.AddField(
             model_name="deal",
+            name="email_sent_at",
+            field=models.DateTimeField(blank=True, db_index=True, null=True),
+        ),
+        migrations.AddField(
+            model_name="deal",
+            name="email_message_id",
+            field=models.CharField(blank=True, default="", max_length=300),
+        ),
+        migrations.AddField(
+            model_name="deal",
             name="mailbox",
             field=models.ForeignKey(
                 blank=True,

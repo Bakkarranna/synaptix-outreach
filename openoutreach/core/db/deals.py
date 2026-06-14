@@ -162,6 +162,29 @@ def get_ready_to_connect_profiles(session) -> list:
     return _deals_at_state(session, DealState.READY_TO_CONNECT)
 
 
+def get_emailable_deals(session):
+    """The email pool — Deals queued for their single Layer-1 email, oldest first.
+
+    Symmetric with the connect pools above: each reads exactly one FSM state. The
+    state alone is the eligibility — the qualify router reaches READY_TO_EMAIL only
+    on a finder hit (so ``Lead.api_email`` is set), and the send moves it to EMAILED
+    (so it is never-emailed). Returns ``Deal`` rows (not profile dicts — the EMAIL
+    task acts on the Deal directly). ``disqualified`` guards a post-qualification
+    do-not-contact, matching the follow_up pool.
+    """
+    from openoutreach.crm.models import Deal
+
+    return (
+        Deal.objects.filter(
+            campaign=session.campaign,
+            state=DealState.READY_TO_EMAIL,
+            lead__disqualified=False,
+        )
+        .select_related("lead", "mailbox")
+        .order_by("creation_date")
+    )
+
+
 def get_profile_dict_for_public_id(session, public_id: str) -> dict | None:
     """Load profile dict for a single public_id from Deal + Lead (campaign-scoped)."""
     from openoutreach.crm.models import Deal

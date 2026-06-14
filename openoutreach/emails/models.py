@@ -3,8 +3,28 @@
 from __future__ import annotations
 
 from django.db import models
+from django.utils import timezone
 
 from openoutreach.core.conf import DEFAULT_EMAIL_DAILY_LIMIT
+
+
+class MailboxManager(models.Manager):
+    """Pool-level send pacing — the daily-cap accounting the task and planner share."""
+
+    def remaining_today(self) -> int:
+        """Total sends left across the pool today (Σ per-box headroom).
+
+        0 when no boxes exist or every box is at its cap.
+        """
+        return sum(box.headroom_today() for box in self.all())
+
+    def least_loaded_under_cap(self):
+        """The under-cap box with the most headroom today, or None if all are capped."""
+        ranked = [(box, sent) for box in self.all()
+                  if (sent := box.sent_today()) < box.daily_limit]
+        if not ranked:
+            return None
+        return min(ranked, key=lambda pair: pair[1])[0]
 
 
 class Mailbox(models.Model):
@@ -25,8 +45,23 @@ class Mailbox(models.Model):
     # LinkedIn connect_daily_limit). Enforced at send time, per box.
     daily_limit = models.PositiveIntegerField(default=DEFAULT_EMAIL_DAILY_LIMIT)
 
+    objects = MailboxManager()
+
     class Meta:
         verbose_name_plural = "Mailboxes"
 
     def __str__(self):
         return self.from_address or self.username
+
+    def sent_today(self) -> int:
+        """Emails this box has sent since local midnight (the per-box cap ledger).
+
+        Keyed on ``email_sent_at`` (write-once at send, never cleared), so a deal
+        dispositioned past EMAILED later the same day still counts against the cap.
+        """
+        midnight = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        return self.deals.filter(email_sent_at__gte=midnight).count()
+
+    def headroom_today(self) -> int:
+        """Sends this box has left today before hitting ``daily_limit``."""
+        return max(0, self.daily_limit - self.sent_today())

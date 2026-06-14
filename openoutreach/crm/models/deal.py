@@ -9,19 +9,31 @@ class DealState(models.TextChoices):
     OpenOutreach owns these values, not linkedin_cli. The library's connect/status
     verbs only *observe* three of them off the LinkedIn UI — QUALIFIED, PENDING,
     CONNECTED — and hand them back as plain strings over the CLI boundary; every
-    other state is written only here: READY_TO_CONNECT (passed the GP threshold)
-    and COMPLETED/FAILED (outcome). String values match the library's UI states
-    so lifting a returned string into this enum is a plain ``DealState(value)``
-    lookup at the boundary.
+    other state is written only here: READY_TO_CONNECT (passed the GP threshold),
+    the email fork (READY_TO_EMAIL/EMAILED), and COMPLETED/FAILED (outcome). The
+    three UI-observed string values match the library's so lifting a returned
+    string into this enum is a plain ``DealState(value)`` lookup at the boundary.
 
-    Email channel: enrichment is a *router*, not a gate. A lead with a resolved
-    ``Lead.api_email`` is reached by email (handled off ``Deal.next_email_at``,
-    excluded from the connect pool); a lead with no email flows through the
-    connect funnel as its only door (and the connection harvests contact info
-    on acceptance). No off-funnel email state — email progress reads from
-    ``Lead.api_email`` + the outgoing email ``ChatMessage`` count.
+    Email channel: enrichment is a *router*, not a gate, and the route is an
+    explicit FSM fork — the state *is* the routing:
+
+        HIT  ─▶ READY_TO_EMAIL ─(EMAIL task)─▶ EMAILED   (Layer-1 quasi-terminal)
+        MISS ─▶ stays QUALIFIED ─(GP gate)─▶ READY_TO_CONNECT ─▶ … ─▶ CONNECTED
+
+    On a finder hit the qualify router transitions QUALIFIED → READY_TO_EMAIL (a
+    cheap, *ungated* send-queue — any qualified lead with an address, FIFO, paced
+    only by the per-box cap; unlike READY_TO_CONNECT it is NOT a GP confidence
+    gate). The single Layer-1 send moves it to EMAILED, a quasi-terminal state
+    that rests until a human sets an Outcome (no inbound reading yet). A miss,
+    finder-off, or couldn't-run leaves the deal QUALIFIED so the GP gate can
+    promote it to READY_TO_CONNECT — its only door — and the connection harvests
+    contact info on acceptance. The two fork states encode the one-shot guarantee
+    in the state column: the email pool holds only READY_TO_EMAIL, so a deal is
+    sent exactly once and can never double-send.
     """
     QUALIFIED = "Qualified"
+    READY_TO_EMAIL = "Ready to Email"
+    EMAILED = "Emailed"
     READY_TO_CONNECT = "Ready to Connect"
     PENDING = "Pending"
     CONNECTED = "Connected"
@@ -78,6 +90,13 @@ class Deal(models.Model):
     # The email's subject — set when the single email is sent; the reuse source
     # ("Re: …") once follow-ups land. The agent generates it once.
     email_subject = models.CharField(max_length=300, blank=True, default="")
+    # When the single Layer-1 email was sent. The per-box daily cap counts deals
+    # sent since local midnight; also the audit timestamp. Null until sent.
+    email_sent_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    # RFC-5322 Message-ID of the sent email. The Layer-2 correlation key: a reply's
+    # In-Reply-To/References matches it back to this exact campaign/deal (the
+    # disambiguator when one lead is emailed across two campaigns). Null until sent.
+    email_message_id = models.CharField(max_length=300, blank=True, default="")
     profile_summary = models.JSONField(null=True, blank=True, default=None)
     chat_summary = models.JSONField(null=True, blank=True, default=None)
     creation_date = models.DateTimeField(default=timezone.now)

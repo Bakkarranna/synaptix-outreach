@@ -90,11 +90,10 @@ def _sync_from_api(session, public_identifier: str, deal) -> list:
 
         is_outgoing = parsed["sender_host_urn"] == self_urn
 
-        # Upsert by (deal, channel, external_id): the conversation is per-deal.
+        # Upsert by (deal, linkedin_urn): the conversation is per-deal.
         obj, created = ChatMessage.objects.update_or_create(
             deal=deal,
-            channel=ChatMessage.Channel.LINKEDIN,
-            external_id=parsed["entityUrn"],
+            linkedin_urn=parsed["entityUrn"],
             defaults={
                 "content": parsed["text"],
                 "is_outgoing": is_outgoing,
