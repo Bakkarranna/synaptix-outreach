@@ -13,6 +13,7 @@ import sys
 from dataclasses import dataclass, field
 
 from openoutreach.core.conf import DEFAULT_CONNECT_DAILY_LIMIT, DEFAULT_EMAIL_DAILY_LIMIT
+from openoutreach.core.logging import brand
 from openoutreach.core.models import SiteConfig
 from openoutreach.core.onboarding_wizard import _BACK, IntText, MultilineText, Password
 from openoutreach.crm.models import Deal, DealState, Lead
@@ -56,10 +57,10 @@ NO_FINDER_NUDGE = """
 # URGENCY — the ~2-week warmup clock (always true); a loss-aversion line only
 # when the pipeline numbers are real (they're zero right after the finder is set).
 NO_MAILBOX_NUDGE = """
-📧  Set up email sending. IceMail mailboxes need a ~2-week warmup, and the clock
+📧  Set up email sending. {icemail} mailboxes need a ~2-week warmup, and the clock
     only starts once you add them — so the sooner they're warming, the sooner you
     reach the leads who never accept a LinkedIn connection.
-{waiting_line}    Add your sending mailboxes (IceMail — paid; warmup is hands-off):
+{waiting_line}    Add your sending mailboxes ({icemail} — paid; warmup is hands-off):
       {sender_url}
 """
 
@@ -88,6 +89,7 @@ def render(state: str, stats: dict, *, hyperlink: bool = False) -> str:
         finder_url=wrap(FINDER_AFFILIATE_URL),
         sender_url=wrap(SENDER_AFFILIATE_URL),
         waiting_line=_waiting_line(stats),
+        icemail=brand("icemail"),
         **stats,
     )
 
@@ -254,7 +256,7 @@ def _ask_for_daily_limit() -> int:
 
 
 _PASTE_GUIDANCE = """\
-  Open the App Passwords tab in the IceMail XLS you downloaded (columns: Email,
+  Open the App Passwords tab in the {icemail} XLS you downloaded (columns: Email,
   App Password) — NOT the login-credentials tab. Copy its rows with the header,
   paste below, then Ctrl+D to submit. (Enter = newline; No to skip.)
 """
@@ -262,10 +264,10 @@ _PASTE_GUIDANCE = """\
 
 def _ask_for_paste() -> str | None:
     """Prompt for the pasted App Passwords sheet; None if the user skips."""
-    print(_PASTE_GUIDANCE)
+    print(_PASTE_GUIDANCE.format(icemail=brand("icemail")))
     answer = MultilineText(
         "mailboxes",
-        "Paste your IceMail App Passwords sheet",
+        f"Paste your {brand('icemail')} App Passwords sheet",
         required=False,
     ).ask("")
     return None if not answer or answer == _BACK else answer

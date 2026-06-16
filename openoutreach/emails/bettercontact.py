@@ -8,6 +8,7 @@ import time
 
 import requests
 
+from openoutreach.core.logging import brand
 from openoutreach.emails.finder import FinderQuery, FinderResult, FinderUnavailable
 
 logger = logging.getLogger(__name__)
@@ -33,8 +34,8 @@ def find_email(api_key: str, query: FinderQuery) -> FinderResult | None:
         try:
             request_id = _submit(session, query)
             if request_id:
-                logger.info("finder: submitted to BetterContact (req %s), polling every %ds (up to %ds) …",
-                            request_id, _POLL_INTERVAL_S, _POLL_TIMEOUT_S)
+                logger.info("finder: submitted to %s (req %s), polling every %ds (up to %ds) …",
+                            brand("bettercontact"), request_id, _POLL_INTERVAL_S, _POLL_TIMEOUT_S)
             row = _poll(session, request_id) if request_id else None
         except (requests.RequestException, TimeoutError) as exc:
             raise FinderUnavailable(f"BetterContact unreachable: {exc}") from exc

@@ -41,14 +41,21 @@ def resolve(lead) -> str | None:
     except requests.RequestException as exc:
         logger.info("contacts: resolve unavailable for %s: %s", lead.public_identifier, exc)
         return None
-    if resp.status_code != 200:
-        return None  # 404 miss (or anything else) → pay the finder
-    # The store returns the profile's address(es) as a list (one today, the
-    # full dbt-prepared set later); we send to one, so take the first.
-    emails = resp.json().get("emails") or []
+    if resp.status_code not in (200, 404):
+        return None  # unexpected → pay the finder, stay quiet
+    # Both hit (200) and miss (404) carry the post-read credit balance; a hit
+    # also carries the profile's address(es) as a list (one today, the full
+    # dbt-prepared set later), and we send to one, so take the first.
+    payload = resp.json()
+    credits = payload.get("credits")
+    emails = payload.get("emails") or []
     email = emails[0] if emails else None
     if email:
-        logger.info("contacts: resolved %s for %s (saved a paid lookup)", email, lead.public_identifier)
+        logger.info("contacts: resolved %s for %s (saved a paid lookup) — %s credits available",
+                    email, lead.public_identifier, credits)
+    else:
+        logger.info("contacts: no stored email for %s — paying the finder (%s credits available)",
+                    lead.public_identifier, credits)
     return email
 
 
@@ -59,7 +66,12 @@ def contribute(session, lead, emails: list[str]) -> None:
     instance's own config, never the repo); later ones reuse it.
     """
     emails = [e for e in emails if e]
-    if not emails or is_eea_located(lead.country_code):
+    if not emails:
+        logger.debug("contacts: nothing to contribute for %s — no email captured", lead.public_identifier)
+        return
+    if is_eea_located(lead.country_code):
+        logger.debug("contacts: skipping %s (%s) — EEA/UK/CH lead, out of store scope",
+                     lead.public_identifier, lead.country_code)
         return
 
     config = SiteConfig.load()
@@ -103,8 +115,10 @@ def _send(config: SiteConfig, path: str, body: dict, lead, headers: dict | None 
     except requests.RequestException as exc:
         logger.info("contacts: give-back unavailable for %s: %s", lead.public_identifier, exc)
         return None
-    logger.info("contacts: contributed %s (%s) to the central store", lead.public_identifier, lead.country_code)
-    return resp.json()
+    payload = resp.json()
+    logger.info("contacts: contributed %s (%s) to the central store — %s credits available",
+                lead.public_identifier, lead.country_code, payload["credits"])
+    return payload
 
 
 def _endpoint(config: SiteConfig, path: str) -> str:

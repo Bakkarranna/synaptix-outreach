@@ -118,7 +118,7 @@ class TestContribute:
         _config(token="tok")
         lead = LeadFactory(public_identifier="jane-doe", country_code="in")
         with patch.object(
-            service.requests, "post", return_value=_resp(200, {"accepted": 1}),
+            service.requests, "post", return_value=_resp(200, {"accepted": 1, "credits": 7}),
         ) as post:
             # the empty string is filtered out
             service.contribute(_session(), lead, ["jane@acme.com", ""])
@@ -135,7 +135,7 @@ class TestContribute:
         _config(token="")
         lead = LeadFactory(public_identifier="jane-doe", country_code="br")
         with patch.object(
-            service.requests, "post", return_value=_resp(200, {"token": "NEW"}),
+            service.requests, "post", return_value=_resp(200, {"token": "NEW", "credits": 1}),
         ) as post:
             service.contribute(_session(), lead, ["jane@acme.com"])
         url, kwargs = post.call_args.args[0], post.call_args.kwargs

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import sys
 
 from termcolor import colored
@@ -54,6 +55,35 @@ class ColoredFormatter(logging.Formatter):
         label = _LEVEL_LABELS.get(record.levelno, "???")
         prefix = colored(f"[{label}]", color, attrs=attrs) if color else f"[{label}]"
         return f"{prefix} {msg}"
+
+
+# ── Brand palette (third-party services) ────────────────────────────
+# 24-bit accent colours lifted from each vendor's own site, so a service
+# name prints in its real palette colour. termcolor only knows the 16
+# named colours, so these go out as raw truecolor SGR escapes.
+
+_BRANDS = {
+    "bettercontact": ("BetterContact", (155, 81, 224)),  # bettercontact.rocks #9b51e0
+    "icemail": ("IceMail", (34, 197, 94)),               # icemail.ai --brand #22c55e
+}
+
+
+def _color_enabled() -> bool:
+    """Mirror termcolor's gating: NO_COLOR off, FORCE_COLOR on, else TTY-only."""
+    if "NO_COLOR" in os.environ:
+        return False
+    if os.environ.get("FORCE_COLOR"):
+        return True
+    return sys.stdout.isatty()
+
+
+def brand(service: str, text: str | None = None) -> str:
+    """Render a service name (or `text`) in that vendor's brand colour."""
+    label, (r, g, b) = _BRANDS[service]
+    label = text if text is not None else label
+    if not _color_enabled():
+        return label
+    return f"\033[38;2;{r};{g};{b}m{label}\033[0m"
 
 
 # ── Public API ──────────────────────────────────────────────────────
