@@ -166,7 +166,7 @@ class TestGetEmbedding:
 
 
 class TestResolveApiEmail:
-    """Lead.resolve_api_email — finder lookup gated behind a one-time cache."""
+    """Lead.resolve_api_email — BetterContact lookup gated behind a one-time cache."""
 
     def _lead(self, **kwargs):
         from openoutreach.crm.models import Lead
@@ -179,40 +179,40 @@ class TestResolveApiEmail:
 
     def test_hit_persists_email(self, db):
         from openoutreach.crm.models import Lead
-        from openoutreach.emails.finder import FinderQuery, FinderResult
+        from openoutreach.emails.bettercontact import BetterContactQuery, BetterContactResult
 
         lead = self._lead()
         with patch(
-            "openoutreach.emails.finder.resolve_email",
-            return_value=FinderResult(email="bob@acme.com", status="valid"),
+            "openoutreach.emails.bettercontact.resolve_email",
+            return_value=BetterContactResult(email="bob@acme.com", status="valid"),
         ) as resolve:
             assert lead.resolve_api_email() is True
 
-        resolve.assert_called_once_with(FinderQuery(linkedin_url="https://www.linkedin.com/in/bob/"))
+        resolve.assert_called_once_with(BetterContactQuery(linkedin_url="https://www.linkedin.com/in/bob/"))
         assert Lead.objects.get(pk=lead.pk).api_email == "bob@acme.com"
 
     def test_genuine_miss_returns_false(self, db):
         from openoutreach.crm.models import Lead
 
         lead = self._lead()
-        with patch("openoutreach.emails.finder.resolve_email", return_value=None):
+        with patch("openoutreach.emails.bettercontact.resolve_email", return_value=None):
             assert lead.resolve_api_email() is False
 
         assert Lead.objects.get(pk=lead.pk).api_email is None
 
-    def test_finder_unavailable_returns_none(self, db):
+    def test_bettercontact_unavailable_returns_none(self, db):
         from openoutreach.crm.models import Lead
-        from openoutreach.emails.finder import FinderUnavailable
+        from openoutreach.emails.bettercontact import BetterContactUnavailable
 
         lead = self._lead()
-        with patch("openoutreach.emails.finder.resolve_email", side_effect=FinderUnavailable("no key")):
+        with patch("openoutreach.emails.bettercontact.resolve_email", side_effect=BetterContactUnavailable("no key")):
             assert lead.resolve_api_email() is None
 
         assert Lead.objects.get(pk=lead.pk).api_email is None
 
     def test_already_resolved_is_noop(self, db):
         lead = self._lead(api_email="old@acme.com")
-        with patch("openoutreach.emails.finder.resolve_email") as resolve:
+        with patch("openoutreach.emails.bettercontact.resolve_email") as resolve:
             assert lead.resolve_api_email() is True
 
         resolve.assert_not_called()

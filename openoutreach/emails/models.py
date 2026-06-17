@@ -65,3 +65,10 @@ class Mailbox(models.Model):
     def headroom_today(self) -> int:
         """Sends this box has left today before hitting ``daily_limit``."""
         return max(0, self.daily_limit - self.sent_today())
+
+
+def has_mailbox() -> bool:
+    """True when ≥1 mailbox is configured — i.e. email is a viable channel to
+    send from. Gates email enrichment: with no mailbox there's nothing to send,
+    so resolving an address is pointless and the deal should take the connect leg."""
+    return Mailbox.objects.exists()

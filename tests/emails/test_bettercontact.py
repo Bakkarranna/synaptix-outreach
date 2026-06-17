@@ -1,18 +1,22 @@
-# tests/emails/test_finder.py
-"""Finder slice — mock at the HTTP boundary (`bettercontact._session`).
+# tests/emails/test_bettercontact.py
+"""BetterContact slice — mock at the HTTP boundary (`bettercontact._session`).
 
-The finder is tri-state: a FinderResult (hit), None (finder ran, found
-nothing), or a raised FinderUnavailable (no key / service unreachable).
+BetterContact is tri-state: a BetterContactResult (hit), None (it ran, found
+nothing), or a raised BetterContactUnavailable (no key / service unreachable).
 """
 from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
 
-from openoutreach.emails import bettercontact, finder
-from openoutreach.emails.finder import FinderQuery, FinderResult, FinderUnavailable
+from openoutreach.emails import bettercontact
+from openoutreach.emails.bettercontact import (
+    BetterContactQuery,
+    BetterContactResult,
+    BetterContactUnavailable,
+)
 
-QUERY = FinderQuery(linkedin_url="https://www.linkedin.com/in/alice/")
+QUERY = BetterContactQuery(linkedin_url="https://www.linkedin.com/in/alice/")
 
 
 def _response(body, error=None):
@@ -50,7 +54,7 @@ class TestFindEmail:
         get = MagicMock(return_value=_terminal("alice@acme.com", "valid"))
         with _patch_session(post, get):
             result = bettercontact.find_email("key", QUERY)
-        assert result == FinderResult(email="alice@acme.com", status="valid")
+        assert result == BetterContactResult(email="alice@acme.com", status="valid")
 
     def test_not_found_is_a_miss(self):
         post = MagicMock(return_value=_response({"id": "req1"}))
@@ -66,20 +70,20 @@ class TestFindEmail:
         ])
         with _patch_session(post, get), patch.object(bettercontact.time, "sleep"):
             result = bettercontact.find_email("key", QUERY)
-        assert result == FinderResult(email="alice@acme.com", status="catch_all_safe")
+        assert result == BetterContactResult(email="alice@acme.com", status="catch_all_safe")
         assert get.call_count == 2
 
     def test_submit_http_error_is_unavailable(self):
         post = MagicMock(return_value=_response({}, error=requests.HTTPError("403")))
         get = MagicMock()
-        with _patch_session(post, get), pytest.raises(FinderUnavailable):
+        with _patch_session(post, get), pytest.raises(BetterContactUnavailable):
             bettercontact.find_email("key", QUERY)
         get.assert_not_called()
 
     def test_missing_request_id_is_unavailable(self):
         post = MagicMock(return_value=_response({}))  # no "id"
         get = MagicMock()
-        with _patch_session(post, get), pytest.raises(FinderUnavailable):
+        with _patch_session(post, get), pytest.raises(BetterContactUnavailable):
             bettercontact.find_email("key", QUERY)
         get.assert_not_called()
 
@@ -90,34 +94,52 @@ class TestFindEmail:
         with _patch_session(post, get), \
                 patch.object(bettercontact.time, "sleep"), \
                 patch.object(bettercontact.time, "monotonic", side_effect=clock), \
-                pytest.raises(FinderUnavailable):
+                pytest.raises(BetterContactUnavailable):
             bettercontact.find_email("key", QUERY)
 
     def test_network_error_is_unavailable(self):
         post = MagicMock(side_effect=requests.ConnectionError("boom"))
-        with _patch_session(post), pytest.raises(FinderUnavailable):
+        with _patch_session(post), pytest.raises(BetterContactUnavailable):
             bettercontact.find_email("key", QUERY)
 
 
-# ── finder.resolve_email (SiteConfig gate) ────────────────────────────
+# ── bettercontact.resolve_email (SiteConfig gate) ─────────────────────
 
 class TestResolveEmail:
-    def test_no_key_is_unavailable(self):
+    def test_no_key_is_unavailable(self, db):
         from openoutreach.core.models import SiteConfig
         cfg = SiteConfig.load()
-        cfg.finder_api_key = ""
+        cfg.bettercontact_api_key = ""
         cfg.save()
         with patch.object(bettercontact, "find_email") as find_email:
-            with pytest.raises(FinderUnavailable):
-                finder.resolve_email(QUERY)
+            with pytest.raises(BetterContactUnavailable):
+                bettercontact.resolve_email(QUERY)
         find_email.assert_not_called()
 
-    def test_with_key_delegates_to_provider(self):
+    def test_with_key_delegates_to_provider(self, db):
         from openoutreach.core.models import SiteConfig
         cfg = SiteConfig.load()
-        cfg.finder_api_key = "secret"
+        cfg.bettercontact_api_key = "secret"
         cfg.save()
-        sentinel = FinderResult(email="alice@acme.com", status="valid")
+        sentinel = BetterContactResult(email="alice@acme.com", status="valid")
         with patch.object(bettercontact, "find_email", return_value=sentinel) as find_email:
-            assert finder.resolve_email(QUERY) is sentinel
+            assert bettercontact.resolve_email(QUERY) is sentinel
         find_email.assert_called_once_with("secret", QUERY)
+
+
+# ── bettercontact.is_configured ───────────────────────────────────────
+
+class TestIsConfigured:
+    def test_false_when_key_blank(self, db):
+        from openoutreach.core.models import SiteConfig
+        cfg = SiteConfig.load()
+        cfg.bettercontact_api_key = ""
+        cfg.save()
+        assert bettercontact.is_configured() is False
+
+    def test_true_when_key_set(self, db):
+        from openoutreach.core.models import SiteConfig
+        cfg = SiteConfig.load()
+        cfg.bettercontact_api_key = "secret"
+        cfg.save()
+        assert bettercontact.is_configured() is True

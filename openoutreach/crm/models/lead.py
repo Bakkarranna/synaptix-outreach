@@ -106,22 +106,26 @@ class Lead(models.Model):
         self.save(update_fields=["contact_info"])
 
     def resolve_api_email(self) -> bool | None:
-        """Resolve + persist a work email via the finder, once the lead qualifies.
+        """Resolve + persist a work email via BetterContact, once the lead qualifies.
 
         Returns True on a hit (``api_email`` set, cached — never re-resolved →
         caller routes the Deal QUALIFIED → READY_TO_EMAIL), False on a genuine
-        miss (finder ran, found nothing → caller leaves the Deal QUALIFIED for
-        the connect leg), and None when the finder couldn't run (no key, or the
+        miss (BetterContact ran, found nothing → caller leaves the Deal QUALIFIED
+        for the connect leg), and None when it couldn't run (no key, or the
         service was unreachable → caller leaves the Deal QUALIFIED to retry).
         A miss is free to retry — BetterContact bills only usable hits.
         """
         if self.api_email:
             return True
-        from openoutreach.emails.finder import FinderQuery, FinderUnavailable, resolve_email
+        from openoutreach.emails.bettercontact import (
+            BetterContactQuery,
+            BetterContactUnavailable,
+            resolve_email,
+        )
 
         try:
-            result = resolve_email(FinderQuery(linkedin_url=self.linkedin_url))
-        except FinderUnavailable:
+            result = resolve_email(BetterContactQuery(linkedin_url=self.linkedin_url))
+        except BetterContactUnavailable:
             return None
         if result:
             self.api_email = result.email

@@ -1,8 +1,8 @@
 # openoutreach/emails/nudge.py
 """Per-launch email-setup nudge.
 
-Runs every `rundaemon` start after onboarding. Until both a finder key and a
-working mailbox exist, it prompts (on a TTY) or logs (headless) the next setup
+Runs every `rundaemon` start after onboarding. Until both a BetterContact key
+and a working mailbox exist, it prompts (on a TTY) or logs (headless) the next setup
 step — copy drawn from the GLF angle in marketing/email-sequence.md, filled with
 the user's own pipeline numbers. Never blocks: email is a deferrable upgrade.
 """
@@ -24,10 +24,10 @@ from openoutreach.linkedin.models import LinkedInProfile
 
 logger = logging.getLogger(__name__)
 
-FINDER_AFFILIATE_URL = "https://bettercontact.rocks?fpr=openoutreach"
+BETTERCONTACT_AFFILIATE_URL = "https://bettercontact.rocks?fpr=openoutreach"
 SENDER_AFFILIATE_URL = "https://icemail.ai?via=openoutreach"
 
-NO_FINDER = "no_finder"
+NO_BETTERCONTACT = "no_bettercontact"
 NO_MAILBOX = "no_mailbox"
 CONFIGURED = "configured"
 
@@ -35,9 +35,9 @@ CONFIGURED = "configured"
 # ── Setup state ──────────────────────────────────────────────────
 
 def email_state() -> str:
-    """Which setup step is next: NO_FINDER, NO_MAILBOX, or CONFIGURED."""
-    if not SiteConfig.load().finder_api_key:
-        return NO_FINDER
+    """Which setup step is next: NO_BETTERCONTACT, NO_MAILBOX, or CONFIGURED."""
+    if not SiteConfig.load().bettercontact_api_key:
+        return NO_BETTERCONTACT
     if not Mailbox.objects.exists():
         return NO_MAILBOX
     return CONFIGURED
@@ -46,16 +46,16 @@ def email_state() -> str:
 # ── Nudge copy ───────────────────────────────────────────────────
 
 # GAIN — the discovery engine already worked; email is the reach you're missing.
-NO_FINDER_NUDGE = """
+NO_BETTERCONTACT_NUDGE = """
 📧  LinkedIn finds the right people; email is how you reach them.
     Your model qualified {qualified} leads, but LinkedIn sends only ~{connect_cap}/day
     and most never accept. Email reaches the whole list — automatically, as they qualify.
-    Turn on email finding (a paid finder; the affiliate fee keeps OpenOutreach free):
-      {finder_url}
+    Turn on BetterContact email finding (paid; the affiliate fee keeps OpenOutreach free):
+      {bettercontact_url}
 """
 
 # URGENCY — the ~2-week warmup clock (always true); a loss-aversion line only
-# when the pipeline numbers are real (they're zero right after the finder is set).
+# when the pipeline numbers are real (they're zero right after BetterContact is set).
 NO_MAILBOX_NUDGE = """
 📧  Set up email sending. {icemail} mailboxes need a ~2-week warmup, and the clock
     only starts once you add them — so the sooner they're warming, the sooner you
@@ -83,10 +83,10 @@ def render(state: str, stats: dict, *, hyperlink: bool = False) -> str:
     ``hyperlink=True`` wraps the affiliate URLs in OSC 8 escapes for an
     interactive TTY; leave it False for headless logging (no escape codes).
     """
-    template = NO_FINDER_NUDGE if state == NO_FINDER else NO_MAILBOX_NUDGE
+    template = NO_BETTERCONTACT_NUDGE if state == NO_BETTERCONTACT else NO_MAILBOX_NUDGE
     wrap = _hyperlink if hyperlink else (lambda u: u)
     return template.format(
-        finder_url=wrap(FINDER_AFFILIATE_URL),
+        bettercontact_url=wrap(BETTERCONTACT_AFFILIATE_URL),
         sender_url=wrap(SENDER_AFFILIATE_URL),
         waiting_line=_waiting_line(stats),
         icemail=brand("icemail"),
@@ -97,7 +97,7 @@ def render(state: str, stats: dict, *, hyperlink: bool = False) -> str:
 def _waiting_line(stats: dict) -> str:
     """The mailbox nudge's loss-aversion line — shown only when its number is real.
 
-    Right after the finder is enabled nothing has resolved yet, so both counts are
+    Right after BetterContact is enabled nothing has resolved yet, so both counts are
     zero and the line is omitted; the warmup urgency carries the message. Returns a
     full indented line ending in a newline, or '' to collapse it out of the copy.
     """
@@ -162,9 +162,9 @@ def _store_mailboxes(rows: list[tuple[str, str]], daily_limit: int) -> ImportRep
 # ── Interactive prompt ───────────────────────────────────────────
 
 def prompt_email_setup() -> None:
-    """Drive the email-setup steps: finder key, then IceMail mailboxes.
+    """Drive the email-setup steps: BetterContact key, then IceMail mailboxes.
 
-    On a TTY, walks every remaining step in one session (set the finder and you
+    On a TTY, walks every remaining step in one session (set BetterContact and you
     are asked to paste mailboxes right after, not next launch). Headless, it can
     only log the next pending step. Never `sys.exit`s, so it can't block the
     LinkedIn discovery leg.
@@ -207,14 +207,14 @@ def _prompt_step(state: str) -> bool:
     return email_state() != state
 
 
-def _collect_finder_key() -> None:
-    key = Password("finder_api_key", "Finder API key (Enter to skip):", required=False).ask("")
+def _collect_bettercontact_key() -> None:
+    key = Password("bettercontact_api_key", "BetterContact API key (Enter to skip):", required=False).ask("")
     if not key or key == _BACK:
         return
     cfg = SiteConfig.load()
-    cfg.finder_api_key = key
+    cfg.bettercontact_api_key = key
     cfg.save()
-    logger.info("Finder key saved — enrichment is on; emails resolve as leads qualify.")
+    logger.info("BetterContact key saved — enrichment is on; emails resolve as leads qualify.")
 
 
 def _collect_mailboxes() -> None:
@@ -282,4 +282,4 @@ def _print_report(report: ImportReport) -> None:
     print(f"  Parsed {report.parsed} mailbox(es); {report.stored} authenticated and saved.")
 
 
-_COLLECT_BY_STATE = {NO_FINDER: _collect_finder_key, NO_MAILBOX: _collect_mailboxes}
+_COLLECT_BY_STATE = {NO_BETTERCONTACT: _collect_bettercontact_key, NO_MAILBOX: _collect_mailboxes}

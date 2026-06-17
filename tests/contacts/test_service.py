@@ -1,7 +1,7 @@
 # tests/contacts/test_service.py
 """Contacts store client — mock at the HTTP boundary (``service.requests``).
 
-Two best-effort calls: ``resolve`` (ask before paying the finder) and
+Two best-effort calls: ``resolve`` (ask the hub before paying BetterContact) and
 ``contribute`` (give back what we find, non-EU only, registering on first use).
 """
 from unittest.mock import MagicMock, patch

@@ -36,6 +36,21 @@ def _fake_leads(lead_id=1, public_id="alice"):
     return [{"lead_id": lead_id, "public_identifier": public_id, "url": "", "profile": {}}]
 
 
+def _enable_email_channel():
+    """Make email a viable channel: a sendable mailbox + a BetterContact key.
+
+    `_resolve_email` is gated on `has_mailbox()`, and the paid leg on
+    `bettercontact.is_configured()` — without both, enrichment is skipped.
+    """
+    from openoutreach.core.models import SiteConfig
+    from openoutreach.emails.models import Mailbox
+
+    cfg = SiteConfig.load()
+    cfg.bettercontact_api_key = "k"
+    cfg.save()
+    Mailbox.objects.create(username="me@acme.com", password="p", from_address="me@acme.com")
+
+
 class TestQualifyAutoDecisions:
     def test_always_calls_llm(self, db):
         qualifier = _make_trained_qualifier()
@@ -88,6 +103,7 @@ class TestQualifyAutoDecisions:
         qualifier = _make_trained_qualifier()
         session = MagicMock()
         _create_lead_with_embedding(1, "alice")
+        _enable_email_channel()
 
         with (
             patch("openoutreach.linkedin.db.leads.get_leads_for_qualification", return_value=_fake_leads()),
@@ -100,12 +116,13 @@ class TestQualifyAutoDecisions:
             mock_promote.return_value.lead.resolve_api_email.assert_called_once_with()
 
     def test_finder_hit_routes_to_ready_to_email(self, db):
-        """A finder hit (True) routes the Deal QUALIFIED → READY_TO_EMAIL."""
+        """A BetterContact hit (True) routes the Deal QUALIFIED → READY_TO_EMAIL."""
         from openoutreach.crm.models import DealState
 
         qualifier = _make_trained_qualifier()
         session = MagicMock()
         _create_lead_with_embedding(1, "alice")
+        _enable_email_channel()
 
         with (
             patch("openoutreach.linkedin.db.leads.get_leads_for_qualification", return_value=_fake_leads()),
@@ -120,14 +137,15 @@ class TestQualifyAutoDecisions:
             run_qualification(session, qualifier)
             mock_set_state.assert_called_once()
             assert mock_set_state.call_args.args[2] == DealState.READY_TO_EMAIL
-            mock_contribute.assert_called_once()  # finder hit → moment-1 give-back
-            assert mock_contribute.call_args.args[3] == "bettercontact"  # tagged as finder origin
+            mock_contribute.assert_called_once()  # BetterContact hit → moment-1 give-back
+            assert mock_contribute.call_args.args[3] == "bettercontact"  # tagged with the BetterContact origin
 
     def test_genuine_email_miss_stays_qualified(self, db):
-        """A genuine finder miss (False) leaves the Deal QUALIFIED → the connect funnel."""
+        """A genuine BetterContact miss (False) leaves the Deal QUALIFIED → the connect funnel."""
         qualifier = _make_trained_qualifier()
         session = MagicMock()
         _create_lead_with_embedding(1, "alice")
+        _enable_email_channel()
 
         with (
             patch("openoutreach.linkedin.db.leads.get_leads_for_qualification", return_value=_fake_leads()),
@@ -141,11 +159,12 @@ class TestQualifyAutoDecisions:
             run_qualification(session, qualifier)
             mock_set_state.assert_not_called()
 
-    def test_finder_unavailable_leaves_qualified(self, db):
-        """A finder that couldn't run (None) leaves the Deal QUALIFIED — no parking."""
+    def test_bettercontact_unavailable_leaves_qualified(self, db):
+        """BetterContact that couldn't run (None) leaves the Deal QUALIFIED — no parking."""
         qualifier = _make_trained_qualifier()
         session = MagicMock()
         _create_lead_with_embedding(1, "alice")
+        _enable_email_channel()
 
         with (
             patch("openoutreach.linkedin.db.leads.get_leads_for_qualification", return_value=_fake_leads()),
@@ -158,3 +177,28 @@ class TestQualifyAutoDecisions:
             mock_promote.return_value.lead.resolve_api_email.return_value = None
             run_qualification(session, qualifier)
             mock_set_state.assert_not_called()
+
+    def test_no_mailbox_skips_enrichment(self, db):
+        """With no mailbox to send from, neither finder runs — the Deal takes the connect leg."""
+        qualifier = _make_trained_qualifier()
+        session = MagicMock()
+        _create_lead_with_embedding(1, "alice")
+        # No mailbox created → has_mailbox() is False, even with a BetterContact key set.
+        from openoutreach.core.models import SiteConfig
+        cfg = SiteConfig.load()
+        cfg.bettercontact_api_key = "k"
+        cfg.save()
+
+        with (
+            patch("openoutreach.linkedin.db.leads.get_leads_for_qualification", return_value=_fake_leads()),
+            patch("openoutreach.linkedin.pipeline.qualify._fetch_profile_text", return_value="engineer at acme"),
+            patch("openoutreach.linkedin.ml.qualifier.qualify_with_llm", return_value=(1, "Good fit")),
+            patch.object(qualifier, "update"),
+            patch("openoutreach.linkedin.db.leads.promote_lead_to_deal") as mock_promote,
+            patch("openoutreach.core.db.deals.set_profile_state") as mock_set_state,
+            patch("openoutreach.contacts.service.resolve") as mock_resolve,
+        ):
+            run_qualification(session, qualifier)
+            mock_resolve.assert_not_called()  # hub lookup skipped — nothing to send
+            mock_promote.return_value.lead.resolve_api_email.assert_not_called()  # paid finder skipped
+            mock_set_state.assert_not_called()  # stays QUALIFIED for the connect funnel

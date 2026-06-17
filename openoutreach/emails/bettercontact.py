@@ -1,15 +1,22 @@
 # openoutreach/emails/bettercontact.py
-"""BetterContact email lookup — a single-key managed waterfall over an async
-submit→poll HTTP contract. `find_email` is the only public function."""
+"""BetterContact email lookup — resolve a work email for a qualified lead.
+
+`resolve_email` is the public entry point: it submits the lookup and waits for
+the result over an async submit→poll HTTP contract. `is_configured()` reports
+whether an API key is set. A missing key or a miss yields None / raises
+`BetterContactUnavailable`, never a bare error, so enrichment can't take down
+the daemon. This is the *paid* finder — distinct from the free hub lookup
+(`contacts.resolve`), which is tried first.
+"""
 from __future__ import annotations
 
 import logging
 import time
+from dataclasses import dataclass
 
 import requests
 
 from openoutreach.core.logging import brand
-from openoutreach.emails.finder import FinderQuery, FinderResult, FinderUnavailable
 
 logger = logging.getLogger(__name__)
 
@@ -26,21 +33,72 @@ _BROWSER_UA = (
 )
 
 
-def find_email(api_key: str, query: FinderQuery) -> FinderResult | None:
+class BetterContactUnavailable(Exception):
+    """BetterContact could not run — no API key configured, or the service was
+    unreachable. Distinct from a genuine miss (it ran, found no email)."""
+
+
+@dataclass(frozen=True)
+class BetterContactQuery:
+    """A lead to resolve. linkedin_url alone works; name/company lift the hit rate."""
+
+    linkedin_url: str
+    first_name: str = ""
+    last_name: str = ""
+    company: str = ""
+    company_domain: str = ""
+
+
+@dataclass(frozen=True)
+class BetterContactResult:
+    email: str
+    status: str
+
+
+def is_configured() -> bool:
+    """True when the BetterContact paid finder is configured (an API key is set)."""
+    from openoutreach.core.models import SiteConfig
+
+    return bool(SiteConfig.load().bettercontact_api_key)
+
+
+def resolve_email(query: BetterContactQuery) -> BetterContactResult | None:
+    """Resolve one lead's work email via BetterContact.
+
+    Returns the result on a hit, None on a genuine miss (it ran, found
+    nothing). Raises BetterContactUnavailable when no key is set or the service
+    is unreachable — the caller treats that differently from a real miss.
+    """
+    from openoutreach.core.models import SiteConfig
+
+    api_key = SiteConfig.load().bettercontact_api_key
+    if not api_key:
+        raise BetterContactUnavailable("no BetterContact API key configured")
+
+    logger.info("bettercontact: looking up work email for %s …", query.linkedin_url)
+    result = find_email(api_key, query)
+    if result:
+        logger.info("bettercontact: resolved %s for %s", result.email, query.linkedin_url)
+    else:
+        logger.info("bettercontact: no email for %s", query.linkedin_url)
+    return result
+
+
+def find_email(api_key: str, query: BetterContactQuery) -> BetterContactResult | None:
     """Submit one lead, poll until done, return its email — None on a genuine
-    miss (finder ran, found nothing). Raises FinderUnavailable on a transport
+    miss (it ran, found nothing). Raises BetterContactUnavailable on a transport
     failure (HTTP error, network drop, poll timeout) or an empty submit."""
     with _session(api_key) as session:
         try:
             request_id = _submit(session, query)
             if request_id:
-                logger.info("finder: submitted to %s (req %s), polling every %ds (up to %ds) …",
+                logger.info("bettercontact: submitted to %s (req %s), polling every %ds (up to %ds) …",
                             brand("bettercontact"), request_id, _POLL_INTERVAL_S, _POLL_TIMEOUT_S)
             row = _poll(session, request_id) if request_id else None
         except (requests.RequestException, TimeoutError) as exc:
-            raise FinderUnavailable(f"BetterContact unreachable: {exc}") from exc
+            raise BetterContactUnavailable(f"BetterContact unreachable: {exc}") from exc
     if request_id is None:
-        raise FinderUnavailable("BetterContact returned no request id")
+        raise BetterContactUnavailable("BetterContact returned no request id")
     return _row_to_result(row) if row else None
 
 
@@ -50,7 +108,7 @@ def _session(api_key: str) -> requests.Session:
     return session
 
 
-def _submit(session: requests.Session, query: FinderQuery) -> str | None:
+def _submit(session: requests.Session, query: BetterContactQuery) -> str | None:
     payload = {
         "data": [{
             "first_name": query.first_name,
@@ -80,15 +138,15 @@ def _poll(session: requests.Session, request_id: str) -> dict | None:
             data = body.get("data", [])
             return data[0] if data else None
         attempt += 1
-        logger.debug("finder: poll %d for %s — status=%s", attempt, request_id, status)
+        logger.debug("bettercontact: poll %d for %s — status=%s", attempt, request_id, status)
         if time.monotonic() >= deadline:
             raise TimeoutError(f"poll timed out for {request_id}")
         time.sleep(_POLL_INTERVAL_S)
 
 
-def _row_to_result(row: dict) -> FinderResult | None:
+def _row_to_result(row: dict) -> BetterContactResult | None:
     email = row.get("contact_email_address")
     status = row.get("contact_email_address_status")
     if email and status in _USABLE_STATUSES:
-        return FinderResult(email=email, status=status)
+        return BetterContactResult(email=email, status=status)
     return None

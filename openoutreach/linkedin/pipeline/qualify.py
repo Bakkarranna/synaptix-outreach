@@ -134,19 +134,29 @@ def _save_qualification_result(session, qualifier: BayesianQualifier, lead_id: i
 
 
 def _resolve_email(session, lead) -> bool:
-    """Resolution waterfall: free contacts-store read first, paid finder second.
+    """Resolution waterfall: free hub lookup first, paid BetterContact second.
 
-    A finder hit is given back to the central store (moment 1). Returns whether
-    an email was resolved — i.e. whether to route the Deal to READY_TO_EMAIL.
+    Gated on `has_mailbox()` — with no mailbox to send from, resolving an
+    address is pointless, so we skip both finders and let the Deal take the
+    connect leg. The hub lookup is itself only worth the round-trip when we can
+    send, so it sits behind the same gate. The paid call additionally needs
+    BetterContact configured. A BetterContact hit is given back to the hub
+    (moment 1). Returns whether an email was resolved — i.e. whether to route
+    the Deal to READY_TO_EMAIL.
     """
     from openoutreach.contacts import service as contacts
+    from openoutreach.emails import bettercontact
+    from openoutreach.emails.models import has_mailbox
 
-    cached_email = contacts.resolve(lead)
+    if not has_mailbox():
+        return False
+
+    cached_email = contacts.resolve(lead)  # free hub lookup
     if cached_email:
         lead.api_email = cached_email
         lead.save(update_fields=["api_email"])
         return True
-    if lead.resolve_api_email() is True:
+    if bettercontact.is_configured() and lead.resolve_api_email() is True:  # paid finder
         contacts.contribute(session, lead, [lead.api_email], contacts.ORIGIN_BETTERCONTACT)
         return True
     return False
