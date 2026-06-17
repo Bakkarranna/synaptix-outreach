@@ -121,6 +121,7 @@ class TestQualifyAutoDecisions:
             mock_set_state.assert_called_once()
             assert mock_set_state.call_args.args[2] == DealState.READY_TO_EMAIL
             mock_contribute.assert_called_once()  # finder hit → moment-1 give-back
+            assert mock_contribute.call_args.args[3] == "bettercontact"  # tagged as finder origin
 
     def test_genuine_email_miss_stays_qualified(self, db):
         """A genuine finder miss (False) leaves the Deal QUALIFIED → the connect funnel."""

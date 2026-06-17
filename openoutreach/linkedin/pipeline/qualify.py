@@ -147,7 +147,7 @@ def _resolve_email(session, lead) -> bool:
         lead.save(update_fields=["api_email"])
         return True
     if lead.resolve_api_email() is True:
-        contacts.contribute(session, lead, [lead.api_email])
+        contacts.contribute(session, lead, [lead.api_email], contacts.ORIGIN_BETTERCONTACT)
         return True
     return False
 

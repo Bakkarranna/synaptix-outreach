@@ -97,21 +97,21 @@ class TestContribute:
         _config()
         lead = LeadFactory(country_code="in")
         with patch.object(service.requests, "post") as post:
-            service.contribute(_session(), lead, [])
+            service.contribute(_session(), lead, [], service.ORIGIN_BETTERCONTACT)
         post.assert_not_called()
 
     def test_eea_lead_is_skipped_client_side(self):
         _config()
         lead = LeadFactory(country_code="de")
         with patch.object(service.requests, "post") as post:
-            service.contribute(_session(), lead, ["jane@acme.com"])
+            service.contribute(_session(), lead, ["jane@acme.com"], service.ORIGIN_BETTERCONTACT)
         post.assert_not_called()
 
     def test_unknown_country_is_skipped(self):
         _config()
         lead = LeadFactory(country_code="")
         with patch.object(service.requests, "post") as post:
-            service.contribute(_session(), lead, ["jane@acme.com"])
+            service.contribute(_session(), lead, ["jane@acme.com"], service.ORIGIN_BETTERCONTACT)
         post.assert_not_called()
 
     def test_with_token_posts_the_record(self):
@@ -121,7 +121,7 @@ class TestContribute:
             service.requests, "post", return_value=_resp(200, {"accepted": 1, "credits": 7}),
         ) as post:
             # the empty string is filtered out
-            service.contribute(_session(), lead, ["jane@acme.com", ""])
+            service.contribute(_session(), lead, ["jane@acme.com", ""], service.ORIGIN_PROFILE_INFO)
         url, kwargs = post.call_args.args[0], post.call_args.kwargs
         assert url.endswith("/api/contribute/")
         assert kwargs["headers"] == {"Authorization": "Bearer tok"}
@@ -129,6 +129,7 @@ class TestContribute:
             "public_identifier": "jane-doe",
             "country_code": "in",
             "emails": ["jane@acme.com"],
+            "origin": "profile_info",
         }
 
     def test_first_contribution_registers_and_persists_token(self):
@@ -137,11 +138,12 @@ class TestContribute:
         with patch.object(
             service.requests, "post", return_value=_resp(200, {"token": "NEW", "credits": 1}),
         ) as post:
-            service.contribute(_session(), lead, ["jane@acme.com"])
+            service.contribute(_session(), lead, ["jane@acme.com"], service.ORIGIN_BETTERCONTACT)
         url, kwargs = post.call_args.args[0], post.call_args.kwargs
         assert url.endswith("/api/register/")
         assert kwargs["json"]["linkedin_public_id"] == "me"
         assert kwargs["json"]["subscriber_email"] == "me@x.com"
+        assert kwargs["json"]["origin"] == "bettercontact"  # origin rides the folded register
         assert SiteConfig.load().contacts_api_token == "NEW"
 
     def test_outage_is_swallowed_and_no_token_stored(self):
@@ -150,5 +152,6 @@ class TestContribute:
         with patch.object(
             service.requests, "post", side_effect=requests.ConnectionError("boom"),
         ):
-            service.contribute(_session(), lead, ["jane@acme.com"])  # must not raise
+            # must not raise
+            service.contribute(_session(), lead, ["jane@acme.com"], service.ORIGIN_BETTERCONTACT)
         assert SiteConfig.load().contacts_api_token == ""

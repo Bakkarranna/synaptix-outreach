@@ -98,7 +98,7 @@ def capture_and_contribute(lead, session) -> None:
 
     emails = (lead.contact_info or {}).get("emails") or []
     logger.debug("contact-info captured for %s: %d email(s)", lead.public_identifier, len(emails))
-    contacts.contribute(session, lead, emails)
+    contacts.contribute(session, lead, emails, contacts.ORIGIN_PROFILE_INFO)
 
 
 def set_profile_state(session, public_identifier: str, new_state: str, reason: str = "", outcome: str = ""):

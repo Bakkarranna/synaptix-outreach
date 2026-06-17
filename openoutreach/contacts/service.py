@@ -24,6 +24,11 @@ logger = logging.getLogger(__name__)
 DEFAULT_API_URL = "https://hub.openoutreach.app"
 _TIMEOUT_S = 30
 
+# Where a contributed address came from — the wire values the hub maps to its
+# Contribution.Origin (an unrecognized value degrades to "unknown" server-side).
+ORIGIN_BETTERCONTACT = "bettercontact"  # paid-finder hit
+ORIGIN_PROFILE_INFO = "profile_info"  # 1st-degree contact-info overlay
+
 
 def resolve(lead) -> str | None:
     """A stored email for *lead*, or ``None`` — a miss, no token yet, or an
@@ -59,11 +64,13 @@ def resolve(lead) -> str | None:
     return email
 
 
-def contribute(session, lead, emails: list[str]) -> None:
+def contribute(session, lead, emails: list[str], origin: str) -> None:
     """Give *lead*'s email(s) to the store — best-effort, non-EU only.
 
-    The first contribution registers and mints the operator's token (kept in the
-    instance's own config, never the repo); later ones reuse it.
+    ``origin`` records where the address came from (``ORIGIN_BETTERCONTACT`` /
+    ``ORIGIN_PROFILE_INFO``). The first contribution registers and mints the
+    operator's token (kept in the instance's own config, never the repo); later
+    ones reuse it.
     """
     emails = [e for e in emails if e]
     if not emails:
@@ -79,6 +86,7 @@ def contribute(session, lead, emails: list[str]) -> None:
         "public_identifier": lead.public_identifier,
         "country_code": lead.country_code,
         "emails": emails,
+        "origin": origin,
     }
     if config.contacts_api_token:
         _send(config, "contribute", record, lead, headers=_auth(config.contacts_api_token))

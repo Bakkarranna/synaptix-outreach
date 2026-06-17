@@ -59,6 +59,18 @@ class TestContactCaptureOnConnect:
         assert method.call_count == 1
         assert _alice().contact_info == CONTACT
 
+    def test_connected_contributes_with_profile_info_origin(self, fake_session):
+        _promote_alice(fake_session)
+        patcher, _ = _patch_api()
+        with patch("openoutreach.contacts.service.contribute") as contribute:
+            try:
+                set_profile_state(fake_session, "alice", ProfileState.CONNECTED.value)
+            finally:
+                patcher.stop()
+        contribute.assert_called_once()
+        # the overlay scrape is tagged as profile_info provenance
+        assert contribute.call_args.args[3] == "profile_info"
+
     def test_non_connected_does_not_capture(self, fake_session):
         _promote_alice(fake_session)
         patcher, method = _patch_api()
