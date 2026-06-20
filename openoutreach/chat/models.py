@@ -43,16 +43,6 @@ class ChatMessage(models.Model):
         'self', blank=True, null=True, on_delete=models.CASCADE,
         related_name="%(app_label)s_%(class)s_topic_related",
     )
-    recipients = models.ManyToManyField(
-        settings.AUTH_USER_MODEL, blank=True,
-        verbose_name=_("recipients"),
-        related_name="%(app_label)s_%(class)s_recipients_related",
-    )
-    to = models.ManyToManyField(
-        settings.AUTH_USER_MODEL, blank=True,
-        verbose_name=_("to"),
-        related_name="%(app_label)s_%(class)s_to_related",
-    )
     creation_date = models.DateTimeField(
         default=timezone.now,
         verbose_name=_("Creation date")
