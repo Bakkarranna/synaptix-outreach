@@ -209,6 +209,7 @@ def _prompt_step(state: str) -> bool:
 
 
 def _collect_bettercontact_key() -> None:
+    print("  Your first 50 lookups are free with the subscription — try it at no cost.")
     key = Password("bettercontact_api_key", "BetterContact API key (Enter to skip):", required=False).ask("")
     if not key or key == _BACK:
         return

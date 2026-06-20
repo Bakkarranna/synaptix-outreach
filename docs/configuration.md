@@ -76,7 +76,8 @@ Admin or captured by the onboarding nudge.
 
 When set, a qualified lead's work email is resolved on demand (`emails/bettercontact.py`); a hit forks
 the deal onto the email channel, a miss leaves it on the LinkedIn channel. Misses are free to retry —
-the provider bills only usable hits. **Enrichment only runs when a sending mailbox exists** — with no
+the provider bills only usable hits. The first 50 lookups are free with the subscription, so you can
+try enrichment at no cost. **Enrichment only runs when a sending mailbox exists** — with no
 mailbox to send from, qualified leads route straight to LinkedIn and neither the hub lookup nor the
 paid finder is called.
 
