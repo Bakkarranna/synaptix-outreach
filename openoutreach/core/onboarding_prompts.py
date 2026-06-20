@@ -7,7 +7,6 @@ is kept — the cloud-only VPN questions and their geo lookups are dropped.
 from __future__ import annotations
 
 from openoutreach.core.onboarding_wizard import (
-    Autocomplete,
     Confirm,
     IntText,
     MultilineText,
@@ -35,18 +34,19 @@ LINKEDIN_PASSWORD = Password("linkedin_password", "LinkedIn password")
 
 # ── LLM ──────────────────────────────────────────────────────────
 
-LLM_PROVIDERS = [
-    "openai", "anthropic", "google", "groq", "mistral", "cohere", "openai_compatible",
-]
-LLM_PROVIDER = Autocomplete(
-    "llm_provider", "LLM provider",
-    resolver=lambda _: LLM_PROVIDERS, default="openai",
+# The model carries its provider as a pydantic-ai `provider:model` identifier —
+# one field, so the key and the provider can never disagree (the bug that sent an
+# sk-ant- key to OpenAI). Valid providers: openai, anthropic, google, groq,
+# mistral, cohere, openai_compatible.
+AI_MODEL = Text(
+    "ai_model",
+    "AI model as provider:model "
+    "(e.g. anthropic:claude-sonnet-4-5-20250929, openai:gpt-4o, groq:llama-3.3-70b)",
 )
-LLM_API_KEY = Password("llm_api_key", "LLM API key (e.g. sk-...)")
-AI_MODEL = Text("ai_model", "AI model (e.g. gpt-4o, claude-sonnet-4-5-20250929)")
+LLM_API_KEY = Password("llm_api_key", "LLM API key for that provider (e.g. sk-...)")
 LLM_API_BASE = Text(
     "llm_api_base",
-    "LLM API base URL (only for openai_compatible — OpenRouter / Together / Ollama / vLLM)",
+    "LLM API base URL (only for openai_compatible:* models — OpenRouter / Together / Ollama / vLLM)",
     required=False,
 )
 
@@ -74,7 +74,7 @@ SELF_HOSTED_QUESTIONS = [
     CAMPAIGN_NAME, PRODUCT_DESCRIPTION, CAMPAIGN_OBJECTIVE, BOOKING_LINK,
     SEED_URLS,
     LINKEDIN_EMAIL, LINKEDIN_PASSWORD,
-    LLM_PROVIDER, LLM_API_KEY, AI_MODEL, LLM_API_BASE,
+    AI_MODEL, LLM_API_KEY, LLM_API_BASE,
     NEWSLETTER,
     CONNECT_DAILY, CONNECT_WEEKLY, FOLLOW_UP_DAILY,
     LEGAL,

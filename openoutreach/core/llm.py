@@ -88,55 +88,55 @@ def run_agent_sync(coro: Awaitable[_T]) -> _T:
 
 # ── Per-provider builders ────────────────────────────────────────────
 
-def _build_openai(cfg):
+def _build_openai(model, api_key, api_base):
     from openai import AsyncOpenAI
     from pydantic_ai.models.openai import OpenAIModel
     from pydantic_ai.providers.openai import OpenAIProvider
-    client = AsyncOpenAI(api_key=cfg.llm_api_key, max_retries=_MAX_RETRIES)
-    return OpenAIModel(cfg.ai_model, provider=OpenAIProvider(openai_client=client))
+    client = AsyncOpenAI(api_key=api_key, max_retries=_MAX_RETRIES)
+    return OpenAIModel(model, provider=OpenAIProvider(openai_client=client))
 
 
-def _build_anthropic(cfg):
+def _build_anthropic(model, api_key, api_base):
     from anthropic import AsyncAnthropic
     from pydantic_ai.models.anthropic import AnthropicModel
     from pydantic_ai.providers.anthropic import AnthropicProvider
-    client = AsyncAnthropic(api_key=cfg.llm_api_key, max_retries=_MAX_RETRIES)
-    return AnthropicModel(cfg.ai_model, provider=AnthropicProvider(anthropic_client=client))
+    client = AsyncAnthropic(api_key=api_key, max_retries=_MAX_RETRIES)
+    return AnthropicModel(model, provider=AnthropicProvider(anthropic_client=client))
 
 
-def _build_google(cfg):
+def _build_google(model, api_key, api_base):
     from pydantic_ai.models.google import GoogleModel
     from pydantic_ai.providers.google import GoogleProvider
-    return GoogleModel(cfg.ai_model, provider=GoogleProvider(api_key=cfg.llm_api_key))
+    return GoogleModel(model, provider=GoogleProvider(api_key=api_key))
 
 
-def _build_groq(cfg):
+def _build_groq(model, api_key, api_base):
     from groq import AsyncGroq
     from pydantic_ai.models.groq import GroqModel
     from pydantic_ai.providers.groq import GroqProvider
-    client = AsyncGroq(api_key=cfg.llm_api_key, max_retries=_MAX_RETRIES)
-    return GroqModel(cfg.ai_model, provider=GroqProvider(groq_client=client))
+    client = AsyncGroq(api_key=api_key, max_retries=_MAX_RETRIES)
+    return GroqModel(model, provider=GroqProvider(groq_client=client))
 
 
-def _build_mistral(cfg):
+def _build_mistral(model, api_key, api_base):
     from pydantic_ai.models.mistral import MistralModel
     from pydantic_ai.providers.mistral import MistralProvider
-    return MistralModel(cfg.ai_model, provider=MistralProvider(api_key=cfg.llm_api_key))
+    return MistralModel(model, provider=MistralProvider(api_key=api_key))
 
 
-def _build_cohere(cfg):
+def _build_cohere(model, api_key, api_base):
     from pydantic_ai.models.cohere import CohereModel
     from pydantic_ai.providers.cohere import CohereProvider
-    return CohereModel(cfg.ai_model, provider=CohereProvider(api_key=cfg.llm_api_key))
+    return CohereModel(model, provider=CohereProvider(api_key=api_key))
 
 
-def _build_openai_compatible(cfg):
-    if not cfg.llm_api_base:
+def _build_openai_compatible(model, api_key, api_base):
+    if not api_base:
         raise ValueError("LLM_API_BASE is required for the openai_compatible provider.")
     from pydantic_ai.models.openai import OpenAIModel
     from pydantic_ai.providers.openai import OpenAIProvider
-    return OpenAIModel(cfg.ai_model, provider=OpenAIProvider(
-        base_url=cfg.llm_api_base, api_key=cfg.llm_api_key,
+    return OpenAIModel(model, provider=OpenAIProvider(
+        base_url=api_base, api_key=api_key,
     ))
 
 
@@ -149,6 +149,34 @@ _PROVIDER_BUILDERS: dict[str, Callable] = {
     "cohere": _build_cohere,
     "openai_compatible": _build_openai_compatible,
 }
+
+# Bare-model fallbacks: only these prefixes are unambiguous enough to route
+# without an explicit `provider:` prefix (mirrors pydantic-ai's own legacy map).
+# groq/mistral/cohere/openai_compatible carry no reliable prefix, so they must
+# be written `provider:model`.
+_LEGACY_MODEL_PREFIXES = {
+    "gpt": "openai", "o1": "openai", "o3": "openai",
+    "claude": "anthropic", "gemini": "google",
+}
+
+
+def split_model_id(ai_model: str) -> tuple[str, str]:
+    """Split a `provider:model` identifier into ``(provider, model)``.
+
+    A bare model name is accepted only when its prefix unambiguously implies a
+    provider (see ``_LEGACY_MODEL_PREFIXES``); anything else raises so the
+    misconfiguration surfaces instead of silently hitting the wrong API.
+    """
+    if ":" in ai_model:
+        provider, _, model = ai_model.partition(":")
+        return provider, model
+    for prefix, provider in _LEGACY_MODEL_PREFIXES.items():
+        if ai_model.startswith(prefix):
+            return provider, ai_model
+    raise ValueError(
+        f"AI_MODEL {ai_model!r} has no provider prefix. "
+        f"Use 'provider:model', e.g. 'anthropic:{ai_model}'."
+    )
 
 
 # ── Model factory ────────────────────────────────────────────────────
@@ -168,7 +196,11 @@ def _validated_site_config():
 def get_llm_model():
     """Return a configured pydantic-ai `Model` for the current `SiteConfig`."""
     cfg = _validated_site_config()
-    builder = _PROVIDER_BUILDERS.get(cfg.llm_provider)
+    provider, model = split_model_id(cfg.ai_model)
+    builder = _PROVIDER_BUILDERS.get(provider)
     if builder is None:
-        raise ValueError(f"Unknown LLM provider: {cfg.llm_provider!r}")
-    return builder(cfg)
+        raise ValueError(
+            f"Unknown LLM provider {provider!r} in AI_MODEL {cfg.ai_model!r}. "
+            f"Use one of: {', '.join(_PROVIDER_BUILDERS)}."
+        )
+    return builder(model, cfg.llm_api_key, cfg.llm_api_base)

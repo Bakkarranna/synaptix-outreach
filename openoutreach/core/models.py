@@ -9,22 +9,19 @@ from django.utils import timezone
 class SiteConfig(models.Model):
     """Singleton model for global site configuration (LLM keys, etc.)."""
 
-    class LLMProvider(models.TextChoices):
-        OPENAI = "openai", "OpenAI"
-        ANTHROPIC = "anthropic", "Anthropic"
-        GOOGLE = "google", "Google"
-        GROQ = "groq", "Groq"
-        MISTRAL = "mistral", "Mistral"
-        COHERE = "cohere", "Cohere"
-        OPENAI_COMPATIBLE = "openai_compatible", "OpenAI-compatible"
-
-    llm_provider = models.CharField(
-        max_length=32,
-        choices=LLMProvider.choices,
-        default=LLMProvider.OPENAI,
+    # The model is a pydantic-ai model identifier in `provider:model` form
+    # (e.g. ``anthropic:claude-sonnet-4-5-20250929``, ``openai:gpt-4o``,
+    # ``groq:llama-3.3-70b``). The provider lives inside this single string —
+    # there is no separate provider field to drift out of sync. A bare model
+    # name whose prefix is unambiguous (``gpt``/``o1``/``o3``→openai,
+    # ``claude``→anthropic, ``gemini``→google) is also accepted; everything
+    # else must carry an explicit prefix. See core/llm.py:split_model_id.
+    ai_model = models.CharField(
+        max_length=200, blank=True, default="",
+        help_text="provider:model, e.g. anthropic:claude-sonnet-4-5-20250929",
     )
     llm_api_key = models.CharField(max_length=500, blank=True, default="")
-    ai_model = models.CharField(max_length=200, blank=True, default="")
+    # Only consulted for the openai_compatible provider (OpenRouter / Together / Ollama / vLLM).
     llm_api_base = models.CharField(max_length=500, blank=True, default="")
 
     # BetterContact email-finder key; blank disables enrichment (see emails/bettercontact.py).

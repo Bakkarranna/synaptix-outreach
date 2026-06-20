@@ -414,7 +414,7 @@ def run_daemon(session):
             task.mark_failed()
             logger.error(
                 colored("Daemon stopped — LLM API error", "red", attrs=["bold"])
-                + "\n%s\nCheck llm_provider, ai_model, llm_api_key, and llm_api_base in Admin → Site Configuration.", e,
+                + "\n%s\nCheck ai_model (provider:model), llm_api_key, and llm_api_base in Admin → Site Configuration.", e,
             )
             return
         except Exception:
