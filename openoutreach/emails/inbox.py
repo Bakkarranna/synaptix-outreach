@@ -35,12 +35,13 @@ import email
 import imaplib
 import logging
 import re
+import time
 from email.message import Message
 from email.utils import parseaddr, parsedate_to_datetime
 
 logger = logging.getLogger(__name__)
 
-IMAP_TIMEOUT_SECONDS = 30
+IMAP_TIMEOUT_SECONDS = 45
 
 # Headers a plus-addressed alias can land in. Clients rewrite recipients freely and
 # some providers only record the tagged address in a delivery header, so an opt-out
@@ -56,27 +57,53 @@ def read_mail(mailbox) -> tuple[int, int]:
 
     Best-effort: an unreachable box logs and returns ``(0, 0)`` with its cursor
     untouched, so nothing is skipped when the network is at fault rather than the
-    mail. The cursor only moves after the walk completes.
+    mail. The cursor only moves after the walk completes. The whole pass rides
+    ``retry_imap``, and the connection is **reused** across passes — Gmail
+    throttles rapid logins (measured on this install: logins delayed 10–45s and
+    dropped once connection churn built up), so one warm authenticated connection
+    per box replaces a login-per-pass with a NOOP-per-pass. A pass that exhausts
+    every retry puts the whole walk into a short cooldown so a throttled or down
+    endpoint is not hit again immediately.
     """
-    imap = imaplib.IMAP4_SSL(mailbox.imap_host, mailbox.imap_port, timeout=IMAP_TIMEOUT_SECONDS)
-    try:
-        imap.login(mailbox.username, mailbox.password)
-        uidvalidity, uidnext = _uid_state(imap)
-        if uidvalidity is None:
-            logger.warning("mail pass: %s did not report UIDVALIDITY", mailbox.from_address)
-            return 0, 0
-        start = _resume_from(mailbox, uidvalidity)
-        status, _ = imap.select("INBOX", readonly=True)
-        if status != "OK":
-            logger.warning("mail pass: cannot select INBOX on %s", mailbox.from_address)
-            return 0, 0
-        replies, suppressed = _walk(imap, mailbox, start)
-    except (imaplib.IMAP4.error, OSError) as exc:
-        logger.warning("mail pass: could not read %s (%s)", mailbox.from_address, exc)
-        return 0, 0
-    finally:
-        _logout(imap)
+    from openoutreach.emails.imap_retry import retry_imap
 
+    global _next_mail_pass_at
+    if time.monotonic() < _next_mail_pass_at:
+        logger.info("mail pass: %s skipped — IMAP in cooldown after recent failures",
+                    mailbox.from_address)
+        return 0, 0
+
+    def _pass():
+        imap = _session_for(mailbox)
+        try:
+            uidvalidity, uidnext = _uid_state(imap)
+            if uidvalidity is None:
+                logger.warning("mail pass: %s did not report UIDVALIDITY", mailbox.from_address)
+                return None
+            start = _resume_from(mailbox, uidvalidity)
+            status, _ = imap.select("INBOX", readonly=True)
+            if status != "OK":
+                logger.warning("mail pass: cannot select INBOX on %s", mailbox.from_address)
+                return None
+            replies, suppressed = _walk(imap, mailbox, start)
+            return replies, suppressed, uidvalidity, uidnext, start
+        except (imaplib.IMAP4.error, OSError):
+            # A broken connection must not be reused — drop it so the retry (and
+            # every later pass) reconnects fresh.
+            _drop_session(mailbox.pk)
+            raise
+
+    try:
+        outcome = retry_imap(_pass)
+    except (imaplib.IMAP4.error, OSError) as exc:
+        _next_mail_pass_at = time.monotonic() + MAIL_PASS_COOLDOWN_S
+        logger.warning("mail pass: could not read %s (%s) — backing off %ss",
+                       mailbox.from_address, exc, int(MAIL_PASS_COOLDOWN_S))
+        return 0, 0
+    if outcome is None:
+        return 0, 0
+
+    replies, suppressed, uidvalidity, uidnext, start = outcome
     _advance_cursor(mailbox, uidnext, uidvalidity)
     if replies or suppressed:
         logger.info("mail pass: %s read UIDs >%d — %d reply(ies), %d suppressed",
@@ -255,6 +282,80 @@ def _status_int(text: str, attribute: str) -> int | None:
 
 
 # ── IMAP transport ────────────────────────────────────────────────
+
+# One authenticated IMAP connection per mailbox, held across passes and reused.
+# Gmail throttles rapid logins (measured on this install: logins delayed 10–45s
+# and dropped once connection churn built up), and every pass used to open + log
+# in + log out — a warm connection turns a login-per-pass into a NOOP-per-pass.
+# Process-held (like warmth's daily stamp): a restart reconnects once. Not
+# threadsafe by design — the daemon is single-threaded.
+_sessions: dict[int, imaplib.IMAP4_SSL] = {}
+
+# After a pass that exhausts every retry, skip further passes until this
+# (monotonic) time, so a throttled or down endpoint is not hammered.
+_next_mail_pass_at: float = 0.0
+MAIL_PASS_COOLDOWN_S = 600
+
+
+def _session_for(mailbox) -> imaplib.IMAP4_SSL:
+    """The mailbox's cached authenticated connection, reconnecting when needed.
+
+    A NOOP is the cheap liveness probe: it answers in milliseconds on a live
+    connection and errors on a dead one, so a dropped session costs one round
+    trip per pass rather than a surprise mid-walk.
+    """
+    pk = mailbox.pk
+    conn = _sessions.get(pk)
+    if conn is not None:
+        try:
+            conn.noop()
+            return conn
+        except (imaplib.IMAP4.error, OSError):
+            _drop_session(pk)
+    conn = imaplib.IMAP4_SSL(mailbox.imap_host, mailbox.imap_port,
+                             timeout=IMAP_TIMEOUT_SECONDS)
+    conn.login(mailbox.effective_imap_username, mailbox.effective_imap_password)
+    _sessions[pk] = conn
+    return conn
+
+
+def _drop_session(pk: int) -> None:
+    """Close and forget one cached session; a dead socket must not be reused."""
+    conn = _sessions.pop(pk, None)
+    if conn is None:
+        return
+    try:
+        conn.shutdown()
+    except Exception:
+        pass
+
+
+def close_imap_sessions() -> None:
+    """Close every cached session — test teardown, and an operator Stop."""
+    for pk in list(_sessions):
+        _drop_session(pk)
+
+
+
+def verify_imap(host: str, port: int, username: str, password: str) -> tuple[bool, str]:
+    """IMAP login check — proves the read side of a mailbox before it is stored.
+
+    Companion to ``emails.smtp.verify_auth`` for the read side: a box whose
+    replies land in a different account (Hostinger SMTP → Gmail via Cloudflare
+    routing) must not be stored unless its IMAP credentials actually log in.
+    Returns ``(True, "")`` on success, ``(False, reason)`` otherwise.
+    """
+    try:
+        imap = imaplib.IMAP4_SSL(host, port, timeout=IMAP_TIMEOUT_SECONDS)
+    except (imaplib.IMAP4.error, OSError) as exc:
+        return False, f"imap connection failed: {exc}"
+    try:
+        imap.login(username, password)
+    except (imaplib.IMAP4.error, OSError) as exc:
+        return False, f"imap auth rejected: {exc}"
+    finally:
+        _logout(imap)
+    return True, "ok"
 
 
 def _new_uids(imap, start_uid: int) -> list:

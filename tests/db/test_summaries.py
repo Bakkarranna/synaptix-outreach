@@ -122,6 +122,27 @@ class TestMaterializeProfileSummary:
         deal_with_lead.refresh_from_db()
         assert deal_with_lead.profile_summary is None
 
+    def test_phone_and_website_surfaced_even_when_extraction_misses(self, db, campaign,
+                                                                     deal_with_lead):
+        """The outreach agent always sees phone/website, LLM extraction or not."""
+        from openoutreach.core.db.summaries import materialize_profile_summary_if_missing
+
+        deal_with_lead.lead.profile_text = "founder at acme"
+        deal_with_lead.lead.phone = "+15125550142"
+        deal_with_lead.lead.website = "https://acmewidgets.example/"
+        deal_with_lead.lead.save()
+
+        # Extraction deliberately drops the contact details — the deterministic
+        # append must still put them in front of the outreach agent.
+        with patch("openoutreach.core.db.summaries.extract_facts",
+                   return_value=["Founder at Acme."]):
+            materialize_profile_summary_if_missing(deal_with_lead)
+
+        deal_with_lead.refresh_from_db()
+        facts = deal_with_lead.profile_summary["facts"]
+        assert "The lead's phone number is +15125550142." in facts
+        assert "The lead's website is https://acmewidgets.example/." in facts
+
 
 class TestUpdateChatSummary:
     BINDING = {"seller_name": "Diego"}

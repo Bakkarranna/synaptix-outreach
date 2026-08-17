@@ -108,6 +108,31 @@ class TestProfileTextFor:
         }
         assert discovery.profile_text_for(row) == "founder"
 
+    def test_keeps_the_enrichment_fields_for_the_lookup_leg(self):
+        # The paid finder hits far more often with name + company than with a bare
+        # LinkedIn URL; those four row fields ride in source_fields so the lookup
+        # leg can hand the provider a structured query. ``company_name`` also lands
+        # in profile_text (it is a TEXT_FIELD), but only as one word of a flattened
+        # blob — the structured copy is what the query needs.
+        row = {
+            "contact_first_name": "Campbell", "contact_last_name": "Phillips",
+            "company_name": "Tumblr", "company_domain": "tumblr.com",
+            "contact_job_title": "Ceo & founder",
+        }
+        assert discovery.source_fields_for(row) == {
+            "contact_first_name": "Campbell", "contact_last_name": "Phillips",
+            "company_name": "Tumblr", "company_domain": "tumblr.com",
+            "contact_job_title": "Ceo & founder",
+        }
+        # names and the domain never reach the LLM's firmographic text
+        text = discovery.profile_text_for(row)
+        assert "campbell" not in text and "phillips" not in text
+        assert "tumblr.com" not in text
+
+    def test_missing_enrichment_fields_are_skipped(self):
+        assert discovery.source_fields_for({"contact_job_title": "CEO"}) == {
+            "contact_job_title": "CEO"}
+
 
 class TestEmbedProfile:
     def test_appends_query_terms_to_profile_text(self):
@@ -176,6 +201,47 @@ class TestDescribeFilters:
     def test_renders_an_unknown_key_rather_than_dropping_it(self):
         """Filters are free-form dicts; a key we don't model must still be visible."""
         assert discovery.describe_filters({"some_new_filter": "x"}) == "some_new_filter x"
+
+
+class TestFiltersForCountry:
+    """The campaign's target country rides every query as a fixed constraint."""
+
+    def test_france_rides_the_query(self):
+        out = discovery.filters_for({("lead_job_title", "founder")}, country_code="fr")
+        assert out["lead_location"] == {"include": ["France"]}
+
+    def test_country_wins_over_node_location_tokens(self):
+        """A node that learned another country while the campaign targeted the US
+        must query within the campaign's country, not the empty intersection — an
+        empty page would read as end-of-depth and retire the query line."""
+        out = discovery.filters_for(
+            {("lead_job_title", "founder"), ("lead_location", "belgium")},
+            country_code="fr",
+        )
+        assert out["lead_location"] == {"include": ["France"]}
+
+    def test_unmapped_country_adds_no_constraint(self):
+        """An unmapped code must not guess a spelling the index lacks."""
+        out = discovery.filters_for({("lead_job_title", "founder")}, country_code="zz")
+        assert "lead_location" not in out
+
+    def test_code_is_case_insensitive(self):
+        assert discovery.filters_for({}, country_code="FR")["lead_location"] == {
+            "include": ["France"]}
+
+    def test_blank_code_keeps_previous_behavior(self):
+        out = discovery.filters_for({("lead_job_title", "founder")})
+        assert "lead_location" not in out
+
+    def test_to_filters_rides_the_campaign_country(self, campaign):
+        """The node's provider query carries the campaign's country automatically —
+        the walk can never search itself out of country."""
+        from openoutreach.core.models import QueryNode
+
+        campaign.country_code = "fr"
+        campaign.save(update_fields=["country_code"])
+        node = QueryNode.objects.create(campaign=campaign, token_key="x")
+        assert node.to_filters()["lead_location"] == {"include": ["France"]}
 
 
 class TestSeedKeywords:

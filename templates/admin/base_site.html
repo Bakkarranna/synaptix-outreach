@@ -1,0 +1,17 @@
+{% extends "admin/base.html" %}
+{% load static %}
+{% block title %}{{ title }} | {{ site_title|default:"Synaptix Studio Console" }}{% endblock %}
+
+{% block branding %}
+<div id="site-name">
+  <a href="{% url 'admin:index' %}" style="display:inline-flex;align-items:center;gap:10px;color:#e3e2e7;text-decoration:none;">
+    <span style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:7px;background:#1e3e78;color:#fff;font-weight:800;font-size:14px;">S</span>
+    <span>
+      <span style="display:block;font-weight:700;letter-spacing:.3px;">Synaptix Studio Console</span>
+      <span style="display:block;font-size:10px;font-weight:400;color:#8e909b;letter-spacing:.4px;">Distinction in Design. Discipline in Code.</span>
+    </span>
+  </a>
+</div>
+{% endblock %}
+
+{% block nav-global %}{% endblock %}

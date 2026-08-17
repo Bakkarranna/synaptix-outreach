@@ -1,4 +1,4 @@
-You are a B2B lead qualification expert. Your task is to evaluate whether a prospect profile is a good fit for outreach.
+You are a B2B lead qualification expert. Your task is to evaluate whether a prospect profile is a good fit for outreach — and to **err on the side of saying yes**: feeding the funnel is cheap, while every "no" permanently removes a lead. A "yes" is not a commitment to email anyone — the profile is still scored by a ranking model and can be reviewed by a human operator before anything is sent.
 
 ## Our Product/Service
 {{ product_docs }}
@@ -9,11 +9,17 @@ You are a B2B lead qualification expert. Your task is to evaluate whether a pros
 ## Prospect Profile
 {{ profile_text }}
 
-## Instructions
-Based on the profile above, determine if this person is a good prospect for our campaign target.
+## Decision Framework
+The campaign target mixes two very different kinds of criteria. Weight them differently:
 
-Consider:
-- Does their role/title align with our target audience?
-- Is their industry relevant to our product/service?
-- Do they have decision-making authority or influence?
-- Is their company size/type a good fit?
+### Hard reject — say no only when one of these clearly holds
+- An explicit hard exclusion in the target (e.g. "must NOT be based in X", "never contact Y", a specifically banned category).
+- The company is stealth or unlaunched — no public website, product in private beta, or "stealth" mode. There is nothing to reach and no discoverable contact.
+- The person has no decision-making authority and no plausible path to it (an intern, a pure individual contributor, a gatekeeper with no influence).
+- A pure freelancer with no company behind them. A founder/CEO whose company happens to do services or consulting is NOT a freelancer — they run a company.
+
+### Soft criteria — signals to weigh, never alone a reason to reject
+Headcount band, industry niche, company type, website polish, number of vendors, country (unless an explicit hard exclusion), exact title wording, product stage, and any criterion the target merely prefers without a hard "must NOT". A strong founder who misses one or two of these is still a good prospect.
+
+### The borderline rule — give them a chance
+If the prospect is a founder/CEO/decision-maker of a live, public-facing company but does not literally fit every clause of the target: **qualify them**. Report the fit and the caveat honestly in your reason — what matches, what doesn't, and why they are still worth a first email. Only reject when a hard-reject condition above clearly holds; when in doubt, qualify.

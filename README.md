@@ -1,277 +1,169 @@
-![OpenOutreach Logo](docs/logo.png)
+# Synaptix Studio Console
 
-> **Describe your product. Define your target market. The AI finds the leads and emails them for you.**
+**The internal operations dashboard for Synaptix Studio's outreach engine.**
 
-<div align="center">
+One console for the whole team — the studio lead and every operator see the
+pipeline live, run the engine, read conversations, and manage who has access.
+Under the hood it is the OpenOutreach engine (a self-hosted, email-first AI
+sales agent): it discovers leads from a licensed data provider, qualifies them
+with an ML + LLM loop, resolves work emails, and runs agentic cold outreach
+from mailboxes the studio owns.
 
-[![GitHub stars](https://img.shields.io/github/stars/eracle/OpenOutreach.svg?style=flat-square&logo=github)](https://github.com/eracle/OpenOutreach/stargazers)
-[![GitHub forks](https://img.shields.io/github/forks/eracle/OpenOutreach.svg?style=flat-square&logo=github)](https://github.com/eracle/OpenOutreach/network/members)
-[![License: GPLv3](https://img.shields.io/badge/License-GPLv3-blue.svg?style=flat-square)](https://www.gnu.org/licenses/gpl-3.0)
-[![Open Issues](https://img.shields.io/github/issues/eracle/OpenOutreach.svg?style=flat-square&logo=github)](https://github.com/eracle/OpenOutreach/issues)
-
-<br/>
-
-# Demo:
-
-<img src="docs/demo.gif" alt="Demo Animation" width="100%"/>
-
-</div>
+> **Distinction in Design. Discipline in Code.**
 
 ---
 
-### 🚀 What is OpenOutreach?
+## Quickstart (one command each)
 
-OpenOutreach is a **self-hosted, open-source, email-first AI sales agent** for B2B lead generation. It discovers leads from a **licensed data provider**, qualifies them on your own machine, and runs **agentic email outreach from a mailbox you own** — with **zero platform-ToS surface**: it is browserless, uses no social-network account, and does no scraping. Unlike other tools, **you don't need a list of profiles to contact** — you describe your product and your target market, and the system autonomously discovers, qualifies, and emails the right people.
+### Windows (the studio's daily driver)
 
-**How it works:**
+```powershell
+# First time on a machine
+powershell -ExecutionPolicy Bypass -File scripts\setup.ps1
 
-1. **You provide** a product description and a campaign objective (e.g. "SaaS analytics platform" targeting "VP of Engineering at Series B startups")
-2. **An LLM turns that into an ICP filter** and pages matching firmographic profiles from a **licensed discovery source** (BetterContact **Lead Finder**) — no emails yet, billed nothing
-3. **A model scores the profiles** (Gaussian Process Regressor on profile embeddings) so the expensive steps go to the most promising candidates first — explore/exploit over the pool
-4. **An LLM classifies** each candidate the model selects, and each decision is fed back into the model
-5. **Only the best-fit leads get a paid email lookup.** A confidence gate rations a work-email resolution (one credit per verified hit); a hit routes the lead into **agentic email** — an AI agent sends a personalized opener from your mailbox, then reads replies and runs multi-turn follow-up
+# Every time
+powershell -ExecutionPolicy Bypass -File scripts\run.ps1
+scripts\stop.ps1          # stop daemon + web
+```
 
-The point of the scoring layer is cost: searching the licensed source is free, so the system can afford to look at a lot and spend paid lookups only on the best fits. *(The learning loop is an active experiment — it is not yet shown to beat picking at random, and no claim is made that it does.)*
+`setup.ps1` creates the virtualenv, installs dependencies, migrates the
+database, bootstraps the CRM, and — if no staff account exists — walks you
+through creating the **Lead** account (the person who manages everything).
 
-**Why choose OpenOutreach?**
+`run.ps1` starts the outreach daemon and the web server in the background and
+opens the browser. Open **http://localhost:8000/dashboard/** and sign in.
 
-- 🧠 **Autonomous lead discovery** — No contact lists needed; AI finds your ideal customers from licensed data
-- 📧 **Email-first outreach** — Resolves a work email per qualified lead and sends from **your own mailbox**, at email volume
-- 🛡️ **Zero platform-ToS surface** — Browserless, no social-network account, no scraping — nothing to get banned
-- 💾 **Self-hosted + full data ownership** — Everything runs locally; browse your CRM in a web UI
-- 🐳 **One-command setup** — Dockerized deployment, interactive onboarding
-- ✨ **AI-powered messaging** — LLM-generated personalized outreach and agentic replies (bring your own model)
-
-Perfect for founders, sales teams, and agencies who want powerful automation **without account bans or subscription lock-in**.
-
----
-
-## 💸 How OpenOutreach Stays Free
-
-OpenOutreach sends email from a mailbox **you own and control**, under your own sending identity. It sends **two kinds** of email, and you should know about both before you run it:
-
-- **Your outreach** — personalized emails to the leads *you* target, on your behalf, as part of your own campaigns. This is the whole point of the tool.
-- **A promotion for OpenOutreach itself** — the tool ships with a **freemium** campaign that **advertises OpenOutreach**, sent from your mailbox **as if from you**, to recipients unrelated to your own leads. It takes its turn in the sending rotation alongside your own campaigns, so a share of the sending is the project's rather than yours. This is one of the ways the project funds itself for cold-start users, alongside affiliate links and sponsorships.
-
-Both kinds send from your mailbox under your identity, and both are your responsibility under anti-spam law. The freemium promotion has been part of the project since the beginning. On an install you run yourself it can be disabled by editing the source (the GPLv3 licence permits this). Full detail — how the rotation works, where the content comes from, what is and isn't logged, and your responsibilities — is in the **[Legal Notice](LEGAL_NOTICE.md)** (§4).
-
----
-
-## 📋 What You Need
-
-| # | What | Example |
-|---|------|---------|
-| 1 | **An LLM API key** | OpenAI, Anthropic, or any OpenAI-compatible endpoint |
-| 2 | **An email-finder API key** ([BetterContact](https://bettercontact.rocks?fpr=openoutreach)) | Powers **both** discovery (Lead Finder) and enrichment (work-email resolution) |
-| 3 | **A sending mailbox** | An app password for a mailbox you own (Gmail / Workspace / own-domain SMTP), or cold-email infra like [IceMail](https://icemail.ai?via=openoutreach) |
-| 4 | **A product description + target market** | "We sell cloud cost optimization for DevOps teams at mid-market SaaS companies" |
-
-That's it. No social-network account, no spreadsheets, no lead databases, no scraping setup. The BetterContact key and a connected mailbox are both required — the key drives discovery *and* enrichment, and the mailbox is where outreach is sent from.
-
-The BetterContact and IceMail links above are **affiliate links** — signing up through them supports OpenOutreach, at no markup to you. You can sign up for either service directly instead; IceMail in particular is only a suggestion, since any SMTP mailbox you own works.
-
----
-
-## ⚡ Quick Start (Docker — Recommended)
-
-Pre-built images are published to GitHub Container Registry.
+### Linux / macOS / WSL
 
 ```bash
-docker run --pull always -it -v ~/.openoutreach/data:/app/data ghcr.io/eracle/openoutreach:latest
+bash scripts/setup.sh
+bash scripts/run.sh
+bash scripts/stop.sh
 ```
 
-The interactive onboarding walks you through the inputs above on first run — product/objective → LLM key (live-verified) → mailbox (paste an app password → SMTP auth-check) → BetterContact key → your email → country → newsletter/legal. All data persists in `~/.openoutreach/data` on your host across restarts. The image is a slim Python runtime — **no browser, no VNC**.
-
-For Docker Compose, build-from-source, and more options see the **[Docker Guide](./docs/docker.md)**.
-
----
-
-## ⚙️ Local Installation (Development)
-
-For contributors or if you prefer running directly on your machine.
-
-### Prerequisites
-
-- [Git](https://git-scm.com/)
-- [Python](https://www.python.org/downloads/) (3.12+)
-
-### 1. Clone & Set Up
-```bash
-git clone https://github.com/eracle/OpenOutreach.git
-cd OpenOutreach
-
-# Install deps, run migrations, and bootstrap CRM
-make setup
-```
-
-### 2. Run the Daemon
+### Docker (server deployment)
 
 ```bash
-make run
+cp deploy/env.example .env                      # fill in DJANGO_SECRET_KEY etc.
+cp deploy/onboard_config.example.json deploy/onboard_config.json   # fill secrets
+bash deploy/backup.sh                           # (after first boot) consistent snapshot
+bash deploy/update.sh                           # pull + rebuild + follow the log
 ```
-The interactive onboarding prompts for your LLM key, mailbox, BetterContact key, and campaign details on first run. Fully resumable — stop/restart anytime without losing progress.
 
-### 3. View Your Data (CRM Admin)
-
-OpenOutreach includes a full CRM web interface via Django Admin:
 ```bash
-# Create an admin account (first time only)
-python manage.py createsuperuser
-
-# Start the web server
-make admin
-```
-Then open:
-- **Django Admin:** http://localhost:8000/admin/
-
----
-## ✨ Features
-
-| Feature                            | Description                                                                                                          |
-|------------------------------------|----------------------------------------------------------------------------------------------------------------------|
-| 🧠 **Autonomous Lead Discovery**   | No contact lists needed — an LLM turns your product + objective into an ICP filter and pages matching profiles from a licensed discovery source. |
-| 🎯 **Pay Only For What Resolves**  | Search against the licensed source is free; a confidence gate rations the paid lookups, billed only on a verified hit. Cost scales with qualified leads, not with how much you searched. |
-| 🔒 **Licensed Discovery**          | Firmographic profiles come from a paid, licensed provider (BetterContact Lead Finder) — no scraping, no browser, no account. |
-| 📧 **Agentic Email Outreach**      | Resolves a work email per best-fit lead (one credit per hit), sends an AI-written opener from your own mailbox over SMTP, then reads replies (IMAP) and runs multi-turn follow-up. |
-| 🔄 **Stateful Pipeline**          | Tracks deal states (`QUALIFIED` → `READY_TO_FIND_EMAIL` → `FINDING_EMAIL` → `READY_TO_EMAIL` → `EMAILED` → `COMPLETED`/`FAILED`) in a local DB — fully resumable. |
-| ⏱️ **Send-Gated Spend**           | Paid email lookups ride on send capacity — a per-mailbox daily cap bounds how many leads enter the pipeline, so you never resolve more than you can send. |
-| 🕗 **Sends On Your Hours**        | Cold email leaves Mon–Fri, 08:00–20:00 in your own timezone, spaced minutes apart from each mailbox. Replies are answered whenever they arrive. |
-| 💾 **Built-in CRM**               | Full data ownership via Django Admin — browse Leads, Deals, and conversations.                                     |
-| 🐳 **One-Command Deployment**      | Dockerized setup with interactive onboarding; a slim runtime with no browser and no VNC.                            |
-| ✍️ **AI-Powered Messaging**        | Agentic multi-turn conversations — the AI agent reads the thread and composes replies. Nobody is chased: it writes when they write back. |
-
----
-
-## 📖 How the Pipeline Works
-
-The daemon runs a short cycle that asks the deals what they need — there is no queue table and nothing is scheduled in advance. Each pass walks one ordered list and stops at the first thing it can do, so priority *is* that order:
-
-| # | Step | What it does |
-|---|------|-------------|
-| 1 | **check a lookup** | Polls an in-flight work-email job: hit → `READY_TO_EMAIL`, miss → `NO_EMAIL_BETTERCONTACT`, still running → ask again later on the same job. |
-| 2 | **answer a reply** | Runs the AI agent over a deal whose newest message is inbound — replies, closes the deal, or honours an unsubscribe. |
-| 3 | **send a first email** | Sends one AI-written opener to a `READY_TO_EMAIL` lead, then parks the deal at `EMAILED`. |
-| 4 | **rank the pool** | Promotes the qualified leads the model is confident about. |
-| 5 | **buy an address** | Free hub-cache hit resolves immediately; otherwise fires a paid provider job and parks the deal at `FINDING_EMAIL`. |
-| 6 | **top up** | Discovers and qualifies more leads. |
-
-Steps 5 and 6 share one gate: never spend money, and never spend an LLM call qualifying, for someone there is no room to email today.
-
-**Discover → qualify → gate → find email → email.** One LLM pass turns your campaign into opening search keywords; from there the keyword vocabulary grows by counting the words that appear in profiles the LLM has accepted, and the walk keeps firing the most promising set. Qualification runs the GP + LLM loop over the stored firmographic text. The GP confidence gate promotes `QUALIFIED → READY_TO_FIND_EMAIL`, **rationing the paid lookup** so only the best-fit leads cost a credit. A hit sends an opener; a miss ends the deal as `NO_EMAIL_BETTERCONTACT` with a blank outcome (so the ML labeler skips it — an unfindable address is not a fit signal).
-
-**The qualification loop in detail:**
-
-Discovered profiles are embedded (384-dim FastEmbed vectors) from the licensed firmographic payload. Which profile to evaluate next is a balance-driven choice:
-
-- **When negatives outnumber positives** → **exploit**: pick the profile with highest predicted qualification probability (fill the pipeline with likely positives)
-- **Otherwise** → **explore**: pick the profile with highest BALD (Bayesian Active Learning by Disagreement) score (seek the most informative label)
-
-All qualification decisions go through the LLM. The GP model selects which candidate to evaluate next and gates promotion from `QUALIFIED` to `READY_TO_FIND_EMAIL`. Every LLM decision feeds back into the model, making candidate selection progressively smarter.
-
-**Cold start:** a campaign with no acceptances yet has nothing to fit on, so the ICP is also written out as a handful of **synthetic ideal profiles** and embedded as the model's positives. Each real acceptance retires one of them, so the invented evidence thins out at the rate ground truth replaces it. When the unlabelled pool empties, discovery pages a fresh batch.
-
-Configure behavior via Django Admin (`SiteConfig` + `Campaign`).
-
----
-
-## 📂 Project Structure
-
-```
-├── docs/                             # architecture, configuration, docker, templating, testing
-├── openoutreach/                    # single source package; Django apps nested inside
-│   ├── settings.py                  # Django settings (SQLite at data/db.sqlite3)
-│   ├── core/                        # engine app: the daemon cycle, Campaign/SiteConfig,
-│   │                                #   LLM factory, onboarding, ML + discovery/qualify
-│   │                                #   pipeline, the outreach agent
-│   ├── emails/                      # discovery/enrichment client, Mailbox + SMTP/IMAP,
-│   │                                #   sender, the mail pass, the pipeline steps
-│   ├── crm/                         # Lead + Deal models
-│   ├── chat/                        # ChatMessage (per-Deal conversation)
-│   └── legacy/                      # model-less migration-history anchor (retired channel)
-├── manage.py                         # Django management (no args defaults to rundaemon)
-├── local.yml                        # Docker Compose
-└── Makefile                         # Shortcuts (setup, run, admin, test)
+docker compose -f compose.prod.yml up -d --build
+# Console: http://localhost:8000/dashboard/
 ```
 
----
-
-## 📚 Documentation
-
-- [Architecture](./docs/architecture.md)
-- [Configuration](./docs/configuration.md)
-- [Docker Installation](./docs/docker.md)
-- [Follow-up Messaging](./docs/templating.md)
-- [Template Variables](./docs/template-variables.md)
-- [Testing](./docs/testing.md)
+Two services share one data volume: `web` (gunicorn serving the dashboard +
+Django Admin) and `daemon` (the outreach engine). First boot provisions the
+empty database **headlessly** from `deploy/onboard_config.json` (same steps and
+live credential checks as the interactive wizard) — the full free-tier server
+runbook, including Oracle Cloud's Always Free VM, is in **`deploy/README.md`**.
+The dev image notes in `docs/docker.md` still apply to `local.yml`.
 
 ---
 
-## 💬 Channel
+## Roles
 
-Join for support and discussions:
-[Telegram Channel](https://t.me/openoutreach)
+| Role     | What they can do                                                                  |
+|----------|-----------------------------------------------------------------------------------|
+| **Lead** | Everything — configuration, team management, and the pipeline controls.           |
+| **Operator** | Runs the pipeline: start/stop the daemon, nudge a cycle, read mail, pause mailboxes, suppress leads. No config, no team. |
 
----
-
-### 🗓️ Book a Free 15-Minute Call
-
-Got a specific use case, feature request, or questions about setup?
-
-Book a **free 15-minute call** — I'd love to hear your needs and improve the tool based on real feedback.
-
-<div align="center">
-
-[![Book a 15-min call](https://img.shields.io/badge/Book%20a%2015--min%20call-28A745?style=for-the-badge&logo=calendar)](https://www.cal.eu/eracle/15min)
-
-</div>
+Team members sign in at `/dashboard/` with the credentials the Lead gives them.
+The **Lead** page (`/dashboard/team/`) is where members are invited, promoted,
+deactivated, and given fresh passwords. There must always be at least one Lead.
 
 ---
 
-### ❤️ Support OpenOutreach
+## The dashboard
 
-This project is built in spare time to provide powerful, **free** open-source growth tools. Your sponsorship funds faster updates and keeps it free for everyone.
+| Page       | What it does                                                                                                  |
+|------------|---------------------------------------------------------------------------------------------------------------|
+| **Overview** | Live funnel, headline stats (with a 14-day send sparkline), daemon controls (start / stop / nudge / read mail), mailbox capacity bars, campaign cards, recent delivery verdicts and messages. Auto-refreshes via a JSON status endpoint. |
+| **Leads**    | Searchable, pageable prospect list; copy an email, open a profile, suppress/restore a lead permanently.        |
+| **Deals**    | The funnel by deal state — click any row to expand the full conversation thread (what the agent wrote, what the lead replied). |
+| **Live log** | The daemon's running account of its actions, auto-polling, with follow/copy controls.                          |
+| **Team**     | *(Lead only)* Invite members, reset passwords, promote/demote, activate/deactivate.                            |
+| **Config**   | *(Lead only)* LLM + provider keys, campaign definition (product, target, headcount, country), mailbox signature/cap/IMAP. |
+| **Django Admin** | The long tail — query nodes, keywords, verdicts, message-level fixes, and the raw models. Linked from the sidebar. |
 
-<div align="center">
-
-[![Sponsor with GitHub](https://img.shields.io/badge/Sponsor-%E2%9D%A4-ff69b4?style=for-the-badge&logo=github)](https://github.com/sponsors/eracle)
-
-<br/>
-
-| Tier        | Monthly | Benefits                                                              |
-|-------------|---------|-----------------------------------------------------------------------|
-| ☕ Supporter | $5      | Huge thanks + name in README supporters list                          |
-| 🚀 Booster  | $25     | All above + priority feature requests + early access to new campaigns |
-| 🦸 Hero     | $100    | All above + personal 1-on-1 support + influence roadmap               |
-| 💎 Legend   | $500+   | All above + custom feature development + shoutout in releases         |
-
-</div>
+The console is a staff-only surface: nobody without a staff account can reach
+any page, and every destructive control (stop daemon, suppress lead, pause
+mailbox) asks for confirmation.
 
 ---
 
-## ⚖️ License
+## Day-to-day operations
 
-[GNU GPLv3](https://www.gnu.org/licenses/gpl-3.0) — see [LICENCE.md](LICENCE.md)
+- **Watch the pipeline** — the Overview's funnel shows every deal by stage.
+  Deals resting at *Emailed* are normal: nobody is ever chased, the agent only
+  writes when the lead writes back.
+- **Start / stop the engine** — the daemon is a detached process tracked by
+  pidfile (`data/daemon.pid`). The Overview card starts, stops and nudges it;
+  `scripts\stop.ps1` stops daemon + web together. Stopping is always safe —
+  every piece of pipeline state lives in the DB, so a restart resumes exactly
+  where it left off.
+- **Back up** — the whole store is one SQLite file: `data/db.sqlite3`. Copy it
+  (ideally with the daemon stopped) to back up leads, deals and conversations.
+  There is also `python manage.py reset_data` to wipe pipeline data for a fresh
+  run (it keeps a timestamped backup first).
+- **Mailboxes** — each mailbox has a measured daily cap and its own pacing;
+  the Overview shows headroom live. Replies are read from the IMAP inbox
+  configured per mailbox (the studio uses Hostinger SMTP + Gmail IMAP with
+  Cloudflare routing for `outreach@synaptixstudio.com`).
 
 ---
 
-## 📜 Legal Notice
+## Packaging & distribution
 
-By using this software you accept the [Legal Notice](LEGAL_NOTICE.md). It covers the third-party services you connect (data provider, email-finder, mailbox), your responsibilities as data controller and sender under data-protection and anti-spam law, the optional freemium promotional campaign, automatic newsletter subscription for non-opt-in jurisdictions, the central contacts store, and liability disclaimers.
+`scripts\package.ps1` (or `scripts\package.sh`) builds a self-contained bundle
+in `dist/` — the app minus virtualenv, git history, and data. Hand it to a new
+machine or a server and run `setup` → `run`. The recipient starts with an
+empty database and onboards through the wizard (see below).
+
+---
+
+## Onboarding (first run)
+
+The engine needs five things before it sends anything:
+
+1. **Campaign** — product description, target market, booking link.
+2. **LLM** — an OpenAI-compatible endpoint (the studio uses NVIDIA NIM).
+3. **Mailbox** — an SMTP sending identity + IMAP reply inbox.
+4. **BetterContact** — the API key powering discovery *and* email resolution.
+5. **Account** — the operator's email, country, newsletter, legal acceptance.
+
+The interactive wizard runs on the daemon's first start (TTY) and is fully
+resumable. For a non-interactive install, `onboard.py` (in the repo root of the
+development workspace) replays `onboard_config.json` against the DB — see
+`docs/configuration.md`.
+
+---
+
+## Layout
+
+```
+scripts/                  setup / run / stop / package (PowerShell + bash)
+openoutreach/             the engine + console
+  dashboard/              the Synaptix Studio Console (views, templates)
+  core/                   campaign, SiteConfig, LLM factory, ML + discovery pipeline
+  emails/                 enrichment, Mailbox + SMTP/IMAP, sender, pipeline steps
+  crm/                    Lead + Deal models (the funnel)
+  chat/                   ChatMessage — the per-deal conversation
+compose.prod.yml          production stack (web + daemon, shared volume)
+local.yml                 docker dev container
+docs/                     architecture, configuration, docker, templating, testing
+```
+
+## Attribution & legal
+
+The Console is built on **OpenOutreach** (GPLv3) — the browserless, email-first
+AI sales agent that powers discovery, qualification and sending. Using the
+software means accepting the [Legal Notice](LEGAL_NOTICE.md): it covers the
+third-party services you connect (data provider, email-finder, mailbox), your
+responsibilities as data controller and sender under data-protection and
+anti-spam law, and liability disclaimers.
 
 **Use at your own risk — no liability assumed.**
-
----
-
-<div align="center">
-
-<a href="https://star-history.com/#eracle/OpenOutreach&Date">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=eracle/OpenOutreach&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=eracle/OpenOutreach&type=Date" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=eracle/OpenOutreach&type=Date" width="400" />
- </picture>
-</a>
-
-**Made with ❤️**
-
-</div>

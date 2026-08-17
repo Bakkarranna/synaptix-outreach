@@ -35,6 +35,17 @@ class Lead(models.Model):
     # Work email from the enrichment API (BetterContact); null = not found / not yet
     # resolved. Written by the find-email leg once the lead is rank-gated.
     email = models.EmailField(null=True, blank=True, default=None)
+    # Contact phone from a scraped/imported row (E.164-ish normalized form, or
+    # whatever the directory carried). No sending channel uses it — it is stored
+    # data the qualifier and the outreach agent can see, folded into
+    # ``profile_text`` via ``discovery.TEXT_FIELDS`` (and surfaced in the profile
+    # summary by ``core/db/summaries.py``).
+    phone = models.CharField(max_length=40, blank=True, default="")
+    # The lead's own company website, when the row carried one. Deliberately
+    # distinct from ``profile_url`` (the opaque identity/lookup key — which for
+    # scraped leads may be a synthetic ``<website>#scraped-…`` key, not the site
+    # itself).
+    website = models.URLField(max_length=200, blank=True, default="")
     disqualified = models.BooleanField(default=False)
     # First-touch discovery provenance: the query node that first surfaced this
     # profile. A profile re-surfaced by a later node keeps its original node here

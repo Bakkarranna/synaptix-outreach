@@ -38,3 +38,13 @@ class DealFactory(factory.django.DjangoModelFactory):
         model = "crm.Deal"
 
     lead = factory.SubFactory(LeadFactory)
+
+
+class ChatMessageFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = "chat.ChatMessage"
+
+    deal = factory.SubFactory(DealFactory)
+    external_id = factory.Sequence(lambda n: f"msg-{n}")
+    content = factory.Faker("sentence")
+    is_outgoing = True

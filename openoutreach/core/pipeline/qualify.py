@@ -64,6 +64,24 @@ def run_qualification(campaign, qualifier: BayesianQualifier, candidates=None) -
             candidate = candidates[0]
         else:
             strategy, scores = result
+            # Degenerate posterior: a negative-dominated GP blows its length-scale
+            # to the bound and every candidate scores the same value, so argmax
+            # silently degrades to "oldest first" and the walk keeps re-judging the
+            # same junk. The anchors are the ICP prototypes — when the GP cannot
+            # discriminate, similarity to them is the only signal left, and an
+            # email-first tie-break spends the LLM call on leads that can actually
+            # reach a send. The LLM still owns the verdict either way.
+            span = float(np.ptp(scores)) if len(scores) > 1 else 1.0
+            if span < 1e-9:
+                sims = qualifier.anchor_similarities(embeddings)
+                if sims is not None:
+                    sims = np.asarray(sims, dtype=np.float64)
+                    email_boost = np.array(
+                        [0.5 if c.email else 0.0 for c in candidates],
+                        dtype=np.float64,
+                    )
+                    scores = sims + email_boost
+                    strategy = f"{strategy} → anchor sim"
             best_idx = int(np.argmax(scores))
             candidate = candidates[best_idx]
             selection_score = (strategy, float(scores[best_idx]))

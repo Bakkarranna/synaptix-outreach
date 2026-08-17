@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import smtplib
+import ssl
 from email.message import EmailMessage
 from email.utils import make_msgid
 
@@ -141,7 +142,7 @@ def _build_message(mailbox, to_address, subject, body, bcc, in_reply_to, referen
     if in_reply_to:
         message["In-Reply-To"] = in_reply_to
         message["References"] = references or in_reply_to
-    message.set_content(_attribute(_opt_out(_sign(body, mailbox.signature))))
+    message.set_content(_opt_out(_sign(body, mailbox.signature)))
     return message
 
 
@@ -173,7 +174,7 @@ OPT_OUT_LINE = "Don't want to hear from me? Reply with \"unsubscribe\" and I'll 
 
 
 def _opt_out(body: str) -> str:
-    """Append the visible opt-out line, after the signature and before the attribution.
+    """Append the visible opt-out line, after the signature.
 
     Plain text rather than a link: a typed reply works in every client, including
     the ones where Gmail declines to render its own unsubscribe button, so it
@@ -182,21 +183,6 @@ def _opt_out(body: str) -> str:
     wants one, so they take it instead of the spam button.
     """
     return f"{body.rstrip()}\n\n{OPT_OUT_LINE}\n"
-
-
-ATTRIBUTION = "Sent with OpenOutreach"
-
-
-def _attribute(body: str) -> str:
-    """Append the product attribution line, separated by a blank line.
-
-    Always on, last in the message (after the signature): every recipient of an
-    outbound email is a plausible future operator. It names the product without
-    linking it — a bare name reads as a footer, a URL reads as an ad, and anyone
-    curious enough to act on it can search. The separator matches every other
-    block's, so the tail of the message reads as evenly spaced.
-    """
-    return f"{body.rstrip()}\n\n{ATTRIBUTION}\n"
 
 
 def _mint_message_id(from_address: str) -> str:
@@ -214,20 +200,38 @@ def _mint_message_id(from_address: str) -> str:
 
 
 def _deliver(mailbox, message: EmailMessage) -> None:
-    """Log into the mailbox over SMTP+STARTTLS and send one message.
+    """Log into the mailbox and send one message; transport chosen by port.
 
     A failure is recorded as a ``SendVerdict`` on the way past and then re-raised
     unchanged: the task still fails and is still retried, but the receiver's
     answer — the one direct statement anyone makes about this mailbox's standing
     — is kept instead of dying in the traceback.
+
+    The transport mirrors ``smtp.verify_auth``: implicit TLS on 465 (Hostinger,
+    Fastmail, most hosts), plaintext + STARTTLS on 587/25. The old hard-coded
+    ``starttls()`` could never connect to a 465-only box — the server expects the
+    TLS handshake before any EHLO, so the connection died and every send from
+    such a box failed at the exact spot where onboarding had long since accepted
+    it.
     """
     from openoutreach.emails.delivery_policy import record_failure
 
+    context = ssl.create_default_context()
     try:
-        with smtplib.SMTP(mailbox.host, mailbox.port, timeout=SMTP_TIMEOUT_SECONDS) as smtp:
-            smtp.starttls()
-            smtp.login(mailbox.username, mailbox.password)
-            smtp.send_message(message)
+        if mailbox.port == 465:
+            with smtplib.SMTP_SSL(mailbox.host, mailbox.port,
+                                  timeout=SMTP_TIMEOUT_SECONDS, context=context) as smtp:
+                smtp.login(mailbox.username, mailbox.password)
+                smtp.send_message(message)
+        else:
+            with smtplib.SMTP(mailbox.host, mailbox.port,
+                              timeout=SMTP_TIMEOUT_SECONDS) as smtp:
+                smtp.ehlo()
+                if smtp.has_extn("starttls"):
+                    smtp.starttls(context=context)
+                    smtp.ehlo()
+                smtp.login(mailbox.username, mailbox.password)
+                smtp.send_message(message)
     except (smtplib.SMTPException, OSError) as exc:
         record_failure(mailbox, exc)
         raise

@@ -12,8 +12,10 @@ Set during onboarding, editable in Django Admin. `SiteConfig` is the single sour
 | `llm_api_key` | API key for the chosen provider. Live-verified at onboarding. | (required) |
 | `llm_api_base` | Base URL — **only** for `openai_compatible:*`. | (none) |
 | `bettercontact_api_key` | [BetterContact](https://bettercontact.rocks?fpr=openoutreach) key (affiliate link — no markup to you). Powers **both** Lead Finder discovery **and** work-email enrichment. **Blank disables discovery + enrichment.** | (empty) |
+| `firecrawl_api_key` | Optional [Firecrawl](https://firecrawl.dev) key for the free site-scrape finder (`emails/finders.py`). When set, enrichment also scrapes the lead's company website through Firecrawl (JS + anti-bot pages) before spending a BetterContact credit. Blank → the plain-HTTP site scraper still runs; it just skips the Firecrawl leg. With Scrapling installed (`scrapling[fetchers]` + `scrapling install` for browsers), a last-resort leg launches its stealth browser on Cloudflare/JS-rendered sites when the plain HTTP fetch failed or carried no address. | (empty) |
 | `contacts_api_token` / `contacts_api_url` | Cross-operator contacts-store token (earned on first contribution) and URL (blank → default hub). | (empty) |
 | `country_code` | ISO-3166 alpha-2. The only persisted operator setting — drives the sending-window timezone and the email/GDPR jurisdiction rules. | (from onboarding) |
+| `send_on_weekends` | Operator override of the Mon–Fri sending window. `True` lets a first email leave on Saturdays/Sundays too (same 08:00–20:00 local hours). Off by default — weekend cold mail is weaker signal. | `False` |
 
 The operator's own email and name live on the Django `User` (created at onboarding), not on `SiteConfig`.
 
@@ -31,8 +33,10 @@ Managed via Django Admin (`/admin/`) or created during onboarding.
 | `headcount_min` / `headcount_max` | integer | Company-size band, applied to every discovery query. |
 | `anchor_profiles` / `anchor_embeddings` | JSON / binary | Synthetic ideal profiles standing in for positives until real acceptances replace them, one per acceptance. |
 | `model_blob` | binary | The per-campaign trained GP model (joblib). |
+| `scraper_config` | JSON | **Opt-in scraper-backed acquisition.** A source spec in the standalone `scrape_leads.py` config shape — `start_url`, `card_selector`, `next_selector`, `website_selector`, `profile_url_selector`, `fetch` (`http` \| `stealth`), `max_pages`, `max_cards_per_page`, `delay_s`, `timeout_s`, `fields`. Null = the normal Lead Finder discovery walk. See `core/pipeline/scrape_acquisition.py`. |
+| `scrape_state` | JSON | The scraper's pagination cursor — `{"next_url", "pages", "exhausted"}`. Survives restarts; clearing it in Admin re-scrapes from the start (idempotent on `profile_url`). |
 
-Discovery keeps no filter spec or page cursor on the campaign: the keyword sets it has fired, and how far each was paged, live in their own `Keyword` / node rows.
+Discovery keeps no filter spec or page cursor on the campaign: the keyword sets it has fired, and how far each was paged, live in their own `Keyword` / node rows. A campaign with `scraper_config` set acquires from a directory instead — one page per daemon cycle, harvested through the same `create_lead` path, so scraped leads flow through qualify → rank → find email exactly like discovered ones. Requires Scrapling installed (guarded import); a lead's email stamped at scrape time skips the paid lookup, and everything else is resolved by the free site-finder before any paid submit. `phone` and `website` are stored as real Lead columns and folded into `profile_text`, so the qualifier and the outreach agent see them. Existing leads get them too by running `python manage.py reembed_leads` — the embedding space is defined by `TEXT_FIELDS`, which now includes them, and the command rebuilds both text and vector for the whole store.
 
 ## Sending mailboxes (`Mailbox` model)
 
@@ -61,7 +65,7 @@ Not user-configurable per campaign; edit the source to change.
 
 | Key | Value | Description |
 |:----|:------|:------------|
-| `SEND_WINDOW_START_HOUR` / `SEND_WINDOW_END_HOUR` | `8` / `20` | The hours a **first email** may leave, in the operator's local time (start inclusive, end exclusive). Weekends are shut. Gates cold sends only — discovery, paid lookups and the mail pass run 24/7, so replies are still read and answered out of hours. The timezone is resolved from `SiteConfig.country_code`; multi-zone countries take the first zone `pytz` lists. |
+| `SEND_WINDOW_START_HOUR` / `SEND_WINDOW_END_HOUR` | `8` / `20` | The hours a **first email** may leave, in the operator's local time (start inclusive, end exclusive). Weekends are shut by default — unless `SiteConfig.send_on_weekends` is enabled. Gates cold sends only — discovery, paid lookups and the mail pass run 24/7, so replies are still read and answered out of hours. The timezone is resolved from `SiteConfig.country_code`; multi-zone countries take the first zone `pytz` lists. |
 | `MIN_SEND_INTERVAL_SECONDS` | `180` | Floor between two first emails **from one box**. Replies are exempt. |
 | `SEND_INTERVAL_JITTER_MIN_SECONDS` / `SEND_INTERVAL_JITTER_MAX_SECONDS` | `30` / `90` | Added as `U[min, max]` on top of the floor → a 3.5–4.5 min realized gap. |
 | `WARM_HISTORY_DAYS` / `WARM_GROWTH_FACTOR` / `WARM_FLOOR_SENDS` | `30` / `1.5` / `5` | The measured per-box daily ceiling: p75 of the days the box actually sent over the trailing window, ×1.5 when the receiver has not pushed back, never below the floor. `WARM_CEILING_SENDS` is **derived**, not declared — `SEND_WINDOW_SECONDS / MEAN_SEND_INTERVAL_SECONDS` = 43200/240 = **180** at the current settings — so widening the window or the gap moves the rail with it. |

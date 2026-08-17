@@ -1,0 +1,68 @@
+# compose.prod.yml — the Synaptix Studio Console as a two-process stack.
+#
+#   web     — gunicorn serving the dashboard + Django Admin on :8000
+#   daemon  — the outreach engine (migrate → non-interactive onboarding → cycle)
+#
+# Both share one named volume (oo-data) so the SQLite DB, pidfile and log live
+# in the same place and a restart of either service picks up where it left off.
+#
+# Configuration (see deploy/README.md — the full server runbook):
+#   1.  cp deploy/env.example .env                      # DJANGO_SECRET_KEY etc.
+#   2.  cp deploy/onboard_config.example.json deploy/onboard_config.json
+#       # fill in the real keys/credentials (gitignored — never commit it)
+#   3.  docker compose -f compose.prod.yml up -d --build
+#   4.  open http://<server-ip>:8000/dashboard/ and sign in as the Lead
+#
+# First boot is fully headless: the daemon's command chain runs the idempotent
+# `onboard_noninteractive` command against the mounted config, then starts the
+# cycle. Without deploy/onboard_config.json it falls back to the interactive
+# wizard — attach with `docker compose -f compose.prod.yml logs -f daemon` to
+# drive the prompts (a TTY is only then required).
+services:
+  web:
+    build:
+      context: .
+      dockerfile: ./compose/openoutreach/Dockerfile
+      args:
+        - BUILD_ENV=production
+    command: >
+      sh -c "python manage.py migrate --no-input &&
+             python manage.py setup_crm &&
+             python manage.py collectstatic --noinput &&
+             gunicorn openoutreach.wsgi --bind 0.0.0.0:8000 --workers 2 --timeout 120"
+    ports:
+      - "8000:8000"
+    environment: &app-env
+      - DJANGO_DEBUG=${DJANGO_DEBUG:-0}
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY:-}
+      - DJANGO_ALLOWED_HOSTS=${DJANGO_ALLOWED_HOSTS:-*}
+      - DJANGO_CSRF_TRUSTED_ORIGINS=${DJANGO_CSRF_TRUSTED_ORIGINS:-}
+      - HOST_UID=${HOST_UID:-1000}
+      - HOST_GID=${HOST_GID:-1000}
+    volumes:
+      - oo-data:/app/data
+    restart: unless-stopped
+
+  daemon:
+    build:
+      context: .
+      dockerfile: ./compose/openoutreach/Dockerfile
+      args:
+        - BUILD_ENV=production
+    command: >
+      sh -c "python manage.py migrate --no-input &&
+             python manage.py setup_crm &&
+             python manage.py onboard_noninteractive --config /run/secrets/onboard_config.json &&
+             python manage.py rundaemon"
+    stdin_open: true
+    tty: true
+    environment: *app-env
+    volumes:
+      - oo-data:/app/data
+      # deploy/onboard_config.json is the only file read; mounting the directory
+      # keeps `docker compose up` from failing when the file doesn't exist yet.
+      - ./deploy:/run/secrets:ro
+    restart: unless-stopped
+
+volumes:
+  oo-data:

@@ -42,7 +42,7 @@ from openoutreach.core.conf import (
 
 logger = logging.getLogger(__name__)
 
-IMAP_TIMEOUT_SECONDS = 30
+IMAP_TIMEOUT_SECONDS = 45
 
 # The day the last measurement pass ran — one value for the whole pool, held in
 # the process rather than a column. Some limit is needed because ``reconcile``
@@ -139,18 +139,25 @@ def _receiver_pushed_back(mailbox) -> bool:
 def read_sent_history(mailbox) -> Counter:
     """``{local date: messages sent}`` over the trailing window, from the box's
     Sent folder. Headers only — no bodies are fetched, and the folder is opened
-    read-only."""
-    imap = imaplib.IMAP4_SSL(mailbox.imap_host, mailbox.imap_port,
-                             timeout=IMAP_TIMEOUT_SECONDS)
-    try:
-        imap.login(mailbox.username, mailbox.password)
-        folder = _sent_folder(imap)
-        if folder is None:
-            logger.warning("warmth: no \\Sent folder on %s", mailbox.from_address)
-            return Counter()
-        return _count_by_day(imap, folder)
-    finally:
-        _logout(imap)
+    read-only. Rides ``retry_imap``: a flaky login must not silently cost the
+    box today's re-measurement, and a retry is idempotent because nothing here
+    writes."""
+    from openoutreach.emails.imap_retry import retry_imap
+
+    def _measure() -> Counter:
+        imap = imaplib.IMAP4_SSL(mailbox.imap_host, mailbox.imap_port,
+                                 timeout=IMAP_TIMEOUT_SECONDS)
+        try:
+            imap.login(mailbox.effective_imap_username, mailbox.effective_imap_password)
+            folder = _sent_folder(imap)
+            if folder is None:
+                logger.warning("warmth: no \\Sent folder on %s", mailbox.from_address)
+                return Counter()
+            return _count_by_day(imap, folder)
+        finally:
+            _logout(imap)
+
+    return retry_imap(_measure)
 
 
 def _sent_folder(imap) -> str | None:

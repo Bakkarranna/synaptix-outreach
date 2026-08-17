@@ -4,18 +4,19 @@
 A first email is the only cold volume this daemon produces, so it is the only send
 under a cap — replies are exempt (see ``test_reply.py``)."""
 import logging
+import smtplib
 
 import pytest
 from unittest.mock import patch
 
 from django.utils import timezone
+from email.message import EmailMessage
 
 from openoutreach.core.agents.outreach import OutreachDecision
 from openoutreach.core.db.deals import get_emailable_deals
 from openoutreach.crm.models import DealState
 from openoutreach.emails.models import Mailbox
 from openoutreach.emails.sender import (
-    ATTRIBUTION,
     OPT_OUT_LINE,
     operator_bcc,
     send_email,
@@ -225,10 +226,9 @@ class TestSentBodyLogging:
         assert "How do you do discovery today?" in text
 
     def test_the_appended_boilerplate_is_not_logged(self, campaign, caplog):
-        """Signature, opt-out and attribution are the same on every send — noise here."""
+        """Signature and opt-out are the same on every send — noise here."""
         text = self._send(campaign, caplog)
         assert "— Ercole" not in text
-        assert ATTRIBUTION.strip() not in text
         assert OPT_OUT_LINE.strip() not in text
 
     def test_freemium_campaign_logs_metadata_only(self, campaign, caplog):
@@ -273,19 +273,17 @@ class TestSendEmailSignature:
 
     def test_signature_appended_after_blank_line(self):
         body = self._sent_body("Eracle\nopenoutreach.app")
-        assert body == (
-            f"Body\n\nEracle\nopenoutreach.app\n\n{OPT_OUT_LINE}\n\n{ATTRIBUTION}\n"
-        )
+        assert body == f"Body\n\nEracle\nopenoutreach.app\n\n{OPT_OUT_LINE}\n"
 
-    def test_body_carries_only_opt_out_and_attribution_when_signature_blank(self):
-        assert self._sent_body("") == f"Body\n\n{OPT_OUT_LINE}\n\n{ATTRIBUTION}\n"
+    def test_body_carries_only_the_opt_out_when_signature_blank(self):
+        assert self._sent_body("") == f"Body\n\n{OPT_OUT_LINE}\n"
 
-    def test_body_carries_only_opt_out_and_attribution_when_signature_unset(self):
+    def test_body_carries_only_the_opt_out_when_signature_unset(self):
         """A never-asked box (NULL) sends unsigned rather than crashing on None."""
-        assert self._sent_body(None) == f"Body\n\n{OPT_OUT_LINE}\n\n{ATTRIBUTION}\n"
+        assert self._sent_body(None) == f"Body\n\n{OPT_OUT_LINE}\n"
 
 
-class TestSendEmailAttribution:
+class TestSendEmailAssembly:
     def _box(self, signature=None):
         return Mailbox(
             username="s@infra.com", password="pw", from_address="s@infra.com",
@@ -297,18 +295,23 @@ class TestSendEmailAttribution:
             send_email(box, "lead@corp.com", "Hi", "Body", **kwargs)
         return deliver.call_args.args[1].get_content()
 
-    def test_attribution_is_the_last_line(self):
+    def test_opt_out_is_the_last_line(self):
         body = self._sent_body(self._box("Eracle"))
-        assert body.rstrip().splitlines()[-1] == ATTRIBUTION
+        assert body.rstrip().splitlines()[-1] == OPT_OUT_LINE
 
-    def test_attribution_follows_the_signature(self):
+    def test_opt_out_follows_the_signature(self):
         body = self._sent_body(self._box("Eracle"))
-        assert body.index("Eracle") < body.index(ATTRIBUTION)
+        assert body.index("Eracle") < body.index(OPT_OUT_LINE)
 
-    def test_follow_up_also_carries_attribution(self):
+    def test_no_attribution_line_anywhere(self):
+        """The product footer was removed — the message must not reference it."""
+        body = self._sent_body(self._box("Eracle"))
+        assert "OpenOutreach" not in body
+
+    def test_follow_up_also_carries_the_opt_out(self):
         """Threaded replies go through the same assembly, so they carry it too."""
         body = self._sent_body(self._box("Eracle"), in_reply_to="<prior@corp.com>")
-        assert body.endswith(f"{ATTRIBUTION}\n")
+        assert body.endswith(f"{OPT_OUT_LINE}\n")
 
     def test_body_is_not_logged_on_send(self, caplog):
         with caplog.at_level("INFO", logger="openoutreach.emails.sender"):
@@ -316,7 +319,7 @@ class TestSendEmailAttribution:
         records = [r for r in caplog.records if r.name == "openoutreach.emails.sender"]
         assert len(records) == 1
         logged = records[0].getMessage()
-        assert "Body" not in logged and ATTRIBUTION not in logged
+        assert "Body" not in logged
         assert "lead@corp.com" in logged and "Hi" in logged
 
 
@@ -409,6 +412,73 @@ class TestSendFirstEmail:
         send, _ = self._run(_ready(campaign, "lead@corp.com"), box)
 
         assert send.call_args.kwargs["bcc"] is None
+
+# ── _deliver transport ───────────────────────────────────────────
+
+
+class TestDeliverTransport:
+    """``_deliver`` picks the SMTP transport by port, mirroring ``verify_auth``.
+
+    The old hard-coded ``starttls()`` could never connect to a 465-only box
+    (Hostinger, Fastmail) — the connection died before the first EHLO.
+    """
+
+    def _deliver(self, port, has_extn_value=None):
+        from openoutreach.emails.sender import _deliver
+
+        box = Mailbox(
+            username="info@host.com", password="pw",
+            from_address="outreach@host.com", host="smtp.host.com", port=port,
+        )
+        with patch("smtplib.SMTP_SSL") as ssl_cls, patch("smtplib.SMTP") as plain_cls:
+            if has_extn_value is not None:
+                plain_cls.return_value.__enter__.return_value.has_extn.return_value = has_extn_value
+            _deliver(box, EmailMessage())
+        return ssl_cls, plain_cls
+
+    def test_465_uses_implicit_tls_and_never_starttls(self):
+        ssl_cls, plain_cls = self._deliver(465)
+        plain_cls.assert_not_called()
+        conn = ssl_cls.return_value.__enter__.return_value
+        conn.login.assert_called_once_with("info@host.com", "pw")
+        conn.send_message.assert_called_once()
+        conn.starttls.assert_not_called()
+
+    def test_587_uses_starttls(self):
+        ssl_cls, plain_cls = self._deliver(587)
+        ssl_cls.assert_not_called()
+        conn = plain_cls.return_value.__enter__.return_value
+        conn.has_extn.return_value = True
+        conn.starttls.assert_called_once()
+        conn.login.assert_called_once_with("info@host.com", "pw")
+        conn.send_message.assert_called_once()
+
+    def test_587_without_starttls_advertised_stays_plaintext(self):
+        _, plain_cls = self._deliver(587, has_extn_value=False)
+        conn = plain_cls.return_value.__enter__.return_value
+        conn.starttls.assert_not_called()
+        conn.login.assert_called_once_with("info@host.com", "pw")
+        conn.send_message.assert_called_once()
+
+    def test_a_failed_send_is_recorded_and_raised(self):
+        """The receiver's verdict survives the traceback (``delivery_policy``)."""
+        from openoutreach.emails import delivery_policy
+        from openoutreach.emails.sender import _deliver
+
+        box = Mailbox(username="u@host.com", password="pw", from_address="u@host.com",
+                      host="smtp.host.com", port=465)
+        with patch("smtplib.SMTP_SSL") as ssl_cls, \
+             patch.object(delivery_policy, "record_failure") as record:
+            ssl_cls.return_value.__enter__.return_value.send_message.side_effect = \
+                smtplib.SMTPRecipientsRefused({})
+            with pytest.raises(smtplib.SMTPRecipientsRefused):
+                _deliver(box, EmailMessage())
+        record.assert_called_once()
+
+
+@pytest.mark.django_db
+class TestSuppressedMidRun:
+    """A lead unsubscribing between pool selection and the send is not emailed."""
 
     def test_a_lead_suppressed_mid_run_is_not_emailed(self, campaign, operator):
         """An unsubscribe can land in the seconds the agent takes to write."""

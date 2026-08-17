@@ -25,10 +25,9 @@ from django.utils import timezone
 from openoutreach.core.agents.outreach import OutreachDecision
 from openoutreach.core.db.leads import suppress_email
 from openoutreach.crm.models import DealState, Lead, Outcome
-from openoutreach.emails.inbox import read_mail
+from openoutreach.emails.inbox import close_imap_sessions, read_mail
 from openoutreach.emails.models import Mailbox
 from openoutreach.emails.sender import (
-    ATTRIBUTION,
     OPT_OUT_LINE,
     send_email,
     suppressed,
@@ -80,9 +79,9 @@ class TestOptOutIsAdvertised:
         render an unsubscribe button of their own."""
         assert OPT_OUT_LINE in _sent_message().get_content()
 
-    def test_opt_out_sits_between_the_signature_and_the_attribution(self):
+    def test_opt_out_follows_the_signature(self):
         body = _sent_message().get_content()
-        assert body.index("Eracle") < body.index(OPT_OUT_LINE) < body.index(ATTRIBUTION)
+        assert body.index("Eracle") < body.index(OPT_OUT_LINE)
 
 
 class TestUnsubscribeAddress:
@@ -240,9 +239,14 @@ class TestAliasOptOut:
 
     def test_a_changed_uidvalidity_restarts_the_walk(self, campaign):
         """Reissued UIDs make the stored cursor point at unrelated mail; trusting
-        it would skip every opt-out — and now every reply — below it forever."""
+        it would skip every opt-out — and now every reply — below it forever.
+
+        The pass reuses one connection per box, and UIDVALIDITY only changes on a
+        reconnect, so the test drops the session between reads — that is exactly
+        the reconnection where Gmail reissues UIDs."""
         box = _box()
         _read(box, FakeIMAP([message(7, to=SENDER, sender="x@corp.com")], uidvalidity=1))
+        close_imap_sessions()
         fake = FakeIMAP([message(3, to=ALIAS, sender="p@corp.com")], uidvalidity=2)
         _read(box, fake)
 
@@ -256,7 +260,10 @@ class TestAliasOptOut:
         fake = FakeIMAP([])
         fake.login = MagicMock(side_effect=OSError("connection reset"))
 
-        assert _read(box, fake) == 0
+        # All three retry attempts fail, so the cursor is untouched — and the
+        # retry backoff is real, so patch the sleep to keep the suite fast.
+        with patch("openoutreach.emails.imap_retry.time.sleep"):
+            assert _read(box, fake) == 0
         box.refresh_from_db()
         assert box.unsub_scan_uid == 42
 

@@ -33,12 +33,25 @@ UTC = ZoneInfo("UTC")
 
 
 def within_sending_window(now: datetime | None = None) -> bool:
-    """True when a first email may leave right now — Mon–Fri, 08:00–20:00 operator-local."""
+    """True when a first email may leave right now — 08:00–20:00 operator-local,
+    Mon–Fri unless the operator has opened weekends (``SiteConfig.send_on_weekends``)."""
     local = timezone.localtime(now or timezone.now(), operator_timezone())
-    return (
-        is_business_day(local.date())
-        and SEND_WINDOW_START_HOUR <= local.hour < SEND_WINDOW_END_HOUR
-    )
+    if not (SEND_WINDOW_START_HOUR <= local.hour < SEND_WINDOW_END_HOUR):
+        return False
+    if is_business_day(local.date()):
+        return True
+    return _weekends_enabled()
+
+
+def _weekends_enabled() -> bool:
+    """The operator's weekend override; the documented default (weekends shut) when
+    the config cannot be read (a config-less unit context has no DB row)."""
+    from openoutreach.core.models import SiteConfig
+
+    try:
+        return bool(SiteConfig.load().send_on_weekends)
+    except Exception:  # noqa: BLE001 — no DB (e.g. window unit tests) ⇒ default
+        return False
 
 
 def operator_timezone() -> ZoneInfo:

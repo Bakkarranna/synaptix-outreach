@@ -1,10 +1,13 @@
 # openoutreach/settings.py
 """
-Minimal Django settings for the OpenOutreach ORM + Django Admin.
+Settings for the Synaptix Studio Console — the OpenOutreach engine rebranded
+as an internal ops tool (Django ORM + Admin + the operator dashboard).
 """
 import os
 import sys
 from pathlib import Path
+
+from django.core.exceptions import ImproperlyConfigured
 
 # The agents drive async pydantic-ai from a sync boundary (core/llm.py), so an
 # event loop can be live on the thread when the ORM is touched. We only use the
@@ -15,11 +18,43 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 
 BASE_DIR = ROOT_DIR
 
-SECRET_KEY = "openoutreach-local-dev-key-change-in-production"
+_DEV_SECRET_KEY = "openoutreach-local-dev-key-change-in-production"
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY") or _DEV_SECRET_KEY
 
-DEBUG = True
+# ``DJANGO_DEBUG=0`` in production (compose.prod.yml); dev stays verbose.
+DEBUG = os.environ.get("DJANGO_DEBUG", "1") == "1"
 
-ALLOWED_HOSTS = ["*"]
+if not DEBUG and SECRET_KEY == _DEV_SECRET_KEY:
+    raise ImproperlyConfigured(
+        "DJANGO_SECRET_KEY must be set when DJANGO_DEBUG=0 "
+        "(see deploy/env.example and deploy/README.md)."
+    )
+
+# Comma-separated via env in production (VM IP / tunnel hostname); dev stays open.
+ALLOWED_HOSTS = [
+    h.strip() for h in os.environ.get("DJANGO_ALLOWED_HOSTS", "*").split(",") if h.strip()
+]
+
+# HTTPS origins (e.g. behind Cloudflare Tunnel on a custom domain).
+CSRF_TRUSTED_ORIGINS = [
+    o.strip()
+    for o in os.environ.get("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",")
+    if o.strip()
+]
+
+# WhiteNoise (production only) serves the collected static files from gunicorn
+# so the console has no separate nginx dependency. Harmless when absent in dev.
+try:
+    import whitenoise  # noqa: F401
+
+    INSTALLED_APPS = ["whitenoise.runserver_nostatic", *INSTALLED_APPS]
+    MIDDLEWARE.insert(1, "whitenoise.middleware.WhiteNoiseMiddleware")
+    STORAGES = {
+        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+        "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
+    }
+except ImportError:
+    pass
 
 INSTALLED_APPS = [
     "django.contrib.sites",
@@ -34,6 +69,7 @@ INSTALLED_APPS = [
     "openoutreach.core.apps.CoreConfig",
     "openoutreach.legacy.apps.LegacyConfig",
     "openoutreach.emails.apps.EmailsConfig",
+    "openoutreach.dashboard.apps.DashboardConfig",
 ]
 
 MIDDLEWARE = [
@@ -52,7 +88,9 @@ ROOT_URLCONF = "openoutreach.urls"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],
+        # Project-level templates load before app templates, so the branded
+        # ``templates/admin/base_site.html`` shadows contrib.admin's default.
+        "DIRS": [ROOT_DIR / "templates"],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -89,7 +127,7 @@ MEDIA_ROOT = ROOT_DIR / "media"
 LOGIN_URL = "/admin/login/"
 
 DEFAULT_FROM_EMAIL = "noreply@localhost"
-EMAIL_SUBJECT_PREFIX = "CRM: "
+EMAIL_SUBJECT_PREFIX = "Synaptix Studio: "
 
 LANGUAGE_CODE = "en"
 LANGUAGES = [("en", "English")]

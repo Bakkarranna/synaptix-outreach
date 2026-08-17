@@ -53,8 +53,10 @@ def _boom():
 def test_mailbox_retry_retains_values_and_stores_one_box():
     from openoutreach.emails.models import Mailbox
 
-    texts = ["a@b.com", "pw1", "smtp.h", "imap.h",   # attempt 1 (auth rejected)
-             "a@b.com", "pw2", "smtp.h", "imap.h"]   # attempt 2 (auth ok)
+    # Per attempt: from, password, smtp host, imap host, imap user, imap pw
+    # (imap user/pw blank = reuse the sending credentials).
+    texts = ["a@b.com", "pw1", "smtp.h", "imap.h", "", "",   # attempt 1 (auth rejected)
+             "a@b.com", "pw2", "smtp.h", "imap.h", "", ""]   # attempt 2 (auth ok)
     with patch("openoutreach.core.onboarding.wiz.text", side_effect=texts) as text, \
          patch("openoutreach.core.onboarding.wiz.integer", side_effect=[587, 993, 587, 993]), \
          patch("openoutreach.core.onboarding.wiz.confirm", return_value=False), \

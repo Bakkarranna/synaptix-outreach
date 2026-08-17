@@ -138,3 +138,40 @@ class TestMeasurementCadence:
         with patch("openoutreach.emails.warmth.timezone.localdate",
                    return_value=date(2099, 1, 1)):
             assert measurement_due()
+
+
+class TestReadSentHistoryRetry:
+    """A flaky login must not silently cost the box today's re-measurement."""
+
+    def test_retries_a_transient_connection_blip(self):
+        box = _box()
+
+        class _SentFake:
+            def login(self, u, p):
+                return "OK", []
+
+            def list(self):
+                return "OK", [b'(\\Sent \\HasNoChildren) "/" "[Gmail]/Sent Mail"']
+
+            def select(self, folder, readonly=False):
+                return "OK", [b"2"]
+
+            def search(self, charset, criteria):
+                return "OK", [b"1 2"]
+
+            def fetch(self, chunk, spec):
+                raw = b"Date: Mon, 16 Mar 2026 10:00:00 +0000\r\n\r\n"
+                return "OK", [(b"1 (UID)", raw), (b"2 (UID)", raw)]
+
+            def close(self):
+                pass
+
+            def logout(self):
+                pass
+
+        with patch("openoutreach.emails.warmth.imaplib.IMAP4_SSL",
+                   side_effect=[OSError("read timed out"), _SentFake()]), \
+             patch("openoutreach.emails.imap_retry.time.sleep"):
+            history = warmth.read_sent_history(box)
+
+        assert sum(history.values()) == 2

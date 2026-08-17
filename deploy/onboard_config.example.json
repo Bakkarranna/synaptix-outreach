@@ -1,0 +1,34 @@
+{
+  "campaign": {
+    "name": "Email Outreach",
+    "product_docs": "Synaptix Studio is a full-stack engineering studio for modern businesses. We deliver strategy, brand, design, engineering, AI agents, automation, and growth — one studio, one system, end-to-end — so founders and startups stop hiring 4-6 disconnected vendors whose work doesn't integrate. We build production-grade websites, SaaS products, and AI & automation systems, and we rescue stuck or vibe-coded projects with security audits and legacy modernization. Fixed-scope projects starting at $5K, delivered in weeks. Distinction in Design. Discipline in Code.",
+    "campaign_target": "Founders and CEOs of early-stage startups and SMBs (2-50 employees) who vibe-coded their product, have an outdated or broken website, or juggle multiple disconnected vendors. Goal: book 15-minute discovery calls, then qualify with MEDDIC and propose projects from $3K to $30K.",
+    "booking_link": ""
+  },
+  "llm": {
+    "model": "openai_compatible:nvidia/nemotron-3.5-lightning-30b-a3b",
+    "api_key": "REPLACE_WITH_NVIDIA_NIM_KEY",
+    "base_url": "https://integrate.api.nvidia.com/v1"
+  },
+  "mailbox": {
+    "from_address": "REPLACE_WITH_SENDING_ADDRESS",
+    "smtp_username": "REPLACE_WITH_SMTP_LOGIN",
+    "password": "REPLACE_WITH_SMTP_APP_PASSWORD",
+    "host": "smtp.hostinger.com",
+    "port": 465,
+    "imap_host": "imap.gmail.com",
+    "imap_port": 993,
+    "imap_username": "REPLACE_WITH_IMAP_LOGIN",
+    "imap_password": "REPLACE_WITH_IMAP_APP_PASSWORD"
+  },
+  "signature": "Muhammad Abubakar\nFounder, Synaptix Studio\nhttps://synaptixstudio.com",
+  "bettercontact_api_key": "REPLACE_WITH_BETTERCONTACT_KEY",
+  "firecrawl_api_key": "REPLACE_WITH_FIRECRAWL_KEY_OR_REMOVE",
+  "account": {
+    "email": "REPLACE_WITH_LEAD_EMAIL",
+    "country": "PK",
+    "role": "lead",
+    "password": "REPLACE_WITH_A_STRONG_DASHBOARD_PASSWORD",
+    "newsletter": true
+  }
+}

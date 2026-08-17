@@ -31,6 +31,7 @@ _TIMEOUT_S = 30
 # Contribution.Origin (an unrecognized value degrades to "unknown" server-side).
 ORIGIN_BETTERCONTACT = "bettercontact"  # paid BetterContact hit
 ORIGIN_PROFILE_INFO = "profile_info"  # 1st-degree contact-info overlay
+ORIGIN_SITE_SCRAPE = "site_scrape"  # free scrape of the company's own website
 
 
 def resolve(lead) -> str | None:

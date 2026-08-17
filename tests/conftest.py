@@ -29,6 +29,19 @@ def _mock_embeddings(request):
 
 
 @pytest.fixture(autouse=True)
+def _clean_imap_state():
+    """The mail pass caches IMAP connections per mailbox pk and keeps a cooldown
+    after failed passes — both are process state a test must not inherit (pks
+    repeat across tests). Reset them before each test.
+    """
+    from openoutreach.emails import inbox
+
+    inbox.close_imap_sessions()
+    inbox._next_mail_pass_at = 0.0
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _open_sending_window():
     """Hold the operator's sending window open for the whole suite.
 

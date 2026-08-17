@@ -1,5 +1,7 @@
 pydantic
-pydantic-ai-slim[openai,anthropic,google,groq,mistral,cohere,bedrock]
+# Code targets the 1.x API (pydantic_ai.models.openai.OpenAIModel + provider
+# objects); 2.x renamed the models and broke the agent surface. Pin below 2.
+pydantic-ai-slim[openai,anthropic,google,groq,mistral,cohere,bedrock]>=1.96,<2
 # pydantic-ai 1.96 imports `from griffe import ...`, but griffe 2.x split into an
 # empty `griffelib` meta-package and reorganized symbols. Pin until upstream fixes.
 griffe>=1,<2

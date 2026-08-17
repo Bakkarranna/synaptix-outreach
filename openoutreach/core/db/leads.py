@@ -33,7 +33,7 @@ def promote_lead_to_deal(campaign, profile_url: str, reason: str = ""):
 
 
 def create_lead(row: dict, country_code: str = "", discovered_by=None,
-                query_terms: str = "") -> bool:
+                query_terms: str = "", profile_text: str | None = None) -> bool:
     """Persist one Lead Finder row as an embedded Lead awaiting qualification.
 
     Keyed on ``profile_url`` (the provider's per-person URL). Stamps the firmographic
@@ -46,8 +46,9 @@ def create_lead(row: dict, country_code: str = "", discovered_by=None,
     touch (a profile another query already created keeps its original node). Its
     ``query_terms`` are folded into the **embedding only** — not ``profile_text`` — so
     the GP learns which query keywords surface good leads while the LLM judges the
-    person on firmographics alone. Returns True when a new Lead was created, False when
-    one already existed (idempotent re-discovery).
+    person on firmographics alone. ``profile_text`` overrides the firmographic build
+    (CSV imports may carry their own text); None keeps the default. Returns True when
+    a new Lead was created, False when one already existed (idempotent re-discovery).
     """
     from openoutreach.crm.models import Lead
     from openoutreach.discovery import embed_profile, profile_text_for, source_fields_for
@@ -56,19 +57,112 @@ def create_lead(row: dict, country_code: str = "", discovered_by=None,
     if not profile_url:
         return False
 
-    profile_text = profile_text_for(row)
+    text = profile_text if profile_text is not None else profile_text_for(row)
     _, created = Lead.objects.get_or_create(
         profile_url=profile_url,
         defaults={
             "embedding": np.asarray(
-                embed_profile(profile_text, query_terms), dtype=np.float32).tobytes(),
-            "profile_text": profile_text,
+                embed_profile(text, query_terms), dtype=np.float32).tobytes(),
+            "profile_text": text,
             "source_fields": source_fields_for(row),
             "country_code": country_code,
             "discovered_by": discovered_by,
         },
     )
     return created
+
+
+# ── Import / export (CSV round-trip) ───────────────────────────────
+
+
+# The portable lead shape: provider-style field names, so an export feeds straight
+# back into an import. ``source_fields`` holds most of them; the four Lead-model
+# fields are folded in explicitly.
+LEAD_EXPORT_FIELDS = [
+    "contact_linkedin_profile_url", "email", "country_code",
+    "contact_first_name", "contact_last_name", "contact_job_title",
+    "contact_headline", "company_name", "contact_industry",
+    "company_industry", "contact_location_state", "contact_location_country",
+    "contact_seniority", "company_domain", "profile_text", "disqualified",
+    "phone", "website",
+]
+
+_SOURCE_FIELD_KEYS = [f for f in LEAD_EXPORT_FIELDS if f.startswith("contact_") or f.startswith("company_")]
+
+
+class LeadImportReport:
+    """Counts from one import pass — what landed, what was skipped, and why."""
+
+    def __init__(self):
+        self.total = 0          # rows read
+        self.created = 0        # new leads persisted (embedded)
+        self.skipped_existing = 0  # profile_url already in the store
+        self.no_url = 0         # rows with no usable profile URL
+        self.no_text = 0        # created leads the LLM can't judge (empty profile_text)
+
+    def __str__(self):
+        return (f"imported {self.created} of {self.total} row(s) "
+                f"({self.skipped_existing} existing, {self.no_url} no URL, "
+                f"{self.no_text} without profile text)")
+
+
+def lead_to_row(lead) -> dict:
+    """One Lead as a portable row dict — the export shape."""
+    s = lead.source_fields or {}
+    row = {key: s.get(key, "") for key in _SOURCE_FIELD_KEYS}
+    row["contact_linkedin_profile_url"] = lead.profile_url
+    row["email"] = lead.email or ""
+    row["country_code"] = lead.country_code
+    row["profile_text"] = lead.profile_text or ""
+    row["disqualified"] = "1" if lead.disqualified else "0"
+    row["phone"] = lead.phone or ""
+    row["website"] = lead.website or ""
+    return row
+
+
+def import_leads_from_rows(rows, default_country: str = "") -> LeadImportReport:
+    """Persist CSV rows as embedded Leads; one pass, deduped on profile_url.
+
+    Accepts provider-style columns (``contact_*``/``company_*``) plus three extras:
+    ``profile_url`` (alias for the key), ``email`` (stamped on the new lead), and
+    ``profile_text`` (raw LLM text; defaults to the firmographic build). Rows whose
+    profile URL already exists are skipped; rows with no URL are counted and dropped;
+    newly created leads with empty profile text are counted so the operator knows
+    which will sit unqualified. The report is the single return value — no partial
+    writes on error, each row commits independently.
+    """
+    from openoutreach.crm.models import Lead
+    from openoutreach.discovery import profile_text_for
+
+    report = LeadImportReport()
+    for raw in rows:
+        report.total += 1
+        row = {
+            k: (str(v).strip() if v is not None else "")
+            for k, v in raw.items() if v is not None and str(v).strip()
+        }
+        url = row.get("contact_linkedin_profile_url") or row.get("profile_url") or ""
+        if not url:
+            report.no_url += 1
+            continue
+        row["contact_linkedin_profile_url"] = url
+        country = (row.get("country_code") or default_country or "").strip()[:2].lower()
+        raw_text = row.get("profile_text") or ""
+        created = create_lead(row, country_code=country,
+                              profile_text=raw_text or None)
+        if not created:
+            report.skipped_existing += 1
+            continue
+        updates = {}
+        for column in ("email", "phone", "website"):
+            if row.get(column):
+                updates[column] = row[column]
+        if updates:
+            Lead.objects.filter(profile_url=url).update(**updates)
+        if not (raw_text or profile_text_for(row)):
+            report.no_text += 1
+        report.created += 1
+    return report
 
 
 def disqualify_lead(profile_url: str):

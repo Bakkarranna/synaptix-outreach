@@ -1,1 +1,5 @@
 -r base.txt
+
+# Production serving for the console (web + static)
+gunicorn
+whitenoise

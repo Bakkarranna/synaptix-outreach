@@ -67,6 +67,29 @@ class TestWeekends:
         assert _in_rome(_utc(SAT - 1, 23)) is False
 
 
+class TestWeekendOverride:
+    @pytest.mark.django_db
+    def test_weekend_opens_when_the_operator_enables_it(self):
+        from openoutreach.core.models import SiteConfig
+
+        cfg = SiteConfig.load()
+        cfg.send_on_weekends = True
+        cfg.save(update_fields=["send_on_weekends"])
+        assert _in_rome(_utc(SAT, 11)) is True
+        assert _in_rome(_utc(SUN, 11)) is True
+
+    @pytest.mark.django_db
+    def test_hours_still_gate_a_weekend_send(self):
+        """Opening weekends widens the calendar, never the clock — 03:00 stays shut."""
+        from openoutreach.core.models import SiteConfig
+
+        cfg = SiteConfig.load()
+        cfg.send_on_weekends = True
+        cfg.save(update_fields=["send_on_weekends"])
+        assert _in_rome(_utc(SAT, 2)) is False
+        assert _in_rome(_utc(SAT, 7)) is True   # 08:00 Rome Saturday — open
+
+
 class TestResolvingTheZone:
     def test_a_single_zone_country(self):
         assert _zone_for_country("it") == ZoneInfo("Europe/Rome")

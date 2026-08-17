@@ -65,9 +65,48 @@ def promote_to_ready(campaign, qualifier: Qualifier) -> int:
         return 0
 
     X = np.array(embeddings, dtype=np.float64)
-    probs = qualifier.predict_probs(X)
-    if probs is None:
+    stats = qualifier.predict_stats(X)
+    if stats is None:
         return 0
+    probs, means, stds = stats
+
+    # Persist the score on every scored deal, promoted or not — the operator's
+    # window onto why a lead passed or failed the gate. One update per row rather
+    # than a Case/When bulk write: the pool is tens of rows and this runs once per
+    # scoring pass, so clarity beats cleverness. The score never rides in `reason`
+    # — that column holds the LLM's qualification rationale, and overwriting it
+    # with a probability would destroy why the lead qualified.
+    from openoutreach.crm.models import Deal, GpScoreRecord
+
+    # One history row per scored deal per pass — the record of how the model's
+    # confidence in this lead evolved across refits while it waited in the pool,
+    # carrying the GP mean/std behind each P so a borderline score is visibly
+    # borderline. Written before the snapshot so a crash can never leave a newer
+    # snapshot without its history entry; bulk_create keeps the whole pass at one
+    # query.
+    #
+    # The profile dicts carry ``lead_id`` (the LEAD's pk — ``to_profile_dict``),
+    # not the Deal's, so the Deal pk is resolved in one query before writing.
+    # Writing the lead pk into the Deal FK would violate it the moment the two
+    # sequences drift (in production they always have — a live install surfaced
+    # the ``FOREIGN KEY constraint failed`` on the very first scoring pass).
+    deal_ids = dict(
+        Deal.objects.filter(campaign=campaign, lead_id__in=[p["lead_id"] for p in valid])
+        .values_list("lead_id", "pk")
+    )
+    GpScoreRecord.objects.bulk_create([
+        GpScoreRecord(
+            deal_id=deal_ids[p["lead_id"]],
+            score=float(prob),
+            mean=float(mean),
+            std=float(std),
+        )
+        for prob, mean, std, p in zip(probs, means, stds, valid)
+    ])
+
+    for prob, p in zip(probs, valid):
+        Deal.objects.filter(campaign=campaign, lead_id=p.get("lead_id")).update(
+            gp_score=float(prob))
 
     promoted = 0
     for prob, p in zip(probs, valid):
@@ -75,9 +114,7 @@ def promote_to_ready(campaign, qualifier: Qualifier) -> int:
             pid = p.get("profile_url", "?")
             # One line, carrying the score that justified the promotion. `log=False`
             # because this *is* the spine line — `set_profile_state` would otherwise
-            # print the same transition again without the number. The score cannot
-            # ride in `reason`: that column holds the LLM's qualification rationale,
-            # and writing a probability over it would destroy why the lead qualified.
+            # print the same transition again without the number.
             logger.info("%s %s (P(f>0.5)=%.3f ≥ %.2f)", pid,
                         colored("READY_TO_FIND_EMAIL", "yellow", attrs=["bold"]),
                         prob, threshold)

@@ -195,6 +195,24 @@ class TestRoomToSendToday:
         assert cycle.run_one_action(campaign) is False
         assert _called(steps) == set()
 
+    def test_keep_stocked_buys_despite_no_room(self, campaign, steps):
+        """The operator override: with keep-stocked on, buying runs even at the
+        send cap, so the queue is stocked for tomorrow at the cost of spend
+        without today's headroom."""
+        from openoutreach.core.models import SiteConfig
+
+        cfg = SiteConfig.load()
+        cfg.keep_pipeline_stocked = True
+        cfg.save(update_fields=["keep_pipeline_stocked"])
+
+        _box(daily_limit=1)
+        _deal(campaign, DealState.READY_TO_EMAIL, email="a@corp.com")
+        _deal(campaign, DealState.READY_TO_FIND_EMAIL)
+        Mailbox.objects.update(next_send_at=timezone.now() + timedelta(minutes=5))
+
+        assert cycle.run_one_action(campaign) is True
+        assert _called(steps) == {"buy"}
+
 
 # ── Failure handling ──────────────────────────────────────────────
 

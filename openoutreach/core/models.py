@@ -28,6 +28,10 @@ class SiteConfig(models.Model):
     # BetterContact email-finder key; blank disables enrichment (see emails/bettercontact.py).
     bettercontact_api_key = models.CharField(max_length=500, blank=True, default="")
 
+    # Firecrawl key for the free site-scrape finder (see emails/finders.py); blank
+    # silently skips that scraper and falls back to the plain-HTTP one.
+    firecrawl_api_key = models.CharField(max_length=500, blank=True, default="")
+
     # Central contacts service (see openoutreach/contacts/). The token is earned
     # on the first contribution and persisted here — never in the repo; blank
     # means "not registered yet" (resolve misses until the first give-back mints
@@ -42,6 +46,25 @@ class SiteConfig(models.Model):
     # we contribute to the contacts store (derived, ``not is_eea_located`` — never
     # a stored toggle).
     country_code = models.CharField(max_length=2, blank=True, default="")
+
+    # Operator override of the Mon–Fri sending window: True lets a first email
+    # leave on Saturdays/Sundays too (within the same 08:00–20:00 local hours).
+    # Default False is the documented posture — weekend cold mail is weaker
+    # signal — but the operator may trade that for volume. See core/sending_window.py.
+    send_on_weekends = models.BooleanField(default=False)
+
+    # Operator override of the spend gate: normally the cycle never buys an
+    # address or spends an LLM call qualifying for someone there is no room to
+    # email *today* (``room_to_send_today``). True keeps discovery, qualification
+    # and address-buying running even at the daily cap, so the queue is stocked
+    # for tomorrow — at the cost of BetterContact credits and LLM calls spent
+    # without today's send headroom. See core/cycle.py:_may_spend.
+    keep_pipeline_stocked = models.BooleanField(
+        default=False,
+        help_text="Keep discovering, qualifying and buying addresses even when "
+                  "today's send cap is full, so the queue is stocked for tomorrow "
+                  "(spends BetterContact credits and LLM calls without headroom).",
+    )
 
     class Meta:
         verbose_name = "Site Configuration"
@@ -100,6 +123,21 @@ class Campaign(models.Model):
     # still waiting for its first positive.
     anchor_profiles = models.JSONField(default=list, blank=True)
     anchor_embeddings = models.BinaryField(null=True, blank=True)
+
+    # Opt-in scraper-backed acquisition (see core/pipeline/scrape_acquisition.py).
+    # A source spec in the standalone ``scrape_leads.py`` config shape —
+    # ``start_url``, ``card_selector``, ``next_selector``, ``website_selector``,
+    # ``profile_url_selector``, ``fetch`` ("http" | "stealth"), ``max_pages``,
+    # ``max_cards_per_page``, ``delay_s``, ``timeout_s``, and ``fields`` (column →
+    # extraction spec, columns named after discovery's row fields). Null = the
+    # campaign acquires through the normal Lead Finder discovery walk instead.
+    scraper_config = models.JSONField(null=True, blank=True)
+    # The scraper's pagination cursor: ``{"next_url": …, "pages": n,
+    # "exhausted": bool}``. Lives on the campaign so a restart resumes
+    # mid-directory; ``exhausted`` stops acquisition (natural end of the
+    # directory or ``max_pages`` reached) until the operator clears this field
+    # in Admin to re-scrape from the start (idempotent on profile_url).
+    scrape_state = models.JSONField(default=dict, blank=True)
 
     def __str__(self):
         return self.name
@@ -245,10 +283,20 @@ class QueryNode(models.Model):
         return sorted(self.keywords.values_list("field", "token"))
 
     def to_filters(self) -> dict:
-        """This node as a Lead Finder filter dict — the only thing the provider sees."""
+        """This node as a Lead Finder filter dict — the only thing the provider sees.
+
+        The campaign's headcount band and target country ride every query unchanged:
+        the country is the campaign's fixed ICP attribute (one country per campaign),
+        and it is applied here rather than as a node keyword so the walk can never
+        search itself out of country.
+        """
         from openoutreach.discovery import filters_for
 
-        return filters_for(self.pairs, (self.campaign.headcount_min, self.campaign.headcount_max))
+        return filters_for(
+            self.pairs,
+            (self.campaign.headcount_min, self.campaign.headcount_max),
+            country_code=self.campaign.country_code,
+        )
 
     def __str__(self):
         """The query itself, not its row id — a node *is* its keyword set."""

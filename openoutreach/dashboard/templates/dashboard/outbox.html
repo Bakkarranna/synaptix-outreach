@@ -1,0 +1,119 @@
+{% extends "dashboard/base.html" %}
+{% load dashboard_extras %}
+{% block title %}Outbox · Synaptix Studio Console{% endblock %}
+{% block pagetitle %}Outbox{% endblock %}
+{% block crumb %}the writer's output — queued and composed{% endblock %}
+{% block content %}
+
+<div class="row spread" style="margin-bottom:14px">
+  <form class="row" method="get">
+    <select name="campaign" onchange="this.form.submit()">
+      <option value="">All campaigns</option>
+      {% for c in campaigns %}<option value="{{ c.pk }}" {% if campaign == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
+    </select>
+    <select name="direction" onchange="this.form.submit()">
+      <option value="">Out + in</option>
+      <option value="out" {% if direction == "out" %}selected{% endif %}>Outgoing only</option>
+      <option value="in" {% if direction == "in" %}selected{% endif %}>Inbound only</option>
+    </select>
+    <input type="search" name="q" value="{{ q }}" placeholder="Search lead, email, subject, body, campaign…" style="width:280px">
+    <button class="secondary small">Search</button>
+    {% if campaign or direction or q %}<a class="btn secondary small" href="{% url 'dashboard-outbox' %}">Clear</a>{% endif %}
+  </form>
+  <form class="inline" method="post" action="{% url 'dashboard-action' 'cycle' %}">
+    {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}">
+    <button class="secondary small" title="Run one cycle's worth of work now — push the queue along">Nudge</button>
+  </form>
+</div>
+
+<div class="card">
+  <div class="row spread">
+    <h2 style="margin:0">Send queue <span class="muted">({{ queue_count }} waiting)</span></h2>
+  </div>
+
+  {% if queue %}
+  <table style="margin-top:12px">
+    <tr><th>Lead</th><th>Email</th><th>Campaign</th><th>Queued</th><th></th></tr>
+    {% for d in queue %}
+    <tr>
+      <td class="mono">{{ d.lead.profile_url|truncatechars:46 }}</td>
+      <td class="mono">{{ d.lead.email }}</td>
+      <td>{{ d.campaign.name }}</td>
+      <td class="muted">{{ d.creation_date|date:"M d H:i" }}</td>
+      <td style="text-align:right">
+        <form class="inline" method="post" action="{% url 'dashboard-action' 'lead-suppress' %}" data-confirm="Suppress this lead permanently — never email or requalify them?">
+          {% csrf_token %}<input type="hidden" name="lead" value="{{ d.lead.pk }}">
+          <input type="hidden" name="next" value="{{ request.get_full_path }}">
+          <button class="danger small">Suppress</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  <div class="notice section-gap">These deals have a resolved address and are waiting for a free sending slot. The writer composes the email at send time (within the Mon–Fri 08:00–20:00 window, paced 3.5–4.5 min apart).</div>
+  {% else %}
+  <div class="empty"><div class="big">📬</div>{% if q %}No queued deals match “{{ q }}”.<br><span class="muted">The search covers the message list too — try clearing it.</span>{% else %}Nothing queued right now.<br><span class="muted">Deals land here once the researcher qualifies them and email finding resolves an address.</span>{% endif %}</div>
+  {% endif %}
+</div>
+
+<div class="card section-gap">
+  <h2>Composed messages <span class="muted">({{ total }} total)</span></h2>
+
+  {% if messages %}
+  <table style="margin-top:12px">
+    <tr><th>When</th><th>Deal</th><th></th><th>Subject</th><th>Preview</th></tr>
+    {% for m in messages %}
+    <tr class="clickable msg-row">
+      <td class="muted">{{ m.creation_date|date:"M d H:i" }}</td>
+      <td class="mono">{{ m.deal.lead.email|default:m.deal.lead.profile_url|truncatechars:32 }}</td>
+      <td>{% if m.is_outgoing %}<span class="pill emailed plain">out</span>{% else %}<span class="pill finding plain">in</span>{% endif %}</td>
+      <td class="mono">{{ m.deal.email_subject|default:"—"|truncatechars:44 }}</td>
+      <td class="muted">{{ m.content|truncatechars:54 }}</td>
+    </tr>
+    <tr class="msg-expand">
+      <td colspan="5" class="expand"><div>
+        <div class="msg">
+          <span class="meta">{% if m.is_outgoing %}you → {% else %}← lead {% endif %}{{ m.deal.lead.email|default:m.deal.lead.profile_url }} · {{ m.deal.campaign.name }}{% if m.deal.email_subject %} · “{{ m.deal.email_subject }}”{% endif %} · {{ m.creation_date|date:"M d Y H:i" }}</span>
+          {{ m.content }}
+        </div>
+      </div></td>
+    </tr>
+    {% endfor %}
+  </table>
+
+  {% if pages > 1 %}
+  <div class="pager">
+    {% if page > 1 %}
+      <a class="btn secondary small" href="?{{ querystring }}&page={{ page|add:-1 }}">← prev</a>
+    {% endif %}
+    <span class="muted">page {{ page }} / {{ pages }}</span>
+    {% if page < pages %}
+      <a class="btn secondary small" href="?{{ querystring }}&page={{ page|add:1 }}">next →</a>
+    {% endif %}
+  </div>
+  {% endif %}
+  {% else %}
+  <div class="empty"><div class="big">✍️</div>No messages match{% if q %} “{{ q }}”{% endif %}{% if campaign or direction %} for this filter{% endif %}.<br><span class="muted">Try clearing the search or filters.</span></div>
+  {% endif %}
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<style>
+  .msg { max-width: 92%; border-radius: 10px; padding: 10px 14px; font-size: 12.5px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; background: var(--bg-3); border: 1px solid var(--line); color: var(--ink-2); }
+  .msg .meta { display: block; font-size: 11px; color: var(--muted); margin-bottom: 5px; }
+</style>
+<script>
+  (function () {
+    var open = null;
+    document.querySelectorAll('.msg-row').forEach(function (row) {
+      row.addEventListener('click', function () {
+        if (open && open !== row) open.classList.remove('open');
+        open = (open === row) ? null : row;
+        if (open) open.classList.add('open');
+      });
+    });
+  })();
+</script>
+{% endblock %}

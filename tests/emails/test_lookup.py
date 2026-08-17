@@ -18,10 +18,10 @@ from openoutreach.emails.steps.lookup import buy_address, check_lookup, reclaim_
 from tests.factories import DealFactory, LeadFactory
 
 
-def _ready_to_find(campaign, email=None):
+def _ready_to_find(campaign, email=None, source_fields=None):
     return DealFactory(
         campaign=campaign,
-        lead=LeadFactory(email=email),
+        lead=LeadFactory(email=email, source_fields=source_fields or {}),
         state=DealState.READY_TO_FIND_EMAIL,
     )
 
@@ -34,6 +34,32 @@ def _in_flight(campaign, attempt=0, request_id="req1"):
         lookup_request_id=request_id,
         lookup_attempt=attempt,
     )
+
+
+# ── _slug_first_name ──────────────────────────────────────────────
+
+
+class TestSlugFirstName:
+    def test_takes_the_first_token_of_a_name_slug(self):
+        from openoutreach.emails.steps.lookup import _slug_first_name
+
+        assert _slug_first_name("https://www.linkedin.com/in/campbell-phillips-481710b0") == "campbell"
+
+    def test_ignores_the_truncated_last_name(self):
+        """Common last names are cut to one letter; only the first name is safe."""
+        from openoutreach.emails.steps.lookup import _slug_first_name
+
+        assert _slug_first_name("https://www.linkedin.com/in/brendan-d-6074a287") == "brendan"
+
+    def test_empty_for_a_url_without_a_slug(self):
+        from openoutreach.emails.steps.lookup import _slug_first_name
+
+        assert _slug_first_name("") == ""
+
+    def test_drops_a_numeric_lead(self):
+        from openoutreach.emails.steps.lookup import _slug_first_name
+
+        assert _slug_first_name("https://www.linkedin.com/in/481710b0") == ""
 
 
 # ── buy_address ───────────────────────────────────────────────────
@@ -73,6 +99,75 @@ class TestBuyAddress:
         assert deal.lookup_request_id == "req-42"
         assert deal.lookup_attempt == 0
         assert deal.not_before > timezone.now()
+
+    def test_a_site_finder_hit_skips_the_paid_job(self, campaign):
+        """A free scrape of the company's own site resolves the address before any
+        credit is spent — the site finder sits between the hub and the paid job."""
+        deal = _ready_to_find(campaign, source_fields={"company_domain": "acme.com"})
+
+        with patch("openoutreach.contacts.service.resolve", return_value=None), \
+                patch("openoutreach.emails.finders.find_emails",
+                      return_value="hello@acme.com") as find, \
+                patch("openoutreach.emails.bettercontact.submit") as submit:
+            assert buy_address(deal) == DealState.READY_TO_EMAIL
+
+        submit.assert_not_called()
+        find.assert_called_once_with(deal.lead)
+        deal.lead.refresh_from_db()
+        assert deal.lead.email == "hello@acme.com"
+
+    def test_the_submit_carries_the_name_and_company_that_lift_hit_rate(self, campaign):
+        """URL-only lookups ran 3-for-3 terminal misses; the row's name + company
+        are what the paid finder wants and they were being thrown away."""
+        deal = _ready_to_find(campaign, source_fields={
+            "contact_first_name": "Campbell", "contact_last_name": "Phillips",
+            "company_name": "Tumblr", "company_domain": "tumblr.com",
+        })
+
+        with patch("openoutreach.contacts.service.resolve", return_value=None), \
+                patch("openoutreach.emails.finders.find_emails", return_value=None), \
+                patch("openoutreach.emails.bettercontact.is_configured", return_value=True), \
+                patch("openoutreach.emails.bettercontact.submit") as submit:
+            buy_address(deal)
+
+        query = submit.call_args.args[0]
+        assert query.linkedin_url == deal.lead.profile_url
+        assert query.first_name == "Campbell"
+        assert query.last_name == "Phillips"
+        assert query.company == "Tumblr"
+        assert query.company_domain == "tumblr.com"
+
+    def test_an_old_lead_without_enrichment_fields_falls_back_to_the_slug(self, campaign):
+        """Leads discovered before the fields existed carry no name/company; the
+        slug's first token is a safe first-name hint, and nothing else is guessed.
+        """
+        deal = _ready_to_find(campaign)
+
+        with patch("openoutreach.contacts.service.resolve", return_value=None), \
+                patch("openoutreach.emails.finders.find_emails", return_value=None), \
+                patch("openoutreach.emails.bettercontact.is_configured", return_value=True), \
+                patch("openoutreach.emails.bettercontact.submit") as submit:
+            buy_address(deal)
+
+        query = submit.call_args.args[0]
+        assert query.linkedin_url == deal.lead.profile_url
+        assert query.first_name == "lead"  # slug ``/in/lead-<n>/``
+        assert query.last_name == ""
+        assert query.company == "" and query.company_domain == ""
+
+    def test_stored_fields_win_over_the_slug_hint(self, campaign):
+        deal = _ready_to_find(campaign, source_fields={
+            "contact_first_name": "Campbell", "contact_last_name": "Phillips",
+        })
+
+        with patch("openoutreach.contacts.service.resolve", return_value=None), \
+                patch("openoutreach.emails.bettercontact.is_configured", return_value=True), \
+                patch("openoutreach.emails.bettercontact.submit") as submit:
+            buy_address(deal)
+
+        query = submit.call_args.args[0]
+        assert query.first_name == "Campbell"
+        assert query.last_name == "Phillips"
 
     def test_an_unconfigured_finder_leaves_the_deal_queued(self, campaign):
         deal = _ready_to_find(campaign)

@@ -1,0 +1,104 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Team · Synaptix Studio Console{% endblock %}
+{% block pagetitle %}Team{% endblock %}
+{% block crumb %}{{ total_operators }} operator{{ total_operators|pluralize }} · you are the studio lead{% endblock %}
+{% block content %}
+
+<div class="grid cols-3">
+  <div class="card" style="grid-column: span 2">
+    <h2>Studio members</h2>
+    {% if users %}
+    <table>
+      <tr>
+        <th>Member</th>
+        <th>Role</th>
+        <th>Campaigns</th>
+        <th>Last active</th>
+        <th>Status</th>
+        <th style="width:230px"></th>
+      </tr>
+      {% for u in users %}
+      <tr {% if not u.user.is_active %}style="opacity:.5"{% endif %}>
+        <td>
+          <strong>{{ u.user.get_full_name|default:u.user.username }}</strong>
+          <div class="muted mono">{{ u.user.email }}</div>
+        </td>
+        <td>
+          {% if u.user.is_superuser %}
+            <span class="pill lead plain">Lead</span>
+          {% else %}
+            <span class="pill operator plain">Operator</span>
+          {% endif %}
+        </td>
+        <td class="mono">{{ u.campaign_count }}</td>
+        <td class="muted">{{ u.last_active|date:"M d Y H:i"|default:"never" }}</td>
+        <td>
+          {% if u.user.is_active %}
+            <span class="pill running plain">active</span>
+          {% else %}
+            <span class="pill stopped plain">off</span>
+          {% endif %}
+        </td>
+        <td>
+          <div class="btn-row">
+            <form class="inline" method="post" action="{% url 'dashboard-team-password' u.user.pk %}">
+              {% csrf_token %}
+              <button class="secondary small" title="Issue a new temporary password (shown once)">Reset pw</button>
+            </form>
+            {% if u.user.is_superuser %}
+              <form class="inline" method="post" action="{% url 'dashboard-team-role' u.user.pk %}">
+                {% csrf_token %}<input type="hidden" name="role" value="operator">
+                <button class="ghost small" title="Make them an Operator (no config/team access)">Demote</button>
+              </form>
+            {% else %}
+              <form class="inline" method="post" action="{% url 'dashboard-team-role' u.user.pk %}">
+                {% csrf_token %}<input type="hidden" name="role" value="lead">
+                <button class="ghost small" title="Promote to Lead — full control">Promote</button>
+              </form>
+            {% endif %}
+            {% if u.user.pk != request.user.pk %}
+              {% if u.user.is_active %}
+                <form class="inline" method="post" action="{% url 'dashboard-team-toggle' u.user.pk %}" data-confirm="Deactivate {{ u.user.get_full_name|default:u.user.username }}? They will lose access immediately.">
+                  {% csrf_token %}
+                  <button class="danger small">Deactivate</button>
+                </form>
+              {% else %}
+                <form class="inline" method="post" action="{% url 'dashboard-team-toggle' u.user.pk %}">
+                  {% csrf_token %}
+                  <button class="secondary small">Reactivate</button>
+                </form>
+              {% endif %}
+            {% endif %}
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <div class="empty"><div class="big">👥</div>No staff members yet.</div>
+    {% endif %}
+    <div class="notice section-gap">
+      <b>Roles.</b> The <b>Lead</b> manages everything — configuration, the team, the pipeline. An
+      <b>Operator</b> runs the pipeline (start/stop the engine, nudge, read mail, pause mailboxes,
+      suppress leads) but cannot change configuration or manage the team.
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Invite a member</h2>
+    <form method="post" action="{% url 'dashboard-team-add' %}">
+      {% csrf_token %}
+      <label>Full name</label>
+      <input type="text" name="name" placeholder="e.g. Ayesha Khan" required>
+      <label>Work email</label>
+      <input type="email" name="email" placeholder="team@synaptixstudio.com" required>
+      <button style="margin-top:14px;width:100%">Add member</button>
+    </form>
+    <div class="notice" style="margin-top:12px">
+      New members join as <b>Operators</b> with a temporary password shown once — share it privately.
+      Members sign in at <span class="mono">/dashboard/</span>.
+    </div>
+  </div>
+</div>
+
+{% endblock %}

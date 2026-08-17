@@ -123,13 +123,32 @@ def extract_facts(
 
 # ── Profile summary ──
 
+def _add_contact_facts(facts: list[str], lead) -> list[str]:
+    """Guarantee the outreach agent sees the phone and website.
+
+    ``profile_text`` carries them (they are folded in via ``TEXT_FIELDS``), so
+    extraction usually does too — but an LLM can drop a number, and the agent
+    should never have to ask for contact details the store already has.
+    Deterministic append, only when not already covered.
+    """
+    out = list(facts)
+    phone = (lead.phone or "").strip()
+    website = (lead.website or "").strip()
+    if phone and not any(phone in fact for fact in out):
+        out.append(f"The lead's phone number is {phone}.")
+    if website and not any(website in fact for fact in out):
+        out.append(f"The lead's website is {website}.")
+    return out
+
+
 def materialize_profile_summary_if_missing(deal) -> None:
     """Build `deal.profile_summary` lazily on first follow-up touch.
 
     Extracts facts from the lead's stored firmographic ``profile_text`` (captured
     at discovery — no re-scrape), conditioned on the campaign target + product
-    docs, and persists them on the Deal. No-op if already built or the lead has no
-    profile text.
+    docs, and persists them on the Deal. The lead's ``phone``/``website`` are then
+    appended deterministically when extraction missed them, so the outreach agent
+    always has them. No-op if already built or the lead has no profile text.
     """
     if deal.profile_summary:
         return
@@ -155,7 +174,7 @@ def materialize_profile_summary_if_missing(deal) -> None:
         seller_name=operator.seller_name(),
         context=context,
     )
-    deal.profile_summary = {"facts": facts}
+    deal.profile_summary = {"facts": _add_contact_facts(facts, lead)}
     deal.save(update_fields=["profile_summary"])
     logger.info(
         "profile_summary built for deal=%s lead=%s (%d facts)%s",

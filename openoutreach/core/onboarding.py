@@ -266,6 +266,7 @@ _MAILBOX_GUIDANCE = """
 _MAILBOX_DEFAULTS = {
     "from_address": "", "host": "smtp.gmail.com", "port": 587,
     "imap_host": "imap.gmail.com", "imap_port": 993,
+    "imap_username": "", "imap_password": "",
 }
 
 # Shown as the signature prompt, once per never-asked box. The example is a real,
@@ -336,6 +337,18 @@ def _prompt_mailbox_fields(entry: dict) -> dict:
         "port": _required(wiz.integer("SMTP port (587 STARTTLS / 465 SSL)", default=entry["port"])),
         "imap_host": _required(wiz.text("IMAP host (Enter = Gmail/Workspace)", default=entry["imap_host"])),
         "imap_port": _required(wiz.integer("IMAP port", default=entry["imap_port"])),
+        # A box whose replies land in a *different* account — e.g. Hostinger SMTP
+        # sending from outreach@… while Cloudflare forwards replies to a Gmail
+        # inbox — overrides the read side here. Empty = same as SMTP.
+        "imap_username": _required(wiz.text(
+            "IMAP username (Enter = same as sending address; use another account if "
+            "replies are forwarded elsewhere, e.g. Hostinger SMTP → Gmail)",
+            default=entry["imap_username"], required=False,
+        )),
+        "imap_password": _required(wiz.text(
+            "IMAP app password (Enter = same as the sending password)",
+            default=entry["imap_password"], secret=True, required=False,
+        )),
     }
 
 

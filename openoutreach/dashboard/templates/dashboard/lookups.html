@@ -1,0 +1,93 @@
+{% extends "dashboard/base.html" %}
+{% load dashboard_extras %}
+{% block title %}Email finding · Synaptix Studio Console{% endblock %}
+{% block pagetitle %}Email finding{% endblock %}
+{% block crumb %}resolving work addresses — the one paid step{% endblock %}
+{% block content %}
+
+<div class="row spread" style="margin-bottom:14px">
+  <div class="row">
+    <span class="pill ready-find plain">{{ waiting|length }} waiting to buy</span>
+    <span class="pill finding plain">{{ inflight|length }} in flight</span>
+    <span class="pill ready-mail plain">{{ ready|length }} ready to email</span>
+    <span class="pill no-email plain">{{ misses }} resolved-miss</span>
+    <span class="pill unsub plain">BetterContact {% if bettercontact %}<span class="ok-text">on</span>{% else %}off{% endif %}</span>
+    {% if firecrawl %}<span class="pill unsub plain">site finder on</span>{% endif %}
+  </div>
+  <div class="btn-row">
+    <form class="inline" method="post" action="{% url 'dashboard-action' 'cycle' %}">
+      {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}">
+      <button class="secondary small" title="Poll in-flight lookups now">Poll lookups</button>
+    </form>
+    <form class="inline" method="post" action="{% url 'dashboard-action' 'read-mail' %}">
+      {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}">
+      <button class="secondary small">Read mail</button>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <h2>In flight <span class="muted" style="text-transform:none">· provider jobs being polled</span></h2>
+  {% if inflight %}
+  <table>
+    <tr><th>Lead</th><th>Campaign</th><th>Job</th><th>Polls</th><th>Next poll</th><th>Waiting since</th></tr>
+    {% for d in inflight %}
+    <tr>
+      <td class="mono">{{ d.lead.profile_url|truncatechars:44 }}</td>
+      <td>{{ d.campaign.name }}</td>
+      <td class="mono muted">{{ d.lookup_request_id|truncatechars:20 }}</td>
+      <td class="mono muted">{{ d.lookup_attempt }}</td>
+      <td class="mono">{{ d.not_before|date:"M d H:i"|default:"—" }}</td>
+      <td class="muted">{{ d.creation_date|date:"M d H:i" }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  <div class="notice section-gap">Backoff doubles each poll and never abandons a running job — a slow provider just means the deal waits its turn. The job handle and poll count live on the deal, so a restart resumes the exact same poll.</div>
+  {% else %}
+  <div class="empty"><div class="big">🔎</div>No lookups in flight.</div>
+  {% endif %}
+</div>
+
+<div class="grid cols-2 section-gap">
+  <div class="card">
+    <h2>Waiting to buy <span class="muted" style="text-transform:none">· ranked, address not yet resolved</span></h2>
+    {% if waiting %}
+    <table>
+      <tr><th>Lead</th><th>Campaign</th><th>GP</th><th>Since</th></tr>
+      {% for d in waiting %}
+      <tr>
+        <td class="mono">{{ d.lead.profile_url|truncatechars:44 }}</td>
+        <td>{{ d.campaign.name }}</td>
+        <td class="mono">{% if d.gp_score is not None %}<span class="ok-text">{{ d.gp_score|floatformat:3 }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+        <td class="muted">{{ d.creation_date|date:"M d H:i" }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <div class="empty"><div class="big">🕐</div>Nothing past the rank gate right now.</div>
+    {% endif %}
+    <div class="notice section-gap">These passed the GP confidence gate (≥ {{ gp_threshold }}). The paid lookup fires only when there's send headroom today — one credit per verified hit.</div>
+  </div>
+
+  <div class="card">
+    <h2>Ready to email <span class="muted" style="text-transform:none">· address resolved, awaiting a slot</span></h2>
+    {% if ready %}
+    <table>
+      <tr><th>Email</th><th>Lead</th><th>Campaign</th><th>GP</th></tr>
+      {% for d in ready %}
+      <tr>
+        <td class="mono">{{ d.lead.email }}</td>
+        <td class="mono">{{ d.lead.profile_url|truncatechars:34 }}</td>
+        <td>{{ d.campaign.name }}</td>
+        <td class="mono">{% if d.gp_score is not None %}<span class="ok-text">{{ d.gp_score|floatformat:3 }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <div class="empty"><div class="big">📭</div>No resolved addresses queued.</div>
+    {% endif %}
+    <div class="notice section-gap">Resolved cheap-first: an address already on the lead, then the free hub cache, then the paid finder. A miss lands in <span class="pill no-email plain">No Email (BetterContact)</span> — a fit positive whose reachability failed, never a wrong-fit verdict.</div>
+  </div>
+</div>
+
+{% endblock %}

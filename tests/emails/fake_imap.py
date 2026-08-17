@@ -37,6 +37,9 @@ class FakeIMAP:
     def login(self, username, password):
         return "OK", []
 
+    def noop(self):
+        return "OK", [b""]
+
     def status(self, mailbox, attributes):
         uidnext = max(self.messages, default=0) + 1
         return "OK", [f"INBOX (UIDVALIDITY {self.uidvalidity} UIDNEXT {uidnext})".encode()]

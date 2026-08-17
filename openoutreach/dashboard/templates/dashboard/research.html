@@ -1,0 +1,98 @@
+{% extends "dashboard/base.html" %}
+{% load dashboard_extras %}
+{% block title %}Research · Synaptix Studio Console{% endblock %}
+{% block pagetitle %}Research{% endblock %}
+{% block crumb %}the researcher — discovery, qualification, vocabulary{% endblock %}
+{% block content %}
+
+<div class="row spread" style="margin-bottom:14px">
+  <form class="row" method="get">
+    <select name="campaign" onchange="this.form.submit()">
+      <option value="">All campaigns</option>
+      {% for c in campaigns %}<option value="{{ c.pk }}" {% if campaign == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
+    </select>
+    {% if campaign %}<a class="btn secondary small" href="{% url 'dashboard-research' %}">Clear</a>{% endif %}
+  </form>
+  <div class="row">
+    <span class="pill qual plain">{{ pool.qualified }} qualified</span>
+    <span class="pill failed plain">{{ pool.rejected }} rejected</span>
+    <span class="pill emailed plain">{{ pool.emailed }} emailed</span>
+    <span class="pill finding plain">{{ pool.nodes }} nodes</span>
+    <span class="pill ready-find plain">{{ pool.keywords }} keywords</span>
+  </div>
+</div>
+
+<div class="grid cols-2">
+  <div class="card">
+    <h2>Discovery frontier <span class="muted" style="text-transform:none">· frontier {{ state_counts.frontier|default:0 }} · fired {{ state_counts.fired|default:0 }} · drained {{ state_counts.drained|default:0 }} · dead {{ state_counts.dead|default:0 }}</span></h2>
+    <p class="sub">Every query the researcher runs (or is about to run) — one node per keyword set. Greedy descent: a node adds one token at a time, valued by how often its tokens appear in qualified vs rejected profiles.</p>
+    {% if node_rows %}
+    <table>
+      <tr><th>Query</th><th>State</th><th>Offset</th><th>Index</th><th>Updated</th></tr>
+      {% for r in node_rows %}
+      <tr>
+        <td class="mono">{{ r.query }}</td>
+        <td><span class="pill {{ r.state|default:'unsub' }} plain">{{ r.state }}</span></td>
+        <td class="mono muted">{{ r.offset }}</td>
+        <td class="mono muted">{{ r.leads_found|default:"—" }}</td>
+        <td class="muted">{{ r.updated|date:"M d H:i" }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <div class="empty"><div class="big">🕸</div>No query nodes yet — discovery hasn't run.</div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Vocabulary <span class="muted" style="text-transform:none">· the words the researcher searches by</span></h2>
+    <p class="sub">Tokens drawn from profiles the LLM already accepted (df ≥ 2), kept per search field so “cto” only ever searches job titles and “belgium” only searches locations.</p>
+    {% if vocab %}
+    <table>
+      <tr><th>Term</th><th>Field</th><th>Used in</th></tr>
+      {% for k in vocab %}
+      <tr>
+        <td class="mono">{{ k.token }}</td>
+        <td class="muted mono">{{ k.field }}</td>
+        <td class="mono muted">{{ k.n }} node(s)</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <div class="empty"><div class="big">🔤</div>Vocabulary is empty — it grows from qualified profiles.</div>
+    {% endif %}
+
+    <h3>How it decides</h3>
+    <div class="kv">
+      <span class="k">Score</span>
+      <span class="v">Laplace-smoothed P(node) = (a + 2·P(parent)) / (a + b + 2), where a/b are qualified/rejected profiles containing the node's tokens</span>
+      <span class="k">Pick</span>
+      <span class="v">Thompson sampling over the frontier — explore while evidence is thin, exploit once it's not</span>
+      <span class="k">Retire</span>
+      <span class="v">Only emptiness retires a node (drained / dead) — never a bad score</span>
+    </div>
+  </div>
+</div>
+
+<div class="card section-gap">
+  <h2>Recent qualification verdicts <span class="muted" style="text-transform:none">· the LLM's own words, latest 30</span></h2>
+  {% if verdicts %}
+  <table>
+    <tr><th>When</th><th>Lead</th><th>Campaign</th><th>Verdict</th><th>GP</th><th>Why</th></tr>
+    {% for d in verdicts %}
+    <tr>
+      <td class="muted">{{ d.update_date|date:"M d H:i" }}</td>
+      <td class="mono">{{ d.lead.profile_url|truncatechars:44 }}</td>
+      <td>{{ d.campaign.name }}</td>
+      <td><span class="pill {{ d.state|pillclass }} plain">{{ d.state.label }}</span></td>
+      <td class="mono">{% if d.gp_score is not None %}<span class="{% if d.gp_score >= gp_threshold %}ok-text{% else %}warn-text{% endif %}">{{ d.gp_score|floatformat:3 }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+      <td class="muted">{{ d.reason|default:"—"|truncatechars:180 }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty"><div class="big">🧭</div>No qualification decisions recorded yet.</div>
+  {% endif %}
+</div>
+
+{% endblock %}

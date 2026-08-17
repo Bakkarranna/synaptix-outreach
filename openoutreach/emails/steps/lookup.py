@@ -65,6 +65,22 @@ def buy_address(deal) -> DealState | None:
         return DealState.READY_TO_EMAIL
 
     logger.info("%s", step_line("hub cache", "miss"))
+
+    # Then the free site finders — scrape the company's own site for a published
+    # contact address before spending a credit. A real address off the company's
+    # own contact page is a genuine alternative to a paid terminal miss.
+    from openoutreach.emails import finders
+    found = finders.find_emails(deal.lead)
+    if found:
+        deal.lead.email = found
+        deal.lead.save(update_fields=["email"])
+        contacts.contribute(deal.lead, [found], contacts.ORIGIN_SITE_SCRAPE)
+        logger.info("%s", step_line(
+            "site finder", f"{found} → READY_TO_EMAIL", glyph="✓", color="green"))
+        return DealState.READY_TO_EMAIL
+
+    logger.info("%s", step_line(
+        "site finder", "miss — falling back to the paid finder", glyph="·", color="yellow"))
     return _submit(deal)
 
 
@@ -83,8 +99,7 @@ def _submit(deal) -> DealState | None:
         return None
 
     try:
-        request_id = bettercontact.submit(
-            BetterContactQuery(linkedin_url=deal.lead.profile_url))
+        request_id = bettercontact.submit(_query_for(deal.lead))
     except BetterContactUnavailable as exc:
         logger.info("%s", step_line(
             "bettercontact", f"submit unavailable ({exc}) — left queued",
@@ -98,6 +113,41 @@ def _submit(deal) -> DealState | None:
         "bettercontact", f"submitted · req {request_id[:12]}… → FINDING_EMAIL · polling",
         glyph="✓", color="green"))
     return DealState.FINDING_EMAIL
+
+
+def _query_for(lead):
+    """The paid finder's query for one lead — URL plus whatever enrichment
+    fields discovery kept. ``discovery.ENRICHMENT_FIELDS`` names the four row
+    fields that lift the hit rate, and they ride in ``Lead.source_fields``;
+    older leads predate them and fall back to a slug-derived first name.
+    """
+    from openoutreach.emails.bettercontact import BetterContactQuery
+
+    fields = lead.source_fields or {}
+    first_name = fields.get("contact_first_name") or _slug_first_name(lead.profile_url)
+    return BetterContactQuery(
+        linkedin_url=lead.profile_url,
+        first_name=first_name,
+        last_name=fields.get("contact_last_name", ""),
+        company=fields.get("company_name", ""),
+        company_domain=fields.get("company_domain", ""),
+    )
+
+
+def _slug_first_name(profile_url: str) -> str:
+    """A first-name hint from a LinkedIn slug, for leads discovered before the
+    enrichment fields were stored. ``/in/firstname-lastname-suffix`` has the
+    person's first name as its first token — the last name is truncated for
+    common names (``brendan-d-6074a287``) so it is *never* used, and the suffix
+    is dropped. Only alphabetic tokens count; a custom URL (``/in/ceo-extraordinaire``)
+    is passed through anyway because a plausible first name beats the 3-for-3
+    terminal-miss streak a bare URL produced on this install.
+    """
+    slug = (profile_url or "").rstrip("/").rsplit("/", 1)[-1]
+    if not slug or slug.startswith("in-"):
+        return ""
+    token = slug.split("-", 1)[0]
+    return token if token.isalpha() else ""
 
 
 def reclaim_lookup(deal) -> DealState:

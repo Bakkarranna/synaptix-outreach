@@ -6,6 +6,13 @@ __pycache__/
 .dockerignore
 .env
 
+# Deploy secrets + backups (see deploy/README.md)
+deploy/onboard_config.json
+deploy/backups/
+
+# Packaging output (scripts/package.ps1)
+/dist/
+
 /.coverage
 /venv/
 /data/*

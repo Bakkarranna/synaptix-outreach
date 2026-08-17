@@ -123,6 +123,15 @@ class Deal(models.Model):
         default="",
     )
     reason = models.TextField(blank=True, default="")
+    # The campaign GP's P(f>0.5) for this lead at the rank gate — the score
+    # ``promote_to_ready`` judged against ``min_gp_confidence`` (0.75). Written for
+    # every scored deal, promoted or not, so the operator can see exactly why a
+    # lead passed or failed the gate. None until the pool has been scored; stays
+    # NULL for FAILED deals, which the LLM rejected before ever reaching the gate
+    # (their ``reason`` is the LLM's rationale, not a gate verdict). A score is a
+    # snapshot at promotion time — the model refits constantly, so it is a point
+    # in the campaign's learning, not a live probability.
+    gp_score = models.FloatField(null=True, blank=True)
     # Email channel. The mailbox that sent the opener, bound to the deal: it's the
     # per-box-cap counting key (ChatMessage.filter(deal__mailbox=box)), the reply
     # anchor, and the sticky thread box for the agentic follow-up loop.
@@ -165,3 +174,76 @@ class Deal(models.Model):
     def __str__(self):
         lead_str = str(self.lead) if self.lead_id else "?"
         return f"{lead_str} [{self.state}]"
+
+
+class GpScoreRecord(models.Model):
+    """One scoring-pass snapshot of a deal's GP confidence (P(f>0.5)).
+
+    Written by ``promote_to_ready`` on every pass that scores the deal — once per
+    refit while the lead waits in the QUALIFIED pool, plus the promotion verdict —
+    so the operator can see how the campaign model's confidence in a lead evolved
+    as the model learned. ``Deal.gp_score`` stays the latest snapshot for cheap
+    display; this table is the history that snapshot came from. Deals the LLM
+    rejected (FAILED) never reach the gate, so they have no records.
+    """
+
+    deal = models.ForeignKey(
+        "Deal", on_delete=models.CASCADE, related_name="gp_score_history",
+    )
+    score = models.FloatField()
+    # The GP posterior's mean and std at this lead's embedding — the raw numbers
+    # behind ``score``. A high P with a small std is a confident fit; a P near
+    # 0.5 with a large std is a coin flip, and even a high P with a large std is
+    # uncertain. NULL on records seeded before this was tracked.
+    mean = models.FloatField(null=True, blank=True)
+    std = models.FloatField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "GP Score Record"
+        verbose_name_plural = "GP Score Records"
+        ordering = ["created_at"]
+        indexes = [
+            models.Index(fields=["deal", "created_at"], name="gp_score_deal_time_idx"),
+        ]
+
+    def __str__(self):
+        return f"deal {self.deal_id} P={self.score:.3f} @ {self.created_at:%Y-%m-%d %H:%M}"
+
+
+class RequalificationLog(models.Model):
+    """One audit row per manual override of an LLM rejection.
+
+    Written whenever a ``FAILED``+``wrong_fit`` deal is flipped back to
+    ``QUALIFIED`` — by the Reviews page (single or bulk) or by
+    ``prompt_ab --apply`` — so the operator can review who requalified which
+    lead, when, and what the original rejection said. The deal itself keeps
+    ``reason`` as the live audit trail; this row is the history view over all
+    of them. ``user`` is NULL for script-driven overrides (``prompt_ab``), which
+    are the operator's own machine running an explicit re-judge.
+    """
+
+    deal = models.ForeignKey(
+        "Deal", on_delete=models.CASCADE, related_name="requalification_logs",
+    )
+    # The lead identity at override time (email or profile URL), denormalized so
+    # the log stays readable even if the lead row is later edited.
+    lead_identity = models.CharField(max_length=300, blank=True, default="")
+    user = models.ForeignKey(
+        "auth.User", null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="requalification_logs",
+    )
+    source = models.CharField(max_length=20, default="reviews")
+    original_reason = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Requalification Log"
+        verbose_name_plural = "Requalification Logs"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["created_at"], name="requal_log_time_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.lead_identity} requalified by {self.user_id or self.source} @ {self.created_at:%Y-%m-%d %H:%M}"

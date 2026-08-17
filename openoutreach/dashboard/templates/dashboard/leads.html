@@ -1,0 +1,104 @@
+{% extends "dashboard/base.html" %}
+{% load dashboard_extras %}
+{% block title %}Leads · Synaptix Studio Console{% endblock %}
+{% block pagetitle %}Leads{% endblock %}
+{% block crumb %}{{ total }} prospect{{ total|pluralize }} in the store{% endblock %}
+{% block content %}
+
+<div class="card">
+  <div class="row spread">
+    <h2 style="margin:0">Prospects <span class="muted">({{ total }})</span></h2>
+    <div class="row">
+      <form class="row" method="get">
+        <input type="search" name="q" value="{{ q }}" placeholder="Search title, headline, email, URL…" style="width:300px">
+        <button>Search</button>
+        {% if q %}<a class="btn secondary" href="{% url 'dashboard-leads' %}">Clear</a>{% endif %}
+      </form>
+      <a class="btn secondary small" href="{% url 'dashboard-leads-export' %}" title="Download every lead as a CSV — the same file `import_leads` can re-ingest">Export CSV</a>
+      <form class="inline" method="post" action="{% url 'dashboard-leads-import' %}" enctype="multipart/form-data"
+            title="Upload a leads CSV (the export schema) — rows with an existing profile URL are skipped">
+        {% csrf_token %}
+        <input type="file" name="file" accept=".csv" required style="max-width:170px; font-size:11px">
+        <button class="secondary small">Import CSV</button>
+      </form>
+    </div>
+  </div>
+
+  {% if rows %}
+  <table style="margin-top:12px">
+    <tr>
+      <th>Job title</th>
+      <th>Headline / profile</th>
+      <th>Location</th>
+      <th>Email</th>
+      <th>Funnel</th>
+      <th style="width:150px"></th>
+    </tr>
+    {% for lead, deals in rows %}
+    <tr {% if lead.disqualified %}style="opacity:.5"{% endif %}>
+      <td class="mono">{{ lead.source_fields.contact_job_title|default:"—" }}</td>
+      <td>
+        <div>{{ lead.source_fields.contact_headline|default:lead.profile_text|truncatechars:90 }}</div>
+        <div class="muted mono">{{ lead.profile_url|truncatechars:60 }}</div>
+      </td>
+      <td class="muted">{{ lead.source_fields.contact_location_country|default:lead.country_code|upper }}</td>
+      <td class="mono">{{ lead.email|default:"—" }}</td>
+      <td>
+        {% for d in deals|slice:":3" %}
+          <span class="pill {{ d.state|pillclass }} plain">{{ d.state.label }}</span>
+        {% empty %}<span class="muted">—</span>{% endfor %}
+      </td>
+      <td>
+        <div class="btn-row">
+          {% if lead.email %}
+          <button type="button" class="ghost small" data-copy="{{ lead.email }}" title="Copy email address">Copy</button>
+          <a class="ghost small" href="{{ lead.profile_url }}" target="_blank" rel="noopener" title="Open profile">Profile ↗</a>
+          {% endif %}
+          {% if lead.disqualified %}
+            <form class="inline" method="post" action="{% url 'dashboard-action' 'lead-unsuppress' %}">
+              {% csrf_token %}<input type="hidden" name="lead" value="{{ lead.pk }}">
+              <input type="hidden" name="next" value="{{ request.get_full_path }}">
+              <button class="secondary small" title="Allow outreach to this lead again">Restore</button>
+            </form>
+          {% else %}
+            <form class="inline" method="post" action="{% url 'dashboard-action' 'lead-suppress' %}" data-confirm="Suppress this lead permanently? No email will ever be sent to them.">
+              {% csrf_token %}<input type="hidden" name="lead" value="{{ lead.pk }}">
+              <input type="hidden" name="next" value="{{ request.get_full_path }}">
+              <button class="danger small" title="Never email this lead again">Suppress</button>
+            </form>
+          {% endif %}
+        </div>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+
+  <div class="pager">
+    {% if page > 1 %}
+      <a class="btn secondary small" href="?q={{ q|urlencode }}&page={{ page|add:-1 }}">← prev</a>
+    {% endif %}
+    <span class="muted">page {{ page }} / {{ pages }}</span>
+    {% if page < pages %}
+      <a class="btn secondary small" href="?q={{ q|urlencode }}&page={{ page|add:1 }}">next →</a>
+    {% endif %}
+  </div>
+  {% else %}
+  <div class="empty"><div class="big">🔍</div>No leads match{% if q %} “{{ q }}”{% endif %}.<br><span class="muted">Discovery feeds this list as the engine qualifies prospects.</span></div>
+  {% endif %}
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.addEventListener('click', function (e) {
+    var btn = e.target.closest('[data-copy]');
+    if (!btn) return;
+    navigator.clipboard.writeText(btn.dataset.copy).then(function () {
+      var old = btn.textContent;
+      btn.textContent = 'Copied ✓';
+      setTimeout(function () { btn.textContent = old; }, 1400);
+    });
+  });
+</script>
+{% endblock %}

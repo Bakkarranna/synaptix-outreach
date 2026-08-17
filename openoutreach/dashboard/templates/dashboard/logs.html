@@ -1,0 +1,74 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Live log · Synaptix Studio Console{% endblock %}
+{% block pagetitle %}Live log{% endblock %}
+{% block crumb %}the daemon's running account of what it's doing{% endblock %}
+{% block content %}
+
+<div class="card">
+  <div class="row spread">
+    <h2 style="margin:0">Daemon log</h2>
+    <div class="row">
+      <span class="notice"><span id="poll-note">auto-refreshes every 10s</span></span>
+      <form class="inline" method="post" action="{% url 'dashboard-action' 'daemon-stop' %}" data-confirm="Stop the daemon?">
+        {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <button class="danger small">Stop daemon</button>
+      </form>
+    </div>
+  </div>
+  <pre class="log" id="log" style="margin-top:12px">{{ log }}</pre>
+  <div class="row spread section-gap">
+    <span class="muted mono" id="log-meta"></span>
+    <div class="btn-row">
+      <button class="secondary small" id="btn-copy" type="button">Copy log</button>
+      <button class="secondary small" id="btn-follow" type="button">Follow: on</button>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  (function () {
+    var pre = document.getElementById('log');
+    var follow = true;
+    var atBottom = function () {
+      return pre.scrollHeight - pre.scrollTop - pre.clientHeight < 40;
+    };
+    pre.addEventListener('scroll', function () { follow = atBottom(); });
+
+    document.getElementById('btn-follow').addEventListener('click', function (e) {
+      follow = !follow;
+      e.currentTarget.textContent = 'Follow: ' + (follow ? 'on' : 'off');
+      if (follow) pre.scrollTop = pre.scrollHeight;
+    });
+    document.getElementById('btn-copy').addEventListener('click', function () {
+      navigator.clipboard.writeText(pre.textContent).then(function () {
+        var b = document.getElementById('btn-copy');
+        var old = b.textContent;
+        b.textContent = 'Copied ✓';
+        setTimeout(function () { b.textContent = old; }, 1400);
+      });
+    });
+
+    // Poll faster than the base pill — the log is the point of this page.
+    function render(data) {
+      var next = data.daemon.log_tail || '(empty)';
+      if (next !== pre.textContent) {
+        var stick = follow || atBottom();
+        pre.textContent = next;
+        if (stick) pre.scrollTop = pre.scrollHeight;
+      }
+      var meta = document.getElementById('log-meta');
+      if (meta) meta.textContent = data.daemon.status + ' · ' + next.length.toLocaleString() + ' chars · updated ' + new Date().toLocaleTimeString();
+    }
+    window.__daemonRender = render; // attach to the base poller's 30s tick too
+    startDaemonPoll(render);
+    setInterval(function () {
+      fetch('{% url "dashboard-api-status" %}')
+        .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error(r.status)); })
+        .then(render);
+    }, 10000);
+  })();
+</script>
+{% endblock %}

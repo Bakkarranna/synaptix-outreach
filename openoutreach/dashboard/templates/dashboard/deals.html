@@ -1,0 +1,176 @@
+{% extends "dashboard/base.html" %}
+{% load dashboard_extras %}
+{% block title %}Deals · Synaptix Studio Console{% endblock %}
+{% block pagetitle %}Deals{% endblock %}
+{% block crumb %}click a row to read the conversation{% endblock %}
+{% block content %}
+
+<div class="card">
+  <div class="row spread">
+    <h2 style="margin:0">Deals <span class="muted">({{ total }} shown)</span></h2>
+    <form class="row" method="get">
+      <select name="state" onchange="this.form.submit()">
+        <option value="">All states</option>
+        {% for value, label in states %}
+          <option value="{{ value }}" {% if state == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      <select name="gp" onchange="this.form.submit()" title="Filter by GP confidence vs the rank gate">
+        <option value="">Any GP score</option>
+        <option value="above" {% if gp == "above" %}selected{% endif %}>Above gate (≥ {{ gp_threshold }})</option>
+        <option value="below" {% if gp == "below" %}selected{% endif %}>Below gate (&lt; {{ gp_threshold }})</option>
+        <option value="scored" {% if gp == "scored" %}selected{% endif %}>Scored only</option>
+        <option value="unscored" {% if gp == "unscored" %}selected{% endif %}>Unscored</option>
+      </select>
+      <select name="sort" onchange="this.form.submit()">
+        <option value="">Sort: recently updated</option>
+        <option value="score" {% if sort == "score" %}selected{% endif %}>Highest GP first</option>
+        <option value="score-asc" {% if sort == "score-asc" %}selected{% endif %}>Lowest GP first</option>
+      </select>
+      {% if state or gp or sort %}<a class="btn secondary" href="{% url 'dashboard-deals' %}">Clear</a>{% endif %}
+    </form>
+  </div>
+
+  {% if rows %}
+  <table style="margin-top:12px">
+    <tr>
+      <th>Updated</th>
+      <th>Lead</th>
+      <th>Campaign</th>
+      <th>State</th>
+      <th>GP score</th>
+      <th>Email</th>
+      <th>Subject</th>
+    </tr>
+    {% for d in rows %}
+    <tr class="clickable deal-row" data-deal="{{ d.pk }}" title="Click to read the thread">
+      <td class="muted">{{ d.update_date|date:"M d H:i" }}</td>
+      <td class="mono">{{ d.lead.source_fields.contact_job_title|default:"—" }}
+        <div class="muted mono">{{ d.lead.profile_url|truncatechars:40 }}</div></td>
+      <td>{{ d.campaign.name }}</td>
+      <td><span class="pill {{ d.state|pillclass }} plain">{{ d.state.label }}</span>
+        {% if d.outcome %}<div class="muted">{{ d.outcome }}</div>{% endif %}</td>
+      <td class="mono">{% if d.gp_score is not None %}<span class="{% if d.gp_score >= gp_threshold %}ok-text{% else %}warn-text{% endif %}">{{ d.gp_score|floatformat:3 }}</span>
+        <span class="muted">{% if d.gp_score >= gp_threshold %}≥{% else %}&lt;{% endif %} {{ gp_threshold }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+      <td class="mono">{{ d.lead.email|default:"—" }}</td>
+      <td class="mono">{{ d.email_subject|default:"—"|truncatechars:40 }}</td>
+    </tr>
+    <tr class="thread-row" data-deal="{{ d.pk }}">
+      <td colspan="7" class="expand"><div>
+        <div class="row spread" style="margin-bottom:10px">
+          <span class="mono muted" data-thread-head>loading…</span>
+          <span class="muted" data-thread-meta></span>
+        </div>
+        <div class="gp-history" data-thread-gp style="display:none"></div>
+        <div class="thread" data-thread-body></div>
+      </div></td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty"><div class="big">🗂</div>No deals{% if state %} in this state{% endif %}.<br><span class="muted">Deals appear here as prospects move through the funnel.</span></div>
+  {% endif %}
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<style>
+  .gp-history { margin: 6px 0 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg-2); }
+  .gp-title { font-size: 11px; text-transform: uppercase; letter-spacing: .7px; color: var(--muted); margin-bottom: 6px; }
+  .gp-pt { display: inline-block; margin: 4px 8px 0 0; padding: 2px 8px; border-radius: 999px; font: 11px var(--mono); background: var(--bg-3); border: 1px solid var(--line); color: var(--muted); }
+  .gp-pt.ok { color: var(--ok); border-color: rgba(52,211,153,.35); }
+  .gp-pt.low { color: var(--warn); border-color: rgba(251,191,36,.35); }
+  .gp-legend { margin-top: 8px; font-size: 11px; color: var(--muted); line-height: 1.5; }
+  .thread { display: flex; flex-direction: column; gap: 10px; max-height: 380px; overflow: auto; padding-right: 6px; }
+  .msg { max-width: 86%; border-radius: 10px; padding: 9px 12px; font-size: 12.5px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+  .msg.out { align-self: flex-end; background: var(--navy-soft); border: 1px solid rgba(30,62,120,.45); color: var(--ink); }
+  .msg.in  { align-self: flex-start; background: var(--bg-3); border: 1px solid var(--line); color: var(--ink-2); }
+  .msg .meta { display: block; font-size: 10.5px; color: var(--muted); margin-bottom: 3px; }
+</style>
+<script>
+  (function () {
+    var open = null;
+
+    function thread(el) {
+      var row = el.closest('.deal-row');
+      if (!row) return;
+      var pk = row.dataset.deal;
+      var tr = document.querySelector('.thread-row[data-deal="' + pk + '"]');
+      if (!tr) return;
+
+      var isOpen = row.classList.contains('open');
+      document.querySelectorAll('.deal-row.open').forEach(function (r) { r.classList.remove('open'); });
+      if (open) open = null;
+
+      if (!isOpen) {
+        row.classList.add('open');
+        open = tr;
+        var head = tr.querySelector('[data-thread-head]');
+        var meta = tr.querySelector('[data-thread-meta]');
+        var body = tr.querySelector('[data-thread-body]');
+        head.textContent = 'loading…';
+        body.innerHTML = '<span class="muted">…</span>';
+        fetch('{% url 'dashboard-api-deal' 0 %}'.replace('/0/', '/' + pk + '/'))
+          .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error(r.status)); })
+          .then(function (data) {
+            head.textContent = data.deal.lead + ' · ' + data.deal.state +
+              (data.deal.email ? ' · ' + data.deal.email : '') +
+              (data.deal.subject ? ' · “' + data.deal.subject + '”' : '') +
+              (data.deal.gp_mean != null
+                ? ' · P(fit)=' + Number(data.deal.gp_pass_score).toFixed(3) +
+                  (data.deal.gp_pass_score >= data.deal.gp_threshold ? ' (passed gate)' : ' (below gate)') +
+                  ' · μ ' + Number(data.deal.gp_mean).toFixed(3) +
+                  ' · σ ' + Number(data.deal.gp_std).toFixed(3) +
+                  ' · scored ' + data.deal.gp_pass_date
+                : (data.deal.gp_score != null ? ' · P(fit)=' + Number(data.deal.gp_score).toFixed(3) +
+                  (data.deal.gp_score >= data.deal.gp_threshold ? ' (passed gate)' : ' (below gate)') : ''));
+            meta.textContent = data.deal.campaign + (data.deal.outcome ? ' · outcome: ' + data.deal.outcome : '');
+            (function () {
+              var gp = tr.querySelector('[data-thread-gp]');
+              var hist = data.gp_history || [];
+              if (!gp || !hist.length) { if (gp) gp.style.display = 'none'; return; }
+              var vals = hist.map(function (h) { return h.score; });
+              var lo = Math.min.apply(null, vals.concat([0.5])) - 0.05, hi = 1.0;
+              var w = 150, h = 32, pad = 3;
+              var step = (w - 2 * pad) / Math.max(vals.length - 1, 1);
+              var pts = vals.map(function (v, i) {
+                return (pad + i * step).toFixed(1) + ',' + (h - pad - (v - lo) / (hi - lo) * (h - 2 * pad)).toFixed(1);
+              }).join(' ');
+              var gateY = h - pad - (data.deal.gp_threshold - lo) / (hi - lo) * (h - 2 * pad);
+              gp.innerHTML = '<div class="gp-title">GP confidence over refits <span class="muted">· gate ' +
+                data.deal.gp_threshold + '</span></div>' +
+                '<svg width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '" style="display:block">' +
+                '<line x1="0" y1="' + gateY + '" x2="' + w + '" y2="' + gateY + '" stroke="var(--warn)" stroke-dasharray="3 3"/>' +
+                '<polyline points="' + pts + '" fill="none" stroke="#5b8def" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>' +
+                '</svg>' +
+                hist.map(function (h) {
+                  return '<span class="gp-pt ' + (h.score >= data.deal.gp_threshold ? 'ok' : 'low') + '" ' +
+                    (h.mean != null ? 'title="P(f>0.5) from GP posterior N(μ, σ) — μ=' + h.mean.toFixed(3) + ', σ=' + h.std.toFixed(3) + '"' : '') + '>' +
+                    window.esc(h.date) + ' · P=' + h.score.toFixed(3) +
+                    (h.mean != null ? ' · μ ' + h.mean.toFixed(2) + ' · σ ' + h.std.toFixed(2) : '') +
+                    '</span>';
+                }).join('') +
+                '<div class="gp-legend">μ = the GP surface value · σ = the model\'s uncertainty. A wide σ next to any P means this lead sits far from the evidence — P near 0.5 with a large σ is a genuine coin flip.</div>';
+              gp.style.display = 'block';
+            })();
+            body.innerHTML = data.messages.length
+              ? data.messages.map(function (m) {
+                  return '<div class="msg ' + (m.outgoing ? 'out' : 'in') + '">' +
+                    '<span class="meta">' + (m.outgoing ? 'you → ' : '← lead ') + window.esc(m.date) + '</span>' +
+                    window.esc(m.content) + '</div>';
+                }).join('')
+              : '<span class="muted">No messages on this deal yet.</span>';
+          })
+          .catch(function () {
+            head.textContent = 'could not load thread';
+          });
+      }
+    }
+
+    document.querySelectorAll('.deal-row').forEach(function (row) {
+      row.addEventListener('click', function () { thread(row); });
+    });
+  })();
+</script>
+{% endblock %}

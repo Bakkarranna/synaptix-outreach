@@ -223,8 +223,11 @@ def _pipeline_summary(campaign) -> str:
     left = Mailbox.objects.remaining_today()
     # The gate, said as its consequence rather than as its name: `room to spend=False`
     # tells you a boolean, "not buying or qualifying" tells you why two rows declined.
-    spending = ("buying and qualifying as needed" if room_to_send_today(campaign)
-                else "no send headroom left, so not buying or qualifying")
+    if _may_spend(campaign):
+        spending = ("buying and qualifying as needed (keep-stocked on)"
+                    if _keep_stocked() else "buying and qualifying as needed")
+    else:
+        spending = "no send headroom left, so not buying or qualifying"
     # Same reasoning for the clock: a stocked queue and free headroom at 22:00 looks
     # like a stuck daemon unless the line says which gate is holding it.
     clock = "" if within_sending_window() else " · outside sending hours, so not emailing"
@@ -384,11 +387,30 @@ def _pool_signature(campaign) -> tuple[int, int]:
 # ── 5. Buy an address ─────────────────────────────────────────────
 
 
+def _may_spend(campaign) -> bool:
+    """True when buying an address / qualifying is allowed right now.
+
+    The default posture is the spend gate itself: never resolve an address, and
+    never spend an LLM call, for someone there is no room to email today. The
+    operator's override is ``SiteConfig.keep_pipeline_stocked`` — keep discovery,
+    qualification and address-buying running even at the daily cap so the queue is
+    stocked for tomorrow (at the cost of spend without today's send headroom).
+    """
+    from openoutreach.core.models import SiteConfig
+
+    try:
+        if SiteConfig.load().keep_pipeline_stocked:
+            return True
+    except Exception:  # noqa: BLE001 — no DB (config-less unit context) ⇒ default gate
+        pass
+    return room_to_send_today(campaign)
+
+
 def _buy_addresses(campaign) -> bool:
     from openoutreach.emails.models import has_mailbox
     from openoutreach.emails.steps.lookup import buy_address
 
-    if not has_mailbox() or not room_to_send_today(campaign):
+    if not has_mailbox() or not _may_spend(campaign):
         return False
     deal = _due(campaign, DealState.READY_TO_FIND_EMAIL).filter(
         lead__disqualified=False).first()
@@ -404,9 +426,19 @@ def _top_up(campaign) -> bool:
     from openoutreach.core.pipeline.top_up import top_up
     from openoutreach.emails.models import has_mailbox
 
-    if not has_mailbox() or not room_to_send_today(campaign):
+    if not has_mailbox() or not _may_spend(campaign):
         return False
     return top_up(campaign)
+
+
+def _keep_stocked() -> bool:
+    """The operator's keep-stocked override, defaulting off without a DB row."""
+    from openoutreach.core.models import SiteConfig
+
+    try:
+        return bool(SiteConfig.load().keep_pipeline_stocked)
+    except Exception:  # noqa: BLE001 — no DB (config-less unit context) ⇒ default off
+        return False
 
 
 def room_to_send_today(campaign) -> bool:

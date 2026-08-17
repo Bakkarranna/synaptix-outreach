@@ -1,0 +1,138 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Reviews · Synaptix Studio Console{% endblock %}
+{% block pagetitle %}Reviews{% endblock %}
+{% block crumb %}the qualifier's rejections — read the why, override the wrong ones{% endblock %}
+{% block content %}
+
+<div class="row spread" style="margin-bottom:14px">
+  <form class="row" method="get">
+    <select name="campaign" onchange="this.form.submit()">
+      <option value="">All campaigns</option>
+      {% for c in campaigns %}<option value="{{ c.pk }}" {% if campaign == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
+    </select>
+    <input type="search" name="q" value="{{ q }}" placeholder="Search name, email, URL, reason…" style="width:280px">
+    <button class="secondary small">Search</button>
+    {% if campaign or q %}<a class="btn secondary small" href="{% url 'dashboard-reviews' %}">Clear</a>{% endif %}
+  </form>
+</div>
+
+<div class="card">
+  <div class="row spread">
+    <h2 style="margin:0">Rejected leads <span class="muted">({{ total }} total)</span></h2>
+    <div class="row">
+      <span class="pill failed" title="Rejected by the LLM qualifier since midnight">today {{ today }}</span>
+      <span class="pill failed" title="Rejected by the LLM qualifier in the last 7 days">7d {{ this_week }}</span>
+    </div>
+  </div>
+
+  {% if rows %}
+  <form method="post" action="{% url 'dashboard-action' 'deals-requalify' %}" id="bulk-requalify-form"
+        data-confirm="Requalify the selected rejected lead(s)? The GP will unlearn these rejections on its next refit, and the deals rejoin the rank gate.">
+    {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}">
+    <div class="row spread" style="margin-top:14px">
+      <div class="row">
+        <label class="muted" style="font-size:12px; cursor:pointer">
+          <input type="checkbox" id="qa-select-all" onchange="qaToggleAll(this.checked)"> select all on this page
+        </label>
+      </div>
+      <button class="small" id="qa-bulk-btn" disabled>Requalify selected (0)</button>
+    </div>
+    <table style="margin-top:10px">
+      <tr>
+        <th style="width:28px"><input type="checkbox" id="qa-select-all-head" onchange="qaToggleAll(this.checked)"></th>
+        <th>Lead</th><th>Campaign</th><th>Rejected</th><th>The LLM's reason</th><th></th>
+      </tr>
+      {% for d in rows %}
+      <tr>
+        <td><input type="checkbox" name="deals" value="{{ d.pk }}" class="qa-check"
+                   title="Select {{ d.lead.email|default:d.lead.profile_url }}"></td>
+        <td style="max-width:250px">
+          <div style="font-weight:600">{{ d.lead.source_fields.contact_job_title|default:"—" }}</div>
+          <div class="mono muted" style="font-size:11.5px">{{ d.lead.email|default:d.lead.profile_url|truncatechars:42 }}</div>
+        </td>
+        <td>{{ d.campaign.name }}</td>
+        <td class="muted">{{ d.creation_date|date:"M d H:i" }}</td>
+        <td class="muted" style="max-width:420px; line-height:1.5">{{ d.reason|default:"<i>no reason recorded</i>" }}</td>
+        <td style="text-align:right">
+          <button type="submit" class="small" form="qf{{ d.pk }}">Requalify</button>
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% if pages > 1 %}
+    <div class="pager">
+      {% if page > 1 %}
+        <a class="btn secondary small" href="?{{ querystring }}&page={{ page|add:-1 }}">← prev</a>
+      {% endif %}
+      <span class="muted">page {{ page }} / {{ pages }}</span>
+      {% if page < pages %}
+        <a class="btn secondary small" href="?{{ querystring }}&page={{ page|add:1 }}">next →</a>
+      {% endif %}
+    </div>
+    {% endif %}
+  </form>
+
+  {% for d in rows %}
+  <form id="qf{{ d.pk }}" class="inline" method="post" action="{% url 'dashboard-action' 'deal-requalify' %}"
+        data-confirm="Requalify {{ d.lead.email|default:d.lead.profile_url }}? The GP will unlearn this rejection on its next refit, and the deal rejoins the rank gate.">
+    {% csrf_token %}<input type="hidden" name="deal" value="{{ d.pk }}">
+    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+  </form>
+  {% endfor %}
+
+  <div class="notice section-gap">Requalifying moves a deal back to <b>Qualified</b> — it rejoins the rank gate and can be scored, enriched, and emailed like any other lead. Select several rows and use <b>Requalify selected</b>, or flip them one at a time. The original rejection reason stays on each deal as the audit trail; the GP relabels it a fit positive at the next refit, so the model unlearns the rejection.</div>
+  {% else %}
+  <div class="empty"><div class="big">✅</div>{% if q or campaign %}No rejected leads match{% if q %} “{{ q }}”{% endif %}{% if campaign %} in this campaign{% endif %}.<br><span class="muted">Try clearing the search or filters.</span>{% else %}No rejected leads right now.<br><span class="muted">LLM rejections land here as <code>wrong_fit</code> deals with the reason the qualifier gave.</span>{% endif %}</div>
+  {% endif %}
+
+  <div class="divider section-gap"></div>
+  <div class="row spread">
+    <h2 style="margin:0">Override history <span class="muted">({{ log_total }} total)</span></h2>
+  </div>
+  {% if logs %}
+  <table style="margin-top:12px">
+    <tr><th>When</th><th>Who</th><th>Lead</th><th>Source</th><th>Original rejection</th></tr>
+    {% for l in logs %}
+    <tr>
+      <td class="muted">{{ l.created_at|date:"M d Y H:i" }}</td>
+      <td>{{ l.user.username|default:"system" }}{% if not l.user_id %} <span class="muted">(script)</span>{% endif %}</td>
+      <td class="mono" style="max-width:250px">{{ l.lead_identity|default:"—"|truncatechars:40 }}</td>
+      <td><span class="pill {% if l.source == 'prompt_ab' %}unsub{% else %}qual{% endif %} plain">{{ l.source }}</span></td>
+      <td class="muted" style="max-width:380px; line-height:1.5">{{ l.original_reason|default:"<i>no reason recorded</i>" }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% if log_pages > 1 %}
+  <div class="pager">
+    {% if log_page > 1 %}
+      <a class="btn secondary small" href="?{{ log_querystring }}&logpage={{ log_page|add:-1 }}">← prev</a>
+    {% endif %}
+    <span class="muted">page {{ log_page }} / {{ log_pages }}</span>
+    {% if log_page < log_pages %}
+      <a class="btn secondary small" href="?{{ log_querystring }}&logpage={{ log_page|add:1 }}">next →</a>
+    {% endif %}
+  </div>
+  {% endif %}
+  {% else %}
+  <div class="empty" style="margin-top:8px"><div class="big">📜</div>No overrides yet.<br><span class="muted">Every manual requalification — single, bulk, or <code>prompt_ab --apply</code> — lands here with who, when, and the original rejection reason.</span></div>
+  {% endif %}
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function qaToggleAll(checked) {
+    document.querySelectorAll('.qa-check').forEach(function (c) { c.checked = checked; });
+    qaUpdate();
+  }
+  function qaUpdate() {
+    var n = document.querySelectorAll('.qa-check:checked').length;
+    var btn = document.getElementById('qa-bulk-btn');
+    if (!btn) return;
+    btn.disabled = n === 0;
+    btn.textContent = 'Requalify selected (' + n + ')';
+  }
+  document.querySelectorAll('.qa-check').forEach(function (c) { c.addEventListener('change', qaUpdate); });
+</script>
+{% endblock %}

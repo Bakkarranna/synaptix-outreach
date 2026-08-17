@@ -1,0 +1,94 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Config · Synaptix Studio Console{% endblock %}
+{% block pagetitle %}Configuration{% endblock %}
+{% block crumb %}lead only — providers, campaign, mailboxes{% endblock %}
+{% block content %}
+
+<div class="grid cols-3">
+  <div class="card">
+    <h2>LLM &amp; providers</h2>
+    <form method="post" action="{% url 'dashboard-save' %}">
+      {% csrf_token %}
+      <input type="hidden" name="section" value="siteconfig">
+      <input type="hidden" name="next" value="{{ request.get_full_path }}">
+      <label>AI model (provider:model)</label>
+      <input type="text" name="ai_model" value="{{ config.ai_model }}">
+      <div class="field-hint">e.g. <span class="mono">openai_compatible:nvidia/…</span></div>
+      <label>LLM API key</label>
+      <input type="password" name="llm_api_key" value="{{ config.llm_api_key }}">
+      <label>LLM API base URL</label>
+      <input type="text" name="llm_api_base" value="{{ config.llm_api_base }}">
+      <label>BetterContact API key</label>
+      <input type="password" name="bettercontact_api_key" value="{{ config.bettercontact_api_key }}">
+      <label>Firecrawl API key <span class="muted">(optional)</span></label>
+      <input type="password" name="firecrawl_api_key" value="{{ config.firecrawl_api_key }}">
+      <label>Country (ISO alpha-2)</label>
+      <input type="text" name="country_code" value="{{ config.country_code }}" maxlength="2">
+      <label class="checkbox" style="margin-top:12px"><input type="checkbox" name="send_on_weekends" value="1" {% if config.send_on_weekends %}checked{% endif %}> Send on weekends (off by default)</label>
+      <label class="checkbox" style="margin-top:8px"><input type="checkbox" name="keep_pipeline_stocked" value="1" {% if config.keep_pipeline_stocked %}checked{% endif %}> Keep finding &amp; qualifying at the daily cap <span class="muted">(stock the queue for tomorrow)</span></label>
+      <button style="margin-top:14px;width:100%">Save providers</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>Campaign</h2>
+    {% if campaign %}
+    <form method="post" action="{% url 'dashboard-save' %}">
+      {% csrf_token %}
+      <input type="hidden" name="section" value="campaign">
+      <input type="hidden" name="campaign" value="{{ campaign.pk }}">
+      <input type="hidden" name="next" value="{{ request.get_full_path }}">
+      <label>Product / service description</label>
+      <textarea name="product_docs" rows="5">{{ campaign.product_docs }}</textarea>
+      <label>Campaign target</label>
+      <textarea name="campaign_target" rows="5">{{ campaign.campaign_target }}</textarea>
+      <label>Booking link</label>
+      <input type="text" name="booking_link" value="{{ campaign.booking_link }}">
+      <div class="row">
+        <div style="flex:1"><label>Headcount min</label>
+          <input type="number" name="headcount_min" value="{{ campaign.headcount_min }}"></div>
+        <div style="flex:1"><label>Headcount max</label>
+          <input type="number" name="headcount_max" value="{{ campaign.headcount_max }}"></div>
+      </div>
+      <label>Target country (ISO alpha-2)</label>
+      <input type="text" name="country_code" value="{{ campaign.country_code }}" maxlength="2">
+      <div class="notice" style="margin-top:10px">Phase: {{ campaign.anchor_profiles|yesno:"cold,learning" }}
+        {% if campaign.anchor_profiles %}({{ campaign.anchor_profiles|length }} anchor(s) — retired one per acceptance){% endif %}</div>
+      <button style="margin-top:14px;width:100%">Save campaign</button>
+    </form>
+    {% else %}
+    <div class="empty"><div class="big">🎯</div>No campaign yet.<br><span class="muted">Create one in the <a href="{% url 'admin:index' %}">Django Admin</a>.</span></div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Mailboxes</h2>
+    {% for box in boxes %}
+    <form method="post" action="{% url 'dashboard-save' %}">
+      {% csrf_token %}
+      <input type="hidden" name="section" value="mailbox">
+      <input type="hidden" name="mailbox" value="{{ box.pk }}">
+      <input type="hidden" name="next" value="{{ request.get_full_path }}">
+      <div class="row spread" style="margin-bottom:4px">
+        <strong>{{ box.from_address }}</strong>
+        <span class="muted mono">{{ box.host }}:{{ box.port }}</span>
+      </div>
+      <label>Daily cap (sends/day)</label>
+      <input type="number" name="daily_limit" value="{{ box.daily_limit }}">
+      <label>IMAP username (replies inbox, e.g. Gmail)</label>
+      <input type="text" name="imap_username" value="{{ box.imap_username }}">
+      <label>IMAP app password</label>
+      <input type="password" name="imap_password" value="{{ box.imap_password }}">
+      <label>Signature</label>
+      <textarea name="signature" rows="4">{{ box.signature }}</textarea>
+      <button style="margin-top:12px;width:100%">Save mailbox</button>
+    </form>
+    {% if not forloop.last %}<div class="divider"></div>{% endif %}
+    {% empty %}
+    <div class="empty"><div class="big">📮</div>No mailbox connected.</div>
+    {% endfor %}
+    <div class="notice" style="margin-top:10px">Sender identity (host/port/login) is fixed at connect time — repair it via the <a href="{% url 'admin:index' %}">Django Admin</a>.</div>
+  </div>
+</div>
+
+{% endblock %}

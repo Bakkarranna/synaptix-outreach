@@ -34,6 +34,13 @@ crown jewel and it is ported verbatim:
 The freemium campaign runs none of it. Its leads are already in the account, found
 by other campaigns' discovery, and a pre-trained kit model ranks them — so its whole
 top-up is: pick the best embedded lead with no deal here yet, and create one.
+
+**A scraper campaign runs the cold phase, with a directory for its pool.** When
+``Campaign.scraper_config`` is set, acquisition is the scraper walk
+(``scrape_acquisition.scrape_one_page``) instead of the discovery walk: every pass
+pages the directory once — unless it is exhausted — and spends one qualification on
+the accumulated pool, so the ML loop stays hot while the pool grows and keeps
+qualifying after the directory is drained. See the module for the config shape.
 """
 from __future__ import annotations
 
@@ -60,6 +67,8 @@ def top_up(campaign) -> bool:
         return False
     if campaign.is_freemium:
         return _claim_freemium_lead(campaign, qualifier)
+    if campaign.scraper_config:
+        return _advance_scraper(campaign, qualifier)
     return _advance(campaign, qualifier)
 
 
@@ -91,6 +100,28 @@ def _advance(campaign, qualifier: BayesianQualifier) -> bool:
             return False
         candidates = fetch_qualification_candidates(campaign)
     return run_qualification(campaign, qualifier, candidates=candidates) is not None
+
+
+def _advance_scraper(campaign, qualifier: BayesianQualifier) -> bool:
+    """Scraper acquisition + qualification — one page in, one label out.
+
+    Mirrors the cold phase (``_advance``'s first branch): every pass pages the
+    directory once, unless it is exhausted, and spends one qualification on the
+    accumulated pool. When the directory is drained the campaign keeps qualifying
+    what it has, then idles (returns False once the pool is empty too).
+    """
+    from openoutreach.core.pipeline.scrape_acquisition import scrape_one_page
+
+    did = False
+    state = campaign.scrape_state or {}
+    if not state.get("exhausted"):
+        if scrape_one_page(campaign) > 0:
+            did = True
+    candidates = fetch_qualification_candidates(campaign)
+    if candidates and run_qualification(campaign, qualifier,
+                                        candidates=candidates) is not None:
+        did = True
+    return did
 
 
 def _consumable_candidates(qualifier: BayesianQualifier, candidates: list) -> list:

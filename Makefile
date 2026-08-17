@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help logs test docker-test stop build up install setup run admin
+.PHONY: help logs test docker-test stop build up install setup run admin daemon web package check
 
 help:
 	@perl -nle'print $& if m{^[a-zA-Z_-]+:.*?## .*$$}' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-25s\033[0m %s\n", $$1, $$2}'
@@ -12,18 +12,30 @@ setup: install ## install deps + migrate + bootstrap CRM
 	python manage.py migrate --no-input
 	python manage.py setup_crm
 
-run: ## run the daemon
+run: ## run the daemon in the foreground
 	python manage.py rundaemon
+
+daemon: run ## alias for run
+
+admin: web
+
+web: ## start the Console web server (dashboard + Django Admin)
+	@echo ""
+	@echo "  Synaptix Studio Console: http://localhost:8000/dashboard/"
+	@echo "  No staff account yet? Run: python manage.py createsuperuser"
+	@echo ""
+	python manage.py runserver
+
+console: web ## start the Console web server
+
+check: ## run Django system checks
+	python manage.py check
 
 test: ## run the test suite
 	.venv/bin/pytest
 
-admin: ## start the Django Admin web server
-	@echo ""
-	@echo "  Django Admin: http://localhost:8000/admin/"
-	@echo "  No superuser yet? Run: python manage.py createsuperuser"
-	@echo ""
-	python manage.py runserver
+package: ## build a distributable bundle (scripts/package.ps1 / package.sh)
+	bash scripts/package.sh
 
 # Docker targets
 logs: ## follow the logs of the service

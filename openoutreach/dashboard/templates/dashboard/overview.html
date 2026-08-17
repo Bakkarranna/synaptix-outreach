@@ -1,0 +1,301 @@
+{% extends "dashboard/base.html" %}
+{% load dashboard_extras %}
+{% block title %}Overview · Synaptix Studio Console{% endblock %}
+{% block pagetitle %}Overview{% endblock %}
+{% block crumb %}the studio's outreach engine at a glance{% endblock %}
+{% block content %}
+
+<div class="stat-row">
+  <div class="stat">
+    <div class="num" id="stat-leads">{{ total_leads }}</div>
+    <div class="lbl">Leads discovered</div>
+    <div class="hint">unique prospects in the store</div>
+  </div>
+  <div class="stat">
+    <div class="num" id="stat-deals">{{ total_deals }}</div>
+    <div class="lbl">Deals in pipeline</div>
+    <div class="hint">across all campaigns</div>
+  </div>
+  <div class="stat">
+    <div class="num" id="stat-sent">{{ sent_messages }}</div>
+    <div class="lbl">Emails sent</div>
+    <div class="hint">all time</div>
+    {% if spark_values %}
+    <div class="spark" title="Outgoing emails, last 14 days">
+      <svg width="96" height="30" viewBox="0 0 96 30" fill="none">
+        <path d="M{{ spark_area }}" fill="rgba(30,62,120,.35)"/>
+        <polyline points="{{ spark_line }}" fill="none" stroke="#5b8def" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    {% endif %}
+  </div>
+  <div class="stat">
+    <div class="num" id="stat-unanswered">{{ unanswered }}</div>
+    <div class="lbl">Unanswered replies</div>
+    <div class="hint">threads waiting on the agent</div>
+  </div>
+</div>
+
+<div class="card section-gap">
+  <div class="row spread">
+    <h2 style="margin:0">Qualification rate <span class="muted">· last 14 days</span></h2>
+    {% if qa_14.rate is not None %}
+    <div class="row">
+      <span class="muted" style="font-variant-numeric:tabular-nums">7d <b>{{ qa_7.rate|floatformat:0 }}%</b></span>
+      <span class="muted" style="font-variant-numeric:tabular-nums">14d <b>{{ qa_14.rate|floatformat:0 }}%</b></span>
+      <span class="muted" style="font-variant-numeric:tabular-nums">{{ qa_14.accepted }} accepted · {{ qa_14.rejected }} rejected</span>
+    </div>
+    {% else %}
+    <span class="muted">no verdicts yet in this window</span>
+    {% endif %}
+  </div>
+  <div class="qa-chart">
+    {% for d in qa_days %}
+    <div class="qa-col" title="{{ d.label }}: {{ d.accepted }} accepted · {{ d.rejected }} rejected{% if d.rate is not None %} · {{ d.rate|floatformat:0 }}% acceptance{% endif %}">
+      <div class="qa-rate">{% if d.rate is not None %}{{ d.rate|floatformat:0 }}%{% else %}—{% endif %}</div>
+      <div class="qa-stack">
+        <div class="qa-stack-inner" style="height:{% widthratio d.height qa_max 84 %}px">
+          {% if d.total %}
+          <div class="qa-ok" style="height:{{ d.ok_pct }}%"></div>
+          <div class="qa-no" style="height:{{ d.no_pct }}%"></div>
+          {% endif %}
+        </div>
+      </div>
+      <div class="qa-day">{{ d.label }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="notice section-gap"><span class="qa-legend"><span class="sw sw-ok"></span> accepted</span> &nbsp; <span class="qa-legend"><span class="sw sw-no"></span> rejected</span> — LLM qualification verdicts, bucketed by the day they were written. A manual override on the Reviews page moves a deal from red to green. The borderline-aware prompt went live on <b>{{ qual_prompt_since }}</b> — watch the green share climb from there.</div>
+</div>
+
+<div class="grid cols-2 section-gap">
+  <div class="card">
+    <h2>Pipeline funnel</h2>
+    <table>
+      <tr><th>Stage</th><th style="text-align:right">Deals</th><th style="width:42%"></th></tr>
+      {% for row in funnel %}
+      <tr>
+        <td><span class="pill {{ row.state|pillclass }} plain">{{ row.label }}</span></td>
+        <td style="text-align:right;font-variant-numeric:tabular-nums" data-funnel-count>{{ row.count }}</td>
+        <td><div class="bar"><div data-funnel-bar style="width:{% widthratio row.count funnel_max 100 %}"></div></div></td>
+      </tr>
+      {% endfor %}
+      <tr><td colspan="3" style="height:8px;border-bottom:1px solid var(--line)"></td></tr>
+      {% for row in terminals %}
+      <tr>
+        <td><span class="pill {{ row.state|pillclass }} plain">{{ row.label }}</span></td>
+        <td style="text-align:right;font-variant-numeric:tabular-nums" data-funnel-count>{{ row.count }}</td>
+        <td></td>
+      </tr>
+      {% endfor %}
+    </table>
+    <div class="notice section-gap">Replies waiting on <b id="unanswered-note">{{ unanswered }}</b> emailed deal(s). Nobody is ever chased — the agent answers when they write back.</div>
+  </div>
+
+  <div class="card">
+    <h2>Daemon</h2>
+    <div class="row spread">
+      <div>
+        <span class="pill running plain" id="daemon-badge">● running</span>
+        <span class="mono muted" id="daemon-status">{{ daemon_status }}</span>
+      </div>
+      <div class="btn-row">
+        {% if "running" in daemon_status %}
+          <form class="inline" method="post" action="{% url 'dashboard-action' 'daemon-stop' %}" data-confirm="Stop the daemon? It resumes from the same state when restarted.">
+            {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}">
+            <button class="danger small">Stop</button>
+          </form>
+        {% else %}
+          <form class="inline" method="post" action="{% url 'dashboard-action' 'daemon-start' %}">
+            {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}">
+            <button class="small">Start</button>
+          </form>
+        {% endif %}
+        <form class="inline" method="post" action="{% url 'dashboard-action' 'cycle' %}">
+          {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}">
+          <button class="secondary small" title="Run one cycle's worth of work now">Nudge</button>
+        </form>
+        <form class="inline" method="post" action="{% url 'dashboard-action' 'read-mail' %}">
+          {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}">
+          <button class="secondary small" title="Check all mailboxes for replies/unsubscribes now">Read mail</button>
+        </form>
+      </div>
+    </div>
+    <div class="divider"></div>
+    <h3>Providers</h3>
+    <div class="kv">
+      <span class="k">LLM</span>
+      <span class="v">{% if llm_set %}<span class="ok-text">configured</span> · <span class="mono muted">{{ config.ai_model }}</span>{% else %}<span class="danger-text">missing</span>{% endif %}</span>
+      <span class="k">BetterContact</span>
+      <span class="v">{% if bettercontact_set %}<span class="ok-text">configured</span>{% else %}<span class="danger-text">missing</span>{% endif %}</span>
+      <span class="k">Firecrawl</span>
+      <span class="v">{% if firecrawl_set %}<span class="ok-text">configured</span>{% else %}<span class="muted">off (plain-HTTP site finder)</span>{% endif %}</span>
+      <span class="k">Hours</span>
+      <span class="v">{{ country|upper|default:"—" }} · Mon–Fri, 08:00–20:00</span>
+    </div>
+    <div class="divider"></div>
+    <h3>Latest daemon lines <span class="muted" style="text-transform:none">· updated <span id="last-updated">now</span></span></h3>
+    <pre class="log" id="log-tail" style="max-height:210px">{{ log_tail|truncatechars:900 }}</pre>
+    <a class="btn ghost small section-gap" href="{% url 'dashboard-logs' %}">Full log →</a>
+  </div>
+</div>
+
+<div class="grid cols-2 section-gap">
+  <div class="card">
+    <h2>Mailboxes</h2>
+    {% for m in boxes %}
+    <div style="padding:12px 0; border-bottom:1px solid var(--line)" data-box-pk="{{ m.box.pk }}">
+      <div class="row spread">
+        <div>
+          <strong>{{ m.box.from_address }}</strong>
+          {% if m.manual_pause %}<span class="pill paused">paused</span>{% endif %}
+          {% if m.paused %}<span class="pill paused">receiver-paused</span>{% endif %}
+          <div class="muted mono">{{ m.box.host }}:{{ m.box.port }} · IMAP {% if m.imap_set %}set{% else %}<span class="danger-text">not set</span>{% endif %} · cap {{ m.box.daily_limit }}/day</div>
+        </div>
+        <div class="row">
+          <span class="muted mono"><span class="js-sent">{{ m.sent_today }}</span>/{{ m.box.daily_limit }} sent · <span class="js-headroom">{{ m.headroom }}</span> left</span>
+          {% if m.manual_pause %}
+            <form class="inline" method="post" action="{% url 'dashboard-action' 'mailbox-resume' %}">
+              {% csrf_token %}<input type="hidden" name="mailbox" value="{{ m.box.pk }}">
+              <input type="hidden" name="next" value="{{ request.get_full_path }}">
+              <button class="secondary small">Resume</button>
+            </form>
+          {% else %}
+            <form class="inline" method="post" action="{% url 'dashboard-action' 'mailbox-pause' %}" data-confirm="Pause sending from this mailbox for now?">
+              {% csrf_token %}<input type="hidden" name="mailbox" value="{{ m.box.pk }}">
+              <input type="hidden" name="next" value="{{ request.get_full_path }}">
+              <button class="danger small">Pause</button>
+            </form>
+          {% endif %}
+        </div>
+      </div>
+      <div class="bar thin" style="margin-top:8px">
+        <div class="js-bar" style="width:{% widthratio m.sent_today m.box.daily_limit 100 %}"></div>
+      </div>
+      {% if m.box.signature %}
+        <div class="muted mono" style="margin-top:6px">sig: {{ m.box.signature|linebreaksbr|truncatechars:120 }}</div>
+      {% endif %}
+    </div>
+    {% empty %}
+    <div class="empty"><div class="big">📮</div>No mailbox connected.<br><span class="muted">Connect one from the <a href="{% url 'admin:index' %}">Django Admin</a>.</span></div>
+    {% endfor %}
+  </div>
+
+  <div class="card">
+    <h2>Campaigns</h2>
+    {% for c in campaigns %}
+    <div style="padding:12px 0; border-bottom:1px solid var(--line)">
+      <div class="row spread">
+        <div>
+          <strong>{{ c.campaign.name }}</strong>
+          <span class="pill {{ c.campaign.is_freemium|yesno:'unsub,qual' }}">{{ c.phase }}</span>
+          <div class="muted">headcount {{ c.campaign.headcount_min }}–{{ c.campaign.headcount_max }}
+            · {{ c.campaign.country_code|upper|default:"anywhere" }}
+            · {{ c.frontier }} frontier node(s) · {{ c.active_deals }} active deal(s)</div>
+        </div>
+      </div>
+      <div class="notice" style="margin-top:4px">Target: {{ c.campaign.campaign_target|truncatechars:140 }}</div>
+    </div>
+    {% empty %}
+    <div class="empty"><div class="big">🎯</div>No campaigns yet.</div>
+    {% endfor %}
+    {% if request.user.is_superuser %}
+    <div style="margin-top:10px"><a class="btn secondary small" href="{% url 'dashboard-config' %}">Edit campaign &amp; config →</a></div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="grid cols-2 section-gap">
+  <div class="card">
+    <h2>Recent delivery verdicts</h2>
+    {% if recent_verdicts %}
+    <table>
+      <tr><th>Time</th><th>Mailbox</th><th>Response</th></tr>
+      {% for v in recent_verdicts %}
+      <tr>
+        <td class="muted">{{ v.created_at|date:"M d H:i" }}</td>
+        <td class="mono">{{ v.mailbox.from_address }}</td>
+        <td><span class="pill failed">{{ v.response }}</span> <span class="muted mono">{{ v.detail|truncatechars:60 }}</span></td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}<div class="empty"><div class="big">✅</div>No failures recorded — every send attempt so far has been clean.</div>{% endif %}
+  </div>
+  <div class="card">
+    <h2>Recent messages</h2>
+    {% if recent_threads %}
+    <table>
+      <tr><th>When</th><th>Lead</th><th></th><th>Preview</th></tr>
+      {% for msg in recent_threads %}
+      <tr>
+        <td class="muted">{{ msg.creation_date|date:"M d H:i" }}</td>
+        <td class="mono">{{ msg.deal.lead.email|default:msg.deal.lead.profile_url|truncatechars:30 }}</td>
+        <td>{% if msg.is_outgoing %}<span class="pill emailed plain">out</span>{% else %}<span class="pill finding plain">in</span>{% endif %}</td>
+        <td>{{ msg.content|truncatechars:60 }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}<div class="empty"><div class="big">✉️</div>No messages yet — the first outreach is still being prepared.</div>{% endif %}
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<style>
+  .qa-chart { display: flex; align-items: stretch; gap: 6px; margin-top: 16px; }
+  .qa-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 5px; min-width: 0; }
+  .qa-rate { font-size: 10px; font-variant-numeric: tabular-nums; color: var(--muted); height: 13px; line-height: 13px; }
+  .qa-stack { width: 100%; max-width: 26px; flex: 1; display: flex; align-items: flex-end; }
+  .qa-stack-inner { width: 100%; display: flex; flex-direction: column; border-radius: 3px; overflow: hidden; background: var(--bg-2); }
+  .qa-ok { background: var(--ok); }
+  .qa-no { background: var(--bad); }
+  .qa-day { font-size: 9.5px; color: var(--muted); white-space: nowrap; }
+  .qa-legend { font-size: 11.5px; color: var(--muted); }
+  .qa-legend .sw { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+  .qa-legend .sw-ok { background: var(--ok); }
+  .qa-legend .sw-no { background: var(--bad); }
+</style>
+<script>
+(function () {
+  var funnelCounts = Array.prototype.slice.call(document.querySelectorAll('[data-funnel-count]'));
+  var funnelBars = Array.prototype.slice.call(document.querySelectorAll('[data-funnel-bar]'));
+  var maxCount = {{ funnel_max }};
+
+  function render(data) {
+    var set = function (id, v) { var el = document.getElementById(id); if (el) el.textContent = v; };
+    set('stat-leads', data.counts.total_leads);
+    set('stat-deals', data.counts.total_deals);
+    set('stat-sent', data.counts.sent_messages);
+    set('stat-unanswered', data.counts.unanswered);
+    set('unanswered-note', data.counts.unanswered);
+
+    data.funnel.forEach(function (f, i) {
+      if (funnelCounts[i]) funnelCounts[i].textContent = f.count;
+      if (funnelBars[i]) funnelBars[i].style.width = Math.round(f.count / maxCount * 100) + '%';
+    });
+
+    var badge = document.getElementById('daemon-badge');
+    if (badge) {
+      badge.className = 'pill plain ' + (data.daemon.running ? 'running' : 'stopped');
+      badge.textContent = data.daemon.running ? '● running' : '● stopped';
+    }
+    set('daemon-status', data.daemon.status);
+    var tail = document.getElementById('log-tail');
+    if (tail) tail.textContent = data.daemon.log_tail || '(empty)';
+    set('last-updated', new Date().toLocaleTimeString());
+
+    data.boxes.forEach(function (b) {
+      var row = document.querySelector('[data-box-pk="' + b.pk + '"]');
+      if (!row) return;
+      var s = row.querySelector('.js-sent'), h = row.querySelector('.js-headroom'), bar = row.querySelector('.js-bar');
+      if (s) s.textContent = b.sent_today;
+      if (h) h.textContent = b.headroom;
+      if (bar) bar.style.width = Math.round(b.sent_today / Math.max(b.daily_limit, 1) * 100) + '%';
+    });
+  }
+
+  startDaemonPoll(render);
+})();
+</script>
+{% endblock %}

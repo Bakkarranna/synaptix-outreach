@@ -66,15 +66,29 @@ class MailboxManager(models.Manager):
         port: int,
         imap_host: str,
         imap_port: int,
+        imap_username: str = "",
+        imap_password: str = "",
+        smtp_username: str = "",
     ) -> tuple["Mailbox | None", str]:
         """Auth-check a mailbox over SMTP, then store it — the connect gate.
 
         The provider has no health API, so the SMTP login *is* the gate: nothing
         is stored unless auth succeeds, so a row always means working credentials.
-        The SMTP username is the address itself (a mailbox you own logs in as
-        itself; a distinct login is a relay case we don't support). Returns
+        The SMTP username is the address itself by default (a mailbox you own
+        logs in as itself). ``smtp_username`` overrides it for the one supported
+        relay case: a provider mailbox sending from one of its own aliases — e.g.
+        Hostinger's primary ``info@`` logs in while the From: header is the
+        ``outreach@`` alias, which can't authenticate on its own. Returns
         ``(mailbox, "")`` on success or ``(None, reason)`` when auth is rejected.
         Re-entering an address repairs that box in place (``update_or_create``).
+
+        A box whose replies land in a *different* account (e.g. Hostinger SMTP
+        sending from ``outreach@`` while Cloudflare forwards replies to a Gmail
+        inbox) passes ``imap_username``/``imap_password``; when either is given
+        the IMAP side is auth-checked too before anything is stored, so a
+        mistyped read-side credential fails at connect time, not on the first
+        mail pass. Empty values keep today's behaviour — one address + password
+        for both sides, gated on the SMTP login alone.
 
         The new box keeps the floor capacity it is created with; the first
         ``refresh_capacity`` reads its Sent folder and replaces that with what the
@@ -83,11 +97,21 @@ class MailboxManager(models.Manager):
         """
         from openoutreach.emails.smtp import verify_auth
 
-        ok, reason = verify_auth(host, port, from_address, password)
+        login = smtp_username or from_address
+        ok, reason = verify_auth(host, port, login, password)
         if not ok:
             return None, reason
+        if imap_username or imap_password:
+            from openoutreach.emails.inbox import verify_imap
+
+            ok, reason = verify_imap(
+                imap_host, imap_port,
+                imap_username or from_address, imap_password or password,
+            )
+            if not ok:
+                return None, reason
         box, _ = self.update_or_create(
-            username=from_address,
+            username=login,
             defaults={
                 "password": password,
                 "from_address": from_address,
@@ -95,6 +119,8 @@ class MailboxManager(models.Manager):
                 "port": port,
                 "imap_host": imap_host,
                 "imap_port": imap_port,
+                "imap_username": imap_username,
+                "imap_password": imap_password,
             },
         )
         return box, ""
@@ -117,6 +143,12 @@ class Mailbox(models.Model):
     # (emails/inbox.py); authenticates with the same address + app password as SMTP.
     imap_host = models.CharField(max_length=255, default="imap.gmail.com")
     imap_port = models.PositiveIntegerField(default=993)
+    # Optional read-side credentials for a box whose replies land elsewhere —
+    # e.g. Hostinger SMTP sending from ``outreach@`` while Cloudflare forwards
+    # replies to a Gmail inbox. Empty means IMAP logs in as the SMTP address
+    # with the SMTP password (the common case). Set through onboarding or admin.
+    imap_username = models.CharField(max_length=320, blank=True, default="")
+    imap_password = models.CharField(max_length=255, blank=True, default="")
     # The SMTP login — always the address itself (a mailbox you own logs in as
     # itself), kept as its own column for the unique constraint.
     username = models.CharField(max_length=320, unique=True)
@@ -140,6 +172,11 @@ class Mailbox(models.Model):
     # working volume: it applies only to a box that has never been measured, and
     # an unmeasured box is one we know nothing about.
     daily_limit = models.PositiveIntegerField(default=WARM_FLOOR_SENDS)
+    # Manual operator pause: stops this box's *first* emails for as long as it
+    # stays on, whatever the measurement says. The receiver's verdicts
+    # (``paused_today``) are a separate, automatic source of the same state —
+    # this one is the human's hand on the box (e.g. before a holiday).
+    send_paused = models.BooleanField(default=False)
     # Resume point for the box-wide unsubscribe scan (``emails/inbox.py``): the
     # highest INBOX UID already examined. A UID, not a date — dates are coarse and
     # a resume from "yesterday" either re-reads a day of mail or skips the seam.
@@ -165,6 +202,16 @@ class Mailbox(models.Model):
 
     def __str__(self):
         return self.from_address or self.username
+
+    @property
+    def effective_imap_username(self) -> str:
+        """IMAP login — the overridden account, or the SMTP username by default."""
+        return self.imap_username or self.username
+
+    @property
+    def effective_imap_password(self) -> str:
+        """IMAP password — the overridden one, or the SMTP password by default."""
+        return self.imap_password or self.password
 
     def paused_today(self) -> bool:
         """True when a receiver verdict has stopped this box for the rest of today.
@@ -210,9 +257,10 @@ class Mailbox(models.Model):
     def headroom_today(self) -> int:
         """Sends this box has left today before hitting its measured capacity.
 
-        Zero once the receiver has paused the box, whatever the measurement says.
+        Zero once the receiver has paused the box or the operator paused it
+        manually, whatever the measurement says.
         """
-        if self.paused_today():
+        if self.paused_today() or self.send_paused:
             return 0
         return max(0, self.daily_limit - self.sent_today())
 

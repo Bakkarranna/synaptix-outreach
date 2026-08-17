@@ -39,6 +39,7 @@ class Qualifier(Protocol):
     def rank_profiles(self, profiles: list) -> list: ...
     def explain(self, profile: dict) -> str: ...
     def predict_probs(self, embeddings: np.ndarray) -> np.ndarray | None: ...
+    def predict_stats(self, embeddings: np.ndarray) -> tuple | None: ...
 
 
 def format_prediction(prob: float, entropy: float, std: float, n_obs: int) -> str:
@@ -52,19 +53,24 @@ class QualificationDecision(BaseModel):
     reason: str = Field(description="Brief explanation for the decision")
 
 
-def qualify_with_llm(profile_text: str, product_docs: str, campaign_target: str) -> tuple[int, str]:
+def qualify_with_llm(profile_text: str, product_docs: str, campaign_target: str,
+                      template: str = "qualify_lead.j2") -> tuple[int, str]:
     """Call LLM to qualify a profile. Returns (label, reason).
 
     label: 1 = accept, 0 = reject.
+
+    ``template`` selects which prompt variant to render from ``PROMPTS_DIR`` —
+    the pipeline uses the default; ``prompt_ab`` runs strict-vs-loose variants
+    side by side on the same profile for evaluation.
     """
     from pydantic_ai import Agent
 
     from openoutreach.core.llm import get_llm_model, run_agent_sync
 
     env = jinja2.Environment(loader=jinja2.FileSystemLoader(str(PROMPTS_DIR)))
-    template = env.get_template("qualify_lead.j2")
+    tmpl = env.get_template(template)
 
-    prompt = template.render(
+    prompt = tmpl.render(
         product_docs=product_docs,
         campaign_target=campaign_target,
         profile_text=profile_text,
@@ -538,6 +544,19 @@ class BayesianQualifier:
         mean, std = _gpr_predict(self._pipeline, embeddings)
         return _prob_above_half(mean, std)
 
+    def predict_stats(self, embeddings: np.ndarray) -> tuple | None:
+        """P(f>0.5), GP mean and posterior std for each candidate.
+
+        The raw numbers behind the score: ``(probs, means, stds)``, or None when
+        the model cannot be fitted yet. Lets the gate persist *why* a P is what
+        it is — a high P with a tiny std is a confident fit, a P near 0.5 with a
+        large std is a coin flip.
+        """
+        if not self._fit_if_needed():
+            return None
+        mean, std = _gpr_predict(self._pipeline, embeddings)
+        return _prob_above_half(mean, std), mean, std
+
     def posterior_std(self, embeddings: np.ndarray) -> np.ndarray | None:
         """GP posterior std at each embedding — the uncertainty BALD rewards.
 
@@ -601,6 +620,24 @@ class BayesianQualifier:
         scores = self.predict_probs(embeddings) if strategy == "exploit (p)" \
             else self.compute_bald(embeddings)
         return strategy, scores
+
+    def anchor_similarities(self, embeddings: np.ndarray) -> np.ndarray | None:
+        """Max cosine similarity of each candidate to the anchor profiles.
+
+        ``None`` when the campaign has no anchors (a real-positive carry means the
+        synthetic ideals were retired and the GP ranks on ground truth instead).
+        The anchors are the ICP prototypes — when the GP posterior is degenerate
+        (all scores collapse to the same value, e.g. a negative-dominated class
+        blowing the length-scale to its bound), this is the only signal that can
+        still tell one candidate from another.
+        """
+        if not self._anchor_X:
+            return None
+        anchors = np.stack(self._anchor_X)
+        anchors = anchors / np.linalg.norm(anchors, axis=1, keepdims=True)
+        emb = np.asarray(embeddings, dtype=np.float64)
+        emb = emb / np.linalg.norm(emb, axis=1, keepdims=True)
+        return (emb @ anchors.T).max(axis=1)
 
     # ------------------------------------------------------------------
     # Ranking & explain  (raw GP mean — no _prob_above_half)
@@ -679,6 +716,11 @@ class KitQualifier:
         """
         mean, std = _gpr_predict(self._model, embeddings)
         return _prob_above_half(mean, std)
+
+    def predict_stats(self, embeddings: np.ndarray) -> tuple:
+        """P(f>0.5), GP mean and posterior std — same shape as the per-campaign GP."""
+        mean, std = _gpr_predict(self._model, embeddings)
+        return _prob_above_half(mean, std), mean, std
 
     def explain(self, profile: dict) -> str:
         """Human-readable compact scoring explanation."""

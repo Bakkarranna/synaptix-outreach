@@ -143,6 +143,39 @@ def get_emailable_deals(campaign):
     )
 
 
+def requalify_deal(deal, user=None, source: str = "reviews") -> None:
+    """Flip a rejected Deal back to QUALIFIED and record the override.
+
+    The single choke point for every manual override of an LLM rejection — the
+    Reviews page (single and bulk) and ``prompt_ab --apply`` all route here, so
+    the audit log is complete by construction. The GP label derivation keys off
+    state (FAILED+wrong_fit is the only negative), so the next refit relabels
+    this lead a fit positive and the model unlearns the mistaken rejection.
+    ``deal.reason`` stays as the live audit trail of the original rejection;
+    the RequalificationLog row is the history view. ``user`` is the operator
+    for dashboard overrides, None for script-driven ones (``prompt_ab``).
+    Callers must guard that the deal is actually FAILED+wrong_fit first.
+    """
+    from openoutreach.crm.models import RequalificationLog
+
+    deal.state = DealState.QUALIFIED
+    deal.save(update_fields=["state", "update_date"])
+    RequalificationLog.objects.create(
+        deal=deal,
+        lead_identity=deal.lead.email or deal.lead.profile_url if deal.lead_id else "",
+        user=user,
+        source=source,
+        original_reason=deal.reason or "",
+    )
+    logger.info(
+        "%s requalified via %s by %s (was: %s)",
+        deal.lead.profile_url if deal.lead_id else deal.pk,
+        source,
+        user.username if user else "script",
+        deal.reason[:120] or "no reason",
+    )
+
+
 # ── Deal creation ──
 
 

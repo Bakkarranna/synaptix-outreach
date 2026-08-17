@@ -1,0 +1,179 @@
+{% extends "dashboard/base.html" %}
+{% load dashboard_extras %}
+{% block title %}Sends &amp; warm-up · Synaptix Studio Console{% endblock %}
+{% block pagetitle %}Sends &amp; warm-up{% endblock %}
+{% block crumb %}the sender's capacity, pacing and history{% endblock %}
+{% block content %}
+
+{% for m in boxes %}
+<div class="card">
+  <div class="row spread">
+    <div>
+      <h2 style="margin:0">{{ m.box.from_address }}</h2>
+      <div class="muted mono" style="margin-top:2px">{{ m.box.host }}:{{ m.box.port }} · IMAP {% if m.box.imap_username %}set{% else %}<span class="danger-text">not set</span>{% endif %} · {{ m.box.username }}</div>
+    </div>
+    <div class="row">
+      <span class="muted mono"><span class="js-sent">{{ m.sent_today }}</span>/{{ m.box.daily_limit }} sent today · <span class="js-headroom">{{ m.headroom }}</span> left</span>
+      {% if m.manual_pause %}<span class="pill paused">paused</span>{% endif %}
+      {% if m.paused %}<span class="pill paused">receiver-paused</span>{% endif %}
+      {% if m.manual_pause %}
+        <form class="inline" method="post" action="{% url 'dashboard-action' 'mailbox-resume' %}">
+          {% csrf_token %}<input type="hidden" name="mailbox" value="{{ m.box.pk }}">
+          <input type="hidden" name="next" value="{{ request.get_full_path }}">
+          <button class="secondary small">Resume</button>
+        </form>
+      {% else %}
+        <form class="inline" method="post" action="{% url 'dashboard-action' 'mailbox-pause' %}" data-confirm="Pause sending from this mailbox for now?">
+          {% csrf_token %}<input type="hidden" name="mailbox" value="{{ m.box.pk }}">
+          <input type="hidden" name="next" value="{{ request.get_full_path }}">
+          <button class="danger small">Pause</button>
+        </form>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="bar thin" style="margin-top:10px">
+    <div class="js-bar" style="width:{% widthratio m.sent_today m.box.daily_limit 100 %}"></div>
+  </div>
+
+  <div class="grid cols-2 section-gap">
+    <div>
+      <h3>Capacity — measured, not configured</h3>
+      <div class="kv">
+        <span class="k">Daily cap</span>
+        <span class="v"><b>{{ m.box.daily_limit }}/day</b> <span class="muted">(floor 5; re-measured daily from this box's own Sent folder)</span></span>
+        <span class="k">Sent today</span>
+        <span class="v">{{ m.sent_today }} people first contacted since local midnight</span>
+        <span class="k">Headroom</span>
+        <span class="v">{{ m.headroom }} sends left today</span>
+        <span class="k">Next slot</span>
+        <span class="v mono">{{ m.box.next_send_at|date:"M d H:i"|default:"now" }} <span class="muted">(3.5–4.5 min spacing)</span></span>
+      </div>
+      <p class="notice" style="margin-top:10px">The cap is the p75 of the days this box actually sent (×1.5 when the receiver hasn't pushed back), floored at 5 and capped at 180/day. As the box sends consistently, the measurement rises on its own — that's the warm-up.</p>
+    </div>
+    <div>
+      <h3>Outgoing volume · last {{ spark_labels|length }} days</h3>
+      {% if spark_values %}
+      <svg width="260" height="48" viewBox="0 0 260 48" fill="none" style="display:block;max-width:100%">
+        <path d="M{{ spark_area }}" fill="rgba(30,62,120,.35)"/>
+        <polyline points="{{ spark_line }}" fill="none" stroke="#5b8def" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <div class="row spread muted mono" style="font-size:10px;margin-top:4px">
+        <span>{{ spark_labels.0 }}</span><span>{{ spark_labels|last }}</span>
+      </div>
+      {% else %}<div class="empty"><div class="big">📈</div>No sends yet.</div>{% endif %}
+      {% if m.box.signature %}<div class="muted mono" style="margin-top:8px">sig: {{ m.box.signature|linebreaksbr|truncatechars:120 }}</div>{% endif %}
+    </div>
+  </div>
+</div>
+{% empty %}
+<div class="empty card"><div class="big">📮</div>No mailbox connected.<br><span class="muted">Connect one from the <a href="{% url 'admin:index' %}">Django Admin</a>.</span></div>
+{% endfor %}
+
+<div class="grid cols-2 section-gap">
+  <div class="card">
+    <div class="row spread">
+      <h2 style="margin:0">Send log <span class="muted">({{ total }} total)</span></h2>
+      <form class="row" method="get">
+        <select name="campaign" onchange="this.form.submit()">
+          <option value="">All campaigns</option>
+          {% for c in campaigns %}<option value="{{ c.pk }}" {% if campaign == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
+        </select>
+        <input type="search" name="q" value="{{ q }}" placeholder="Search lead, email, subject, body…" style="width:240px">
+        <button class="secondary small">Search</button>
+        {% if campaign or q %}<a class="btn secondary small" href="{% url 'dashboard-sends' %}">Clear</a>{% endif %}
+      </form>
+      <a class="btn ghost small" href="{% url 'dashboard-sends-csv' %}?{{ querystring }}" title="Download every sent email matching the current filters as CSV">Export CSV ↓</a>
+    </div>
+    {% if history %}
+    <table style="margin-top:12px">
+      <tr><th>When</th><th>To</th><th>Subject</th></tr>
+      {% for msg in history %}
+      <tr class="clickable msg-row">
+        <td class="muted">{{ msg.creation_date|date:"M d H:i" }}</td>
+        <td class="mono">{{ msg.deal.lead.email|default:msg.deal.lead.profile_url|truncatechars:32 }}</td>
+        <td class="mono">{{ msg.deal.email_subject|default:"—"|truncatechars:52 }}</td>
+      </tr>
+      <tr class="msg-expand">
+        <td colspan="3" class="expand"><div>
+          <div class="msg">
+            <span class="meta">{{ msg.deal.campaign.name }} · {{ msg.deal.lead.email|default:msg.deal.lead.profile_url }} · {{ msg.creation_date|date:"M d Y H:i" }}</span>
+            {{ msg.content }}
+          </div>
+        </div></td>
+      </tr>
+      {% endfor %}
+    </table>
+
+    {% if pages > 1 %}
+    <div class="pager">
+      {% if page > 1 %}
+        <a class="btn secondary small" href="?{{ querystring }}&page={{ page|add:-1 }}">← prev</a>
+      {% endif %}
+      <span class="muted">page {{ page }} / {{ pages }}</span>
+      {% if page < pages %}
+        <a class="btn secondary small" href="?{{ querystring }}&page={{ page|add:1 }}">next →</a>
+      {% endif %}
+    </div>
+    {% endif %}
+    {% else %}
+    <div class="empty"><div class="big">✉️</div>{% if q %}No sent emails match “{{ q }}”.<br><span class="muted">Try clearing the search or campaign filter.</span>{% else %}Nothing sent yet.{% endif %}</div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Delivery verdicts <span class="muted" style="text-transform:none">· only failures are recorded</span></h2>
+    {% if verdicts %}
+    <table>
+      <tr><th>Time</th><th>Mailbox</th><th>Response</th><th>Detail</th></tr>
+      {% for v in verdicts %}
+      <tr>
+        <td class="muted">{{ v.created_at|date:"M d H:i" }}</td>
+        <td class="mono">{{ v.mailbox.from_address }}</td>
+        <td><span class="pill failed">{{ v.response }}</span></td>
+        <td class="muted mono">{{ v.detail|truncatechars:70 }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    <div class="notice section-gap">A 4xx deferral costs nothing; <span class="mono">550 5.4.5</span>/<span class="mono">5.7.x</span> pause the box for the day; transport/auth failures are explicitly not reputation signals.</div>
+    {% else %}
+    <div class="empty"><div class="big">✅</div>No failures — every send attempt has been clean.</div>
+    {% endif %}
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<style>
+  .msg { max-width: 92%; border-radius: 10px; padding: 10px 14px; font-size: 12.5px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; background: var(--bg-3); border: 1px solid var(--line); color: var(--ink-2); }
+  .msg .meta { display: block; font-size: 11px; color: var(--muted); margin-bottom: 5px; }
+</style>
+<script>
+  (function () {
+    var open = null;
+    document.querySelectorAll('.msg-row').forEach(function (row) {
+      row.addEventListener('click', function () {
+        if (open && open !== row) open.classList.remove('open');
+        open = (open === row) ? null : row;
+        if (open) open.classList.add('open');
+      });
+    });
+
+    // Live refresh of the box's cap row, reusing the overview JSON endpoint.
+    startDaemonPoll(function (data) {
+      data.boxes.forEach(function (b) {
+        document.querySelectorAll('.card').forEach(function (card) {
+          var from = card.querySelector('.js-sent');
+          if (!from) return;
+          if (from.closest('.card').textContent.indexOf(b.from_address) === -1) return;
+          var head = card.querySelector('.js-headroom'), bar = card.querySelector('.js-bar');
+          if (from) from.textContent = b.sent_today;
+          if (head) head.textContent = b.headroom;
+          if (bar) bar.style.width = Math.round(b.sent_today / Math.max(b.daily_limit, 1) * 100) + '%';
+        });
+      });
+    });
+  })();
+</script>
+{% endblock %}

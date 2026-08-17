@@ -61,8 +61,34 @@ SEARCH_FIELDS = (
     "lead_location",
 )
 
+# ISO-3166 alpha-2 → the provider's spelling of ``contact_location_country``.
+# The campaign stores the *code* (one stable ICP attribute) while Lead Finder
+# matches the *name* ("France", "United states") — spellings confirmed against
+# this install's lead rows. Only codes present here constrain discovery; an
+# unmapped code logs and rides no constraint rather than risk an empty page
+# that the walk would read as end-of-depth and retire the query line.
+COUNTRY_NAME_BY_CODE = {
+    "au": "Australia",
+    "br": "Brazil",
+    "ca": "Canada",
+    "de": "Germany",
+    "eg": "Egypt",
+    "es": "Spain",
+    "fr": "France",
+    "gb": "United kingdom",
+    "id": "Indonesia",
+    "il": "Israel",
+    "in": "India",
+    "it": "Italy",
+    "ph": "Philippines",
+    "pk": "Pakistan",
+    "uk": "United kingdom",
+    "us": "United states",
+}
 
-def filters_for(keywords, headcount: tuple[int, int] | None = None) -> dict:
+
+def filters_for(keywords, headcount: tuple[int, int] | None = None,
+                country_code: str = "") -> dict:
     """``(field, token)`` keywords → one Lead Finder filter dict.
 
     The one place a node becomes provider JSON, and the only place the index's three
@@ -78,9 +104,10 @@ def filters_for(keywords, headcount: tuple[int, int] | None = None) -> dict:
       one ~10k window where the same values as separate queries reach one each, so OR
       is strictly dominated for harvesting (§7).
 
-    ``headcount`` is the campaign's fixed ICP size band, riding every query
-    unchanged — it is never a search axis, because loosening a size bound queries
-    off-ICP rather than widening usefully.
+    ``headcount`` and ``country_code`` are the campaign's fixed ICP attributes,
+    riding every query unchanged — neither is ever a search axis, because
+    loosening them queries off-ICP rather than widening usefully. The country is
+    applied last so it always wins over any location token a node carries.
     """
     grouped: dict[str, list[str]] = {}
     for field, token in sorted(keywords):
@@ -97,6 +124,15 @@ def filters_for(keywords, headcount: tuple[int, int] | None = None) -> dict:
             filters[field] = {"include": [joined], "exact_match": False}
         else:
             filters[field] = {"include": [joined]}
+
+    if country_code:
+        name = COUNTRY_NAME_BY_CODE.get(country_code.strip().lower())
+        if name:
+            filters["lead_location"] = {"include": [name]}
+        else:
+            logger.debug(
+                "no provider country name for %r — discovery queries not country-constrained",
+                country_code)
     return filters
 
 # Lead-row fields we embed, folded in only when the row carries them.
@@ -113,8 +149,13 @@ def filters_for(keywords, headcount: tuple[int, int] | None = None) -> dict:
 #
 # ``contact_headline`` is the one field with real per-lead signal (54 distinct
 # values per 100 rows) and is present for barely half of them; the rest are short
-# categoricals. Dropping a field moves the vector space, so every ``Lead`` must be
-# re-embedded when this list changes.
+# categoricals. ``phone``/``website`` are the scraped row's extras — they vary
+# between leads, so they are legitimate (if weak) features, and they are what the
+# LLM qualifier must be able to read when a lead came in with them.
+#
+# Changing this list moves the vector space: new leads embed with the new fields,
+# so a store with existing leads holds two populations until they are rebuilt
+# (``manage.py reembed_leads``).
 TEXT_FIELDS = [
     "contact_headline",
     "contact_industry",
@@ -124,6 +165,8 @@ TEXT_FIELDS = [
     "company_industry",
     "contact_location_state",
     "contact_location_country",
+    "phone",
+    "website",
 ]
 
 
@@ -142,15 +185,38 @@ KEYWORD_SOURCE_FIELDS = {
     "lead_location": ("contact_location_state", "contact_location_country"),
 }
 
+# Row fields kept for the paid finder's query, not the vocabulary. BetterContact
+# resolves a bare LinkedIn URL, but name + company lift the hit rate a lot — the
+# lookup leg's own comment says so, and a 3-for-3 terminal-miss run on URL-only
+# lookups is the live evidence. They ride along as extra ``source_fields`` keys:
+# the vocabulary reads only ``KEYWORD_SOURCE_FIELDS``, so they can never become
+# search terms. ``contact_first_name``/``contact_last_name``/``company_domain``
+# are nowhere in ``profile_text``; ``company_name`` is folded into it, but as part
+# of a flattened lowercase blob — the lookup leg needs the structured field to
+# hand the provider a real query, not a word to hunt for.
+ENRICHMENT_FIELDS = (
+    "contact_first_name",
+    "contact_last_name",
+    "company_name",
+    "company_domain",
+)
+
 
 def source_fields_for(row: dict) -> dict:
     """The row's queryable text, kept per field for the vocabulary.
 
-    Only the fields ``KEYWORD_SOURCE_FIELDS`` reads — a lead row carries far more, and
-    storing the rest would be a second copy of ``profile_text`` under another name.
+    Only the fields ``KEYWORD_SOURCE_FIELDS`` reads feed the vocabulary — a lead row
+    carries far more, and storing the rest would be a second copy of ``profile_text``
+    under another name. The one exception is ``ENRICHMENT_FIELDS``: dead to the
+    vocabulary, but exactly what the paid email finder's query wants, and only
+    ``company_name`` of them also appears (flattened) in ``profile_text``.
     """
     wanted = {key for keys in KEYWORD_SOURCE_FIELDS.values() for key in keys}
-    return {key: str(row[key]) for key in wanted if row.get(key)}
+    fields = {key: str(row[key]) for key in wanted if row.get(key)}
+    for key in ENRICHMENT_FIELDS:
+        if row.get(key):
+            fields[key] = str(row[key])
+    return fields
 
 
 def describe_node(keywords) -> str:

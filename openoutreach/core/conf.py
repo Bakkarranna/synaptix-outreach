@@ -13,6 +13,11 @@ PROMPTS_DIR = Path(__file__).parent / "templates" / "prompts"
 
 FASTEMBED_CACHE_DIR = ROOT_DIR / ".cache" / "fastembed"
 
+# When the borderline-aware qualification prompt (``qualify_lead.j2``) replaced
+# the strict one — the reference date for the Overview's qualification-rate card,
+# so the operator can compare the acceptance window before and after it.
+QUALIFICATION_PROMPT_LOOSENED_SINCE = "2026-08-17"
+
 # ----------------------------------------------------------------------
 # Warm capacity (emails/warmth.py) — the per-box daily send ceiling, *measured*
 # rather than declared. A fixed number can only ever be wrong in one of two
