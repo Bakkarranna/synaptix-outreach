@@ -1,5 +1,5 @@
 # openoutreach/core/onboarding_wizard.py
-"""Minimal, robust console prompts for onboarding.
+"""Minimal console prompts that re-ask bad input instead of restarting onboarding.
 
 First principles
 ----------------
