@@ -293,8 +293,8 @@ RFC 2369-compliant, needs no infrastructure, and the daemon already speaks IMAP.
 a threaded reader could never see it: the mail pass (`emails/inbox.py`) finds it
 **box-wide** by the `+unsub` alias in the To header. A *worded* unsubscribe ("take me off your
 list") threads normally and reaches the outreach agent, which has a `suppress` action beside
-send/wait/mark_completed. The two cover each other — the first is robust because the mail comes
-from the address we mailed, the second because it matches on **thread**, not address.
+send/wait/mark_completed. The two cover each other — the first holds because the mail comes from the address we mailed,
+the second because it matches on **thread**, not address.
 
 The scan is resumable: it reads only UIDs above `Mailbox.unsub_scan_uid` and advances the
 cursor to the box's `UIDNEXT - 1`, not to the last *matching* UID (matches are rare, and
