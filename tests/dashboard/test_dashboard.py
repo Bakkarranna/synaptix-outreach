@@ -188,7 +188,10 @@ class TestQualificationRate:
         response = staff_client.get("/dashboard/")
         assert b"3 accepted \xc2\xb7 2 rejected" in response.content
         assert b"60%" in response.content
-        assert b'class="qa-day">Aug ' in response.content
+        backdated_label = self._yesterday().strftime("%b %d")
+        assert (
+            f'class="qa-day">{backdated_label}'.encode() in response.content
+        )
 
     def test_freemium_deals_never_counted(self, staff_client, campaign):
         """Freemium deals are created, not judged — they must not inflate the

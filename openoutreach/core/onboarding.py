@@ -138,10 +138,18 @@ def _required(answer: _T | None) -> _T:
 
 
 def _say(message: str, style: str) -> None:
-    """Print a styled status line (green ✓, red ✗, cyan progress)."""
-    import questionary
+    """Print a styled status line (green ✓, red ✗, cyan progress).
 
-    questionary.print(message, style=style)
+    Styling needs a console questionary can address. When there is none —
+    piped stdout, a CI runner, a non-Win32 shell prompt — fall back to a plain
+    print so a status line never fails the run it was reporting.
+    """
+    try:
+        import questionary
+
+        questionary.print(message, style=style)
+    except Exception:
+        print(message)
 
 
 # ---------------------------------------------------------------------------

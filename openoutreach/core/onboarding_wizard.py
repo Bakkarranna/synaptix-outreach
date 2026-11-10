@@ -27,7 +27,16 @@ Validator = Callable[[str], "bool | str"]
 
 
 def _error(message: str) -> None:
-    questionary.print(f"  {message}", style="fg:red")
+    """Print a validation error, re-asking after it.
+
+    Styling needs a console questionary can address. When there is none —
+    piped stdout, a CI runner, a non-Win32 shell prompt — fall back to a plain
+    print so the error still reaches whoever is reading the transcript.
+    """
+    try:
+        questionary.print(f"  {message}", style="fg:red")
+    except Exception:
+        print(f"  {message}")
 
 
 def text(
