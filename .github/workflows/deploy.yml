@@ -7,7 +7,10 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: eracle/openoutreach
+  # Publish under the namespace of whichever fork is pushing: the workflow
+  # logs in as the pushing actor, so a fixed upstream owner here makes
+  # docker/push fail with "permission_denied" in every fork.
+  IMAGE_NAME: ${{ github.repository_owner }}/openoutreach
 
 jobs:
   test:
@@ -58,7 +61,10 @@ jobs:
 
       # Notify the hub repo that a new image was published (image-updated).
       # Prod runs on the shared GCP VM (Compute Engine), not a DigitalOcean snapshot.
+      # The dispatch target belongs to the upstream owner, so it is skipped in
+      # this fork rather than failing on a token with no access to it.
       - name: Notify hub of new image
+        if: ${{ github.repository_owner == 'eracle' }}
         uses: peter-evans/repository-dispatch@v3
         with:
           token: ${{ secrets.GH_PAT }}

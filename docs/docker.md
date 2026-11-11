@@ -6,8 +6,12 @@ OpenOutreach runs as a single browserless daemon — a slim Python image with **
 
 Pre-built images are published to GitHub Container Registry.
 
+This fork publishes to **its own** namespace, `ghcr.io/bakkarranna/openoutreach` (the deploy
+workflow derives the image name from `${{ github.repository_owner }}`, so each fork pushes its own
+image and no fork needs a token for another account's registry).
+
 ```bash
-docker run --pull always -it -v ~/.openoutreach/data:/app/data ghcr.io/eracle/openoutreach:latest
+docker run --pull always -it -v ~/.openoutreach/data:/app/data ghcr.io/bakkarranna/openoutreach:latest
 ```
 
 - `-it` is required so the **interactive onboarding** can prompt you on first run — product/objective → LLM key → mailbox (paste an app password) → BetterContact key → your email → country → newsletter/legal.
@@ -33,7 +37,7 @@ docker ps
 docker stop <container-id>
 
 # Restart (data persists in the mounted directory)
-docker run --pull always -it -v ~/.openoutreach/data:/app/data ghcr.io/eracle/openoutreach:latest
+docker run --pull always -it -v ~/.openoutreach/data:/app/data ghcr.io/bakkarranna/openoutreach:latest
 ```
 
 ### View your CRM (Django Admin)
@@ -42,7 +46,7 @@ The daemon image runs the worker, not a web server. To browse Leads and Deals, r
 
 ```bash
 docker run --pull always -it -p 8000:8000 -v ~/.openoutreach/data:/app/data \
-  ghcr.io/eracle/openoutreach:latest python manage.py runserver 0.0.0.0:8000
+  ghcr.io/bakkarranna/openoutreach:latest python manage.py runserver 0.0.0.0:8000
 ```
 
 Then open **http://localhost:8000/admin/** (create a superuser first with `python manage.py createsuperuser`).
@@ -98,7 +102,7 @@ The pre-built `docker run` command mounts a host directory at `/app/data` for pe
 To run against a database file you already have, bind-mount the host **directory** containing it onto `/app/data` (the app opens `/app/data/db.sqlite3`):
 
 ```bash
-docker run --pull always -it -v ~/.openoutreach/data:/app/data ghcr.io/eracle/openoutreach:latest
+docker run --pull always -it -v ~/.openoutreach/data:/app/data ghcr.io/bakkarranna/openoutreach:latest
 ```
 
 Place your `db.sqlite3` inside the mounted directory (`~/.openoutreach/data/` above; swap for your own path). Two caveats: the dir and file must be writable by uid 1000 (the container user) or writes fail with `readonly database`; and `rundaemon` runs `migrate` on startup, so back the file up first (`cp db.sqlite3{,.bak}`) if it's precious.

@@ -479,9 +479,10 @@ requirements; data persists in a volume at `/app/data`.
 
 - `tests.yml` — pytest on push / PRs.
 - `deploy.yml` — **on every push to `main`**, and on `v*` tags. Runs `make docker-test`, then builds
-  + pushes `ghcr.io/eracle/openoutreach`, then fires a `repository-dispatch` (`image-updated`) at
-  `eracle/hub.openoutreach.app`. Image tags: `latest` (default branch only), `sha-<commit>`, and
-  semver (`v*` tags only).
+  + pushes `ghcr.io/<pushing owner>/openoutreach`, then fires a `repository-dispatch`
+  (`image-updated`) at `eracle/hub.openoutreach.app`. The push goes to the pushing actor's own
+  namespace (`${{ github.repository_owner }}`), because the login uses that actor's token. Image
+  tags: `latest` (default branch only), `sha-<commit>`, and semver (`v*` tags only).
 
   **There is no release gate.** Merging to `main` republishes `:latest` — so code and **schema
   migrations reach anyone pulling `latest` on merge, not on a tag**. No `v*` tag has ever been cut,
